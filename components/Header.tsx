@@ -51,6 +51,7 @@ export default async function Header() {
             <Image src="/images/logo.png" alt="전국민 AI 경진대회" width={200} height={40} priority className="h-8 sm:h-9 w-auto" />
           </Link>
           <div className="flex items-center gap-3">
+            <Link href="/contest" className="text-sm font-semibold text-gray-900 hover:text-brand">대회 진행</Link>
             {session ? (
               <>
                 <Link href="/mypage" className={linkClass}>{session.name}</Link>
