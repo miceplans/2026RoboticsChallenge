@@ -1,0 +1,13 @@
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css');
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Pretendard', -apple-system, 'Noto Sans KR', sans-serif;
+  --color-brand: #1e3178;
+  --color-brand-dark: #182658;
+  --color-sky: #4aadf7;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+}
