@@ -26,8 +26,10 @@ export async function proxy(request: NextRequest) {
   const session = await verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value);
 
   if (area === 'main') {
-    // 메인 호스트에서 /judge, /admin 직접 접근 차단
-    if (/^\/(judge|admin)(\/|$)/.test(pathname)) return rewriteTo('/404');
+    // 개발 환경과 일반 URL에서는 /judge, /admin 직접 진입을 허용한다.
+    // 이전에는 이 경로를 /404로 리라이트해서, 실제 페이지가 있어도
+    // localhost:3000/judge 접근이 항상 실패했다. 페이지의 requireRole이
+    // 로그인 및 역할 권한은 계속 검증한다.
     if (pathname.startsWith('/mypage') && !session) return redirectTo('/login');
     return NextResponse.next();
   }
