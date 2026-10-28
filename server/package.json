@@ -1,0 +1,17 @@
+{
+  "name": "robotics-realtime-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch --env-file-if-exists=.env src/index.ts",
+    "start": "node --env-file-if-exists=.env src/index.ts",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  }
+}
