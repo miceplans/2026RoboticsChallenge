@@ -8,25 +8,32 @@ const PORT = Number(process.env.PORT ?? 4000);
 const origins = (process.env.CORS_ORIGINS ?? 'http://localhost:3000,http://judge.localhost:3000,http://admin.localhost:3000').split(',');
 const BROADCAST_MS = 500;
 
-type SubmitPayload = { matchId: unknown; teamId: unknown; points: unknown; ts: unknown };
+type SubmitPayload = { matchId: unknown; teamId: unknown; points: unknown; ts: unknown; sheet?: unknown };
 type Result = { ok: true } | { ok: false; error: string };
+
+// 채점지(서명 이미지 포함) 상한. 초과분은 거부한다.
+const MAX_SHEET_BYTES = 400 * 1024;
+const MAX_BODY_BYTES = MAX_SHEET_BYTES + 4096;
 
 // 소켓/HTTP 공통. 클라이언트는 확인(ok)을 받을 때까지 같은 payload 를 재전송해도 안전하다 (upsert + ts 비교).
 function submitScore(session: Session, p: SubmitPayload | undefined): Result {
   if (session.role !== 'judge' && session.role !== 'admin') return { ok: false, error: 'forbidden' };
 
-  const { matchId, teamId, points, ts } = p ?? {};
+  const { matchId, teamId, points, ts, sheet } = p ?? {};
   if (
     typeof matchId !== 'string' || !matchId || matchId.length > 64 ||
     typeof teamId !== 'string' || !teamId || teamId.length > 64 ||
     typeof points !== 'number' || !Number.isFinite(points) ||
-    typeof ts !== 'number' || !Number.isFinite(ts)
+    typeof ts !== 'number' || !Number.isFinite(ts) ||
+    (sheet !== undefined && (typeof sheet !== 'object' || sheet === null || Array.isArray(sheet)))
   ) {
     return { ok: false, error: 'invalid' };
   }
+  const sheetJson = sheet === undefined ? null : JSON.stringify(sheet);
+  if (sheetJson && sheetJson.length > MAX_SHEET_BYTES) return { ok: false, error: 'too_large' };
 
   // judgeId 는 클라이언트가 보낸 값이 아니라 세션에서만 가져온다
-  saveScore({ matchId, teamId, judgeId: session.id, points, ts });
+  saveScore({ matchId, teamId, judgeId: session.id, points, ts, sheet: sheetJson });
   scheduleBroadcast();
   return { ok: true };
 }
@@ -52,12 +59,20 @@ const httpServer = createServer((req, res) => {
   const session = sessionFromCookie(req.headers.cookie);
   if (!session) return json(401, { ok: false, error: 'unauthorized' });
 
+  // 한도를 넘어도 연결을 끊지 않고 끝까지 읽어 버린 뒤 413 으로 답한다.
+  // 끊어 버리면 클라이언트가 네트워크 오류로 보고 같은 요청을 영원히 재시도한다.
   let body = '';
+  let tooLarge = false;
   req.on('data', (chunk) => {
+    if (tooLarge) return;
     body += chunk;
-    if (body.length > 4096) req.destroy();
+    if (body.length > MAX_BODY_BYTES) {
+      tooLarge = true;
+      body = '';
+    }
   });
   req.on('end', () => {
+    if (tooLarge) return json(413, { ok: false, error: 'too_large' });
     let payload: SubmitPayload | undefined;
     try {
       payload = JSON.parse(body);
