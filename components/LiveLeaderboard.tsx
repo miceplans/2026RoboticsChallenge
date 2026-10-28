@@ -33,24 +33,26 @@ export function StandingsTable({ standings, updatedAt }: { standings: Standing[]
 
 function Table({ standings }: { standings: Standing[] }) {
   return (
-    <table className="mt-4 w-full max-w-md text-left">
-      <thead>
-        <tr className="text-white">
-          <th className="w-16 rounded-l-2xl bg-accent py-2.5 pl-4 font-semibold">순위</th>
-          <th className="bg-accent py-2.5 font-semibold">팀</th>
-          <th className="rounded-r-2xl bg-accent py-2.5 pr-4 text-right font-semibold">총점</th>
-        </tr>
-      </thead>
-      <tbody>
-        {standings.map((s, i) => (
-          <tr key={s.teamId}>
-            <td className="py-2.5 pl-4">{i + 1}</td>
-            <td className="py-2.5">{teamName(s.teamId)}</td>
-            <td className="py-2.5 pr-4 text-right tabular-nums">{s.total}</td>
+    <div className="mt-4 w-full max-w-md overflow-hidden rounded-xl border border-line">
+      <table className="w-full text-left">
+        <thead className="bg-accent text-white">
+          <tr>
+            <th className="w-16 px-4 py-3 font-semibold">순위</th>
+            <th className="px-4 py-3 font-semibold">팀</th>
+            <th className="px-4 py-3 text-right font-semibold">총점</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody className="divide-y divide-line">
+          {standings.map((s, i) => (
+            <tr key={s.teamId}>
+              <td className="px-4 py-3">{i + 1}</td>
+              <td className="px-4 py-3">{teamName(s.teamId)}</td>
+              <td className="px-4 py-3 text-right tabular-nums">{s.total}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

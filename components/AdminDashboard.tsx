@@ -148,17 +148,29 @@ function ScoreList() {
           <button key={x} onClick={() => setFilter(x)} className={`rounded-2xl border px-3 py-1.5 text-sm ${filter === x ? 'border-accent bg-accent text-white' : 'border-line text-gray-600 hover:border-line-hover'}`}>{x}</button>
         ))}
       </div>
-      <div className="mt-5 overflow-x-auto">
+      <div className="mt-5 overflow-x-auto rounded-xl border border-line">
         <table className="w-full min-w-[700px] text-left text-sm">
-          <thead>
-            <tr><th className="rounded-l-2xl bg-accent px-4 py-2.5 font-semibold">라운드</th><th className="bg-accent px-3 py-2.5 font-semibold">테이블</th><th className="bg-accent px-3 py-2.5 font-semibold">참가팀</th><th className="bg-accent px-3 py-2.5 font-semibold">부문</th><th className="bg-accent px-3 py-2.5 text-right font-semibold">총점</th><th className="bg-accent px-3 py-2.5 font-semibold">상태</th><th className="w-4 rounded-r-2xl bg-accent" /></tr>
+          <thead className="bg-accent text-white">
+            <tr>
+              <th className="px-4 py-3 font-semibold">라운드</th>
+              <th className="px-4 py-3 font-semibold">테이블</th>
+              <th className="px-4 py-3 font-semibold">참가팀</th>
+              <th className="px-4 py-3 font-semibold">부문</th>
+              <th className="px-4 py-3 text-right font-semibold">총점</th>
+              <th className="px-4 py-3 font-semibold">상태</th>
+              <th className="px-4 py-3" />
+            </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-line">
             {scores.filter(x => filter === '전체' || x[5] === filter).map(s => (
               <tr key={s[2]}>
-                <td className="py-3">{s[0]}</td><td>{s[1]}</td><td className="font-medium">{s[2]}</td><td>{s[3]}</td>
-                <td className="text-right tabular-nums">{s[4]}</td><td className="pl-6 text-gray-600">{s[5]}</td>
-                <td className="text-right"><button className="underline">상세</button></td>
+                <td className="px-4 py-3">{s[0]}</td>
+                <td className="px-4 py-3">{s[1]}</td>
+                <td className="px-4 py-3 font-medium">{s[2]}</td>
+                <td className="px-4 py-3">{s[3]}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{s[4]}</td>
+                <td className="px-4 py-3 text-gray-600">{s[5]}</td>
+                <td className="px-4 py-3 text-right"><button className={`${btn} !py-1`}>상세</button></td>
               </tr>
             ))}
           </tbody>
@@ -173,16 +185,25 @@ function Template() {
   return (
     <section className={`${card} p-6`}>
       <h1 className="text-3xl font-extrabold text-heading">채점표 템플릿</h1>
-      <div className="mt-6 overflow-x-auto">
+      <div className="mt-6 overflow-x-auto rounded-xl border border-line">
         <table className="w-full min-w-[620px] text-left text-sm">
-          <thead>
-            <tr><th className="rounded-l-2xl bg-accent px-4 py-2.5 font-semibold">채점 항목</th><th className="bg-accent px-3 py-2.5 font-semibold">최대 개수</th><th className="bg-accent px-3 py-2.5 font-semibold">주니어</th><th className="bg-accent px-3 py-2.5 font-semibold">시니어</th><th className="w-4 rounded-r-2xl bg-accent" /></tr>
+          <thead className="bg-accent text-white">
+            <tr>
+              <th className="px-4 py-3 font-semibold">채점 항목</th>
+              <th className="px-4 py-3 font-semibold">최대 개수</th>
+              <th className="px-4 py-3 font-semibold">주니어</th>
+              <th className="px-4 py-3 font-semibold">시니어</th>
+              <th className="px-4 py-3" />
+            </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-line">
             {rows.map(r => (
               <tr key={r[0]}>
-                <td className="py-3 font-medium">{r[0]}</td><td>{r[1]}개</td><td>{r[2]}</td><td>{r[3]}</td>
-                <td className="text-right"><button className="underline">수정</button></td>
+                <td className="px-4 py-3 font-medium">{r[0]}</td>
+                <td className="px-4 py-3">{r[1]}개</td>
+                <td className="px-4 py-3">{r[2]}</td>
+                <td className="px-4 py-3">{r[3]}</td>
+                <td className="px-4 py-3 text-right"><button className={`${btn} !py-1`}>수정</button></td>
               </tr>
             ))}
           </tbody>
