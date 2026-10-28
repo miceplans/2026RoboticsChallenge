@@ -1,33 +1,221 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
+import ReviewView from '@/components/judge/ReviewView';
+import ScoreView from '@/components/judge/ScoreView';
+import SignView from '@/components/judge/SignView';
+import { btnPrimary, Card, Chip, inputCls, type Tone } from '@/components/judge/ui';
+import { StatusBadge } from '@/components/LiveLeaderboard';
+import { MATCHES, matchesOfTable, TABLES, teamOf, type Match } from '@/lib/judge/data';
+import { calc, CATEGORY_NAMES } from '@/lib/judge/rules';
+import { newSheet, sheetPayload, useSheets, type Sheet } from '@/lib/judge/sheets';
+import { scoreKey } from '@/lib/realtime/outbox';
 import { useRealtime } from '@/lib/realtime/useRealtime';
 
-const jobs = [
-  { id: 'M-201', round: '1차 A조 · 테이블 1 좌', team: 'S01 오로라', school: '서울로봇고등학교', state: '미입력' },
-  { id: 'M-202', round: '1차 B조 · 테이블 1 우', team: 'S05 바이너리', school: '인천과학고등학교', state: '임시저장' },
-  { id: 'M-203', round: '2차 A조 · 테이블 1 좌', team: 'S09 스파크', school: '부산메이커스', state: '미입력' },
-];
-const scoring = [
-  ['sample', '미션 1', '의료 샘플 수거', 6, 8], ['kit', '미션 1', '구급 키트 운반', 4, 10], ['cylinder', '미션 2', '산소 실린더 적재', 3, 12],
-] as const;
+type Mode = 'score' | 'review' | 'sign' | 'done';
 
-export default function JudgeConsole() {
-  const { submitScore } = useRealtime();
-  const [job, setJob] = useState<(typeof jobs)[number] | null>(null);
-  const [mode, setMode] = useState<'score'|'review'|'sign'|'done'>('score');
-  const [v, setV] = useState<Record<string, number>>({ sample:0, kit:0, cylinder:0, touch:0, outside:0, resets:0, damage:0 });
-  const [pre, setPre] = useState([false,false,false]); const [dq,setDq]=useState(false); const [saved,setSaved]=useState(false);
-  const [ref,setRef]=useState(false); const [team,setTeam]=useState(false); const [exception,setException]=useState(false); const [reason,setReason]=useState('');
-  const total=useMemo(()=>dq?0:Math.max(0,scoring.reduce((n,[id,,, ,p])=>n+v[id]*p,0)-v.touch*3-v.outside*5-v.damage),[v,dq]);
-  const open=(x:(typeof jobs)[number])=>{setJob(x);setMode('score');setV({sample:0,kit:0,cylinder:0,touch:0,outside:0,resets:0,damage:0});setPre([false,false,false]);setDq(false);setRef(false);setTeam(false);setException(false);setReason('')};
-  const bump=(id:string,n:number,max=99)=>setV(x=>({...x,[id]:Math.max(0,Math.min(max,(x[id]||0)+n))}));
-  if(!job) return <main className="mx-auto max-w-4xl"><p className="text-sm font-bold text-accent">테이블 1 · 시니어</p><h1 className="mt-1 text-3xl font-extrabold">담당 경기</h1><p className="mt-2 text-sm text-gray-500">채점을 시작할 경기를 선택하세요.</p><section className="mt-6 rounded-2xl border border-line bg-white p-5"><h2 className="font-extrabold">조별 라운드</h2><div className="mt-2 space-y-1">{jobs.map(x=><button key={x.id} onClick={()=>open(x)} className="flex w-full items-center gap-3 rounded-xl px-3 py-3.5 text-left transition-colors hover:bg-surface"><span className="rounded-full bg-accent/10 px-3 py-1 text-xs font-bold text-accent">시니어</span><span className="flex-1"><b className="block">{x.round}</b><small className="text-gray-500">{x.team} · {x.school}</small></span><span className="rounded-full bg-surface-secondary px-3 py-1 text-xs">{x.state}</span><span>›</span></button>)}</div></section></main>;
-  if(mode==='done') return <div className="mx-auto max-w-xl rounded-2xl border border-line bg-white p-10 text-center"><div className="text-5xl text-accent">✓</div><h1 className="mt-4 text-2xl font-extrabold">관리자에게 전달했어요</h1><p className="mt-2 text-sm text-gray-500">{job.team} · 총점 <b>{total}점</b></p><button onClick={()=>setJob(null)} className="mt-7 rounded-2xl bg-accent px-5 py-3 text-sm font-bold text-white">다음 경기로</button></div>;
-  if(mode==='review') return <main className="mx-auto max-w-3xl rounded-2xl border border-line bg-white p-6"><p className="font-bold text-accent">심판과 참가팀 대표가 함께 확인해 주세요</p><h1 className="mt-2 text-2xl font-extrabold">{job.team} · 공동 확인</h1><div className="mt-6 grid gap-5 sm:grid-cols-2"><table className="w-full text-sm"><tbody><tr className="text-white"><td className="rounded-l-xl bg-accent px-3 py-2 font-bold">채점 항목</td><td className="bg-accent py-2 text-right font-bold">개수</td><td className="rounded-r-xl bg-accent px-3 py-2 text-right font-bold">점수</td></tr>{scoring.map(([id,,label,,p])=><tr key={id}><td className="px-3 py-2.5">{label}</td><td className="py-2.5 text-right">{v[id]}개</td><td className="px-3 py-2.5 text-right font-bold">{v[id]*p}점</td></tr>)}<tr><td className="px-3 py-2.5 text-error">감점</td><td/><td className="px-3 py-2.5 text-right text-error">-{v.touch*3+v.outside*5+v.damage}점</td></tr></tbody></table><div className="rounded-2xl bg-accent/10 p-6 text-center"><small>최종 점수</small><p className="mt-2 text-5xl font-extrabold text-accent">{total}</p></div></div><div className="mt-6 flex justify-end gap-2"><button onClick={()=>setMode('score')} className="rounded-2xl border border-line px-4 py-3 text-sm font-bold">수정하기</button><button onClick={()=>setMode('sign')} className="rounded-2xl bg-accent px-5 py-3 text-sm font-bold text-white">서명하기 →</button></div></main>;
-  if(mode==='sign') return <main className="mx-auto max-w-3xl rounded-2xl border border-line bg-white p-6"><div className="grid grid-cols-2 gap-2 text-center text-sm font-bold"><b className="rounded-xl bg-accent/10 p-3 text-accent">① 심판 서명</b><b className="rounded-xl bg-surface-secondary p-3">② 참가팀 대표 서명</b></div><h1 className="mt-6 text-2xl font-extrabold">{job.team} 확인 서명</h1><div className="mt-5 grid gap-4 sm:grid-cols-2">{[['심판',ref,()=>setRef(true)],['참가팀 대표',team,()=>setTeam(true)]] .map(([a,b,c])=><div key={a as string} className="rounded-2xl border border-dashed p-5 text-center"><b>{a as string}</b><div className="my-5 h-20 rounded-lg bg-surface p-7 text-sm text-gray-400">{b?'서명 완료 ✓':'서명 영역'}</div><button disabled={(a==='참가팀 대표'&&!ref)||Boolean(b)} onClick={c as ()=>void} className="rounded-2xl border border-line px-4 py-2 text-sm font-bold disabled:opacity-40">{b?'완료':'서명 확인'}</button></div>)}</div><label className="mt-5 flex gap-3 rounded-lg bg-surface p-4 text-sm"><input type="checkbox" checked={exception} onChange={e=>setException(e.target.checked)}/>대표 서명 예외 처리</label>{exception&&<input value={reason} onChange={e=>setReason(e.target.value)} placeholder="예외 사유" className="mt-3 w-full rounded-lg border border-line p-3"/>}<div className="mt-6 flex justify-between"><button onClick={()=>setMode('review')}>← 공동 확인</button><button disabled={!ref||(!team&&!exception)||(exception&&!reason)} onClick={()=>{submitScore(job.id,job.team.split(' ')[0],total);setMode('done')}} className="rounded-2xl bg-accent px-5 py-3 text-sm font-bold text-white disabled:opacity-40">완료 · 관리자에게 전달</button></div></main>;
-  return <main className="mx-auto max-w-4xl pb-24"><button onClick={()=>setJob(null)} className="mb-5 text-sm font-bold">← 담당 경기 목록</button><header className="rounded-2xl border border-line bg-white p-5"><b>{job.team}</b><p className="mt-1 text-sm text-gray-500">{job.school} · {job.round}</p></header><Card title="경기 전 확인">{['시작 위치 · 게임 요소 배치 확인','로봇 검사 통과','경기장 입장 인원 3명 이하'].map((x,i)=><Row key={x} label={x}><button onClick={()=>setPre(p=>p.map((a,j)=>j===i?!a:a))} className={`rounded-full px-4 py-2 text-xs font-bold ${pre[i]?'bg-accent text-white':'border'}`}>{pre[i]?'확인됨 ✓':'확인'}</button></Row>)}</Card><Card title="미션 채점">{scoring.map(([id,mission,label,max,p])=><Row key={id} label={<><small className="font-bold text-accent">{mission}</small><b className="block">{label}</b><small className="text-gray-400">최대 {max}개 · 개당 {p}점</small></>}><Count value={v[id]} down={()=>bump(id,-1,max)} up={()=>bump(id,1,max)}/><b className="w-14 text-right">{v[id]*p}점</b></Row>)}</Card><Card title="감점">{[['touch','경기장 요소 직접 접촉',3],['outside','경기장 이탈',5]].map(([id,label,p])=><Row key={id as string} label={<><b>{label as string}</b><small className="block text-gray-400">1회당 -{p as number}점</small></>}><Count value={v[id as string]} down={()=>bump(id as string,-1)} up={()=>bump(id as string,1)}/></Row>)}<Row label="구조물 · 요소 파손"><input type="number" value={v.damage} onChange={e=>setV(x=>({...x,damage:+e.target.value}))} className="w-20 rounded-lg border border-line p-2 text-right"/></Row></Card><Card title="경기 기록"><Row label="리셋 요청 횟수"><Count value={v.resets} down={()=>bump('resets',-1)} up={()=>bump('resets',1,9)}/></Row><label className="mt-4 flex items-center gap-3 rounded-xl bg-surface p-4 text-sm text-error"><input type="checkbox" checked={dq} onChange={e=>setDq(e.target.checked)}/>실격 처리 (경기 0점)</label></Card><footer className="fixed bottom-0 left-0 right-0 border-t border-line bg-white p-3"><div className="mx-auto flex max-w-4xl items-center gap-3"><b className="mr-auto text-2xl">{total}점</b><button onClick={()=>setSaved(true)} className="rounded-2xl border border-line px-4 py-3 text-sm font-bold">{saved?'임시저장됨':'임시저장'}</button><button onClick={()=>setMode('review')} className="rounded-2xl bg-accent px-5 py-3 text-sm font-bold text-white">공동 확인 →</button></div></footer></main>;
+// REF03 같은 계정은 해당 테이블에 고정, 그 외(데모/관리자)는 직접 고른다
+const fixedTable = (judgeId: string) => {
+  const t = /^REF0?([1-8])$/i.exec(judgeId)?.[1];
+  return t ? Number(t) : null;
+};
+
+export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; judgeName: string }) {
+  const { status, history, pending, rejected, submitScore, resendAll } = useRealtime();
+  const { sheets, update } = useSheets(judgeId);
+
+  const fixed = fixedTable(judgeId);
+  const [picked, setPicked] = useState(1);
+  useEffect(() => {
+    try {
+      const t = Number(localStorage.getItem('judge-table'));
+      if (TABLES.includes(t)) setPicked(t);
+    } catch {}
+  }, []);
+  const table = fixed ?? picked;
+
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [mode, setMode] = useState<Mode>('score');
+  const [step, setStep] = useState<0 | 1>(0);
+
+  const match = MATCHES.find((m) => m.id === openId) ?? null;
+  const sheet = match ? (sheets[match.id] ?? newSheet()) : null;
+
+  // 서버 제출 상태: 전송 대기 / 서버 저장됨 / 거부됨
+  const syncOf = (m: Match) => history.find((h) => scoreKey(h) === scoreKey({ matchId: m.id, teamId: m.team }))?.status;
+  const syncLabel = (m: Match): [string, Tone] => {
+    const s = syncOf(m);
+    return s === 'acked' ? ['서버 저장됨', 'info'] : s === 'rejected' ? ['거부됨', 'bad'] : ['전송 대기', 'warn'];
+  };
+
+  const open = (m: Match) => {
+    const s = sheets[m.id];
+    setOpenId(m.id);
+    setStep(0);
+    setMode(s?.status === 'signed' ? 'done' : 'score');
+    if (!s) update(m.id, (x) => x);
+    window.scrollTo(0, 0);
+  };
+  const close = () => setOpenId(null);
+
+  // 확인·서명 중에 점수를 고치면 작성 중으로 되돌리고, 받아둔 서명은 무효로 한다
+  const edit = (fn: (s: Sheet) => Sheet) =>
+    update(match!.id, (s) => {
+      const next = fn(s);
+      return s.status === 'reviewing' ? { ...next, status: 'draft', refSig: undefined, refSignedAt: undefined, teamSig: undefined } : next;
+    });
+
+  const finish = (patch: Partial<Sheet>) => {
+    const signed: Sheet = { ...sheet!, ...patch, status: 'signed', signedAt: Date.now() };
+    update(match!.id, () => signed);
+    submitScore(match!.id, match!.team, calc(signed.values, match!.cat).total, sheetPayload(match!, signed));
+    setMode('done');
+    window.scrollTo(0, 0);
+  };
+
+  if (!match || !sheet) {
+    return (
+      <main className="mx-auto max-w-4xl">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex-1">
+            <p className="text-sm font-bold text-accent">테이블 {table}</p>
+            <h1 className="mt-1 text-3xl font-extrabold">담당 경기</h1>
+            <p className="mt-2 text-sm text-gray-500">채점을 시작할 경기를 선택하세요.</p>
+          </div>
+          {fixed === null && (
+            <label className="text-sm text-gray-500">
+              담당 테이블
+              <select
+                className={`${inputCls} ml-2`}
+                value={table}
+                onChange={(e) => {
+                  setPicked(Number(e.target.value));
+                  try {
+                    localStorage.setItem('judge-table', e.target.value);
+                  } catch {}
+                }}
+              >
+                {TABLES.map((t) => <option key={t} value={t}>{t}번</option>)}
+              </select>
+            </label>
+          )}
+        </div>
+
+        {([1, 2] as const).map((round) => (
+          <Card key={round} title={`${round}차 조별 라운드`}>
+            <div className="space-y-1 p-3">
+              {matchesOfTable(table)
+                .filter((m) => m.round === round)
+                .sort((a, b) => a.wave.localeCompare(b.wave) || (a.field === b.field ? 0 : a.field === '좌' ? -1 : 1))
+                .map((m) => {
+                  const t = teamOf(m.team);
+                  const s = sheets[m.id];
+                  const [text, tone]: [string, Tone] =
+                    !s ? ['미입력', 'neutral']
+                    : s.status === 'draft' ? ['작성 중', 'warn']
+                    : s.status === 'reviewing' ? ['확인·서명 중', 'warn']
+                    : syncLabel(m);
+                  return (
+                    <button key={m.id} type="button" onClick={() => open(m)} className="flex w-full items-center gap-3 rounded-xl px-3 py-3.5 text-left transition-colors hover:bg-surface">
+                      <Chip tone={m.cat === 'S' ? 'info' : 'neutral'}>{CATEGORY_NAMES[m.cat]}</Chip>
+                      <span className="flex-1">
+                        <b className="block">{m.wave}조 · {m.field}</b>
+                        <small className="text-gray-500">{t.id} {t.name} · {t.org}</small>
+                      </span>
+                      {s?.status === 'signed' && <b>{calc(s.values, m.cat).total}점</b>}
+                      <Chip tone={tone}>{text}</Chip>
+                      <span>›</span>
+                    </button>
+                  );
+                })}
+            </div>
+          </Card>
+        ))}
+
+        <Card title="서버 동기화">
+          <div className="space-y-2 px-5 py-4 text-sm">
+            <StatusBadge status={status} />
+            <p className="text-gray-600">
+              {pending > 0 ? `전송 대기 ${pending}건 · 연결되면 자동 전송됩니다` : '서명을 마친 점수는 모두 서버에 저장되었습니다'}
+            </p>
+            {rejected && <p className="text-error">{rejected}</p>}
+            {/* 서버 데이터를 복구한 뒤, 이 기기에 남은 기록을 모두 다시 보낸다 */}
+            <button
+              type="button"
+              className="text-gray-600 underline"
+              onClick={() => confirm('이 기기에 저장된 모든 점수를 서버로 다시 보냅니다. 서버 데이터를 복구한 뒤에 사용하세요.') && resendAll()}
+            >
+              저장된 점수 전체 재전송
+            </button>
+          </div>
+        </Card>
+      </main>
+    );
+  }
+
+  const team = teamOf(match.team);
+
+  if (mode === 'review') {
+    return <ReviewView match={match} team={team} sheet={sheet} onEdit={() => setMode('score')} onSign={() => { setStep(0); setMode('sign'); }} />;
+  }
+
+  if (mode === 'sign') {
+    return (
+      <SignView
+        match={match}
+        team={team}
+        sheet={sheet}
+        judgeName={judgeName}
+        step={step}
+        onRefSigned={(patch) => { update(match.id, (s) => ({ ...s, ...patch })); setStep(1); }}
+        onFinish={finish}
+        onBack={() => setMode('review')}
+      />
+    );
+  }
+
+  if (mode === 'done') {
+    const sync = syncOf(match);
+    const [syncText] = syncLabel(match);
+    return (
+      <div className="mx-auto max-w-xl rounded-2xl border border-line bg-white p-10 text-center">
+        <div className="text-5xl text-accent">✓</div>
+        <h1 className="mt-4 text-2xl font-extrabold">{sync === 'acked' ? '관리자에게 전달했어요' : sync === 'rejected' ? '서버가 거부했어요' : '이 기기에 저장했어요'}</h1>
+        <p className="mt-2 text-sm text-gray-500">
+          {team.id} {team.name} · {match.round}차 · 총점 <b>{calc(sheet.values, match.cat).total}점</b>
+          {sheet.signException && ` · 서명 예외: ${sheet.signException}`}
+        </p>
+        <p className="mt-1 text-sm text-gray-500">
+          {sync === 'acked' ? syncText : sync === 'rejected' ? '운영본부에 알려주세요' : '연결되면 자동으로 전송돼요 (전송 대기)'}
+        </p>
+        <div className="my-5 flex justify-center gap-6">
+          {sheet.refSig && (
+            <div>
+              <p className="text-xs text-gray-500">심판</p>
+              <img src={sheet.refSig} alt="심판 서명" className="mt-1 h-[70px] rounded-lg border border-line bg-white" />
+            </div>
+          )}
+          {sheet.teamSig && (
+            <div>
+              <p className="text-xs text-gray-500">참가팀 대표 {sheet.teamSigner}</p>
+              <img src={sheet.teamSig} alt="참가팀 대표 서명" className="mt-1 h-[70px] rounded-lg border border-line bg-white" />
+            </div>
+          )}
+        </div>
+        <p className="text-xs text-gray-500">서명 완료 후에는 심판이 수정할 수 없어요. 정정이 필요하면 운영본부에 요청하세요.</p>
+        <button type="button" onClick={close} className={`${btnPrimary} mt-6`}>다음 경기로</button>
+      </div>
+    );
+  }
+
+  return (
+    <ScoreView
+      match={match}
+      team={team}
+      sheet={sheet}
+      edit={edit}
+      onBack={close}
+      onReview={() => { update(match.id, (s) => ({ ...s, status: 'reviewing' })); setMode('review'); window.scrollTo(0, 0); }}
+    />
+  );
 }
-function Card({title,children}:{title:string;children:React.ReactNode}){return <section className="mt-4 overflow-hidden rounded-2xl border border-line bg-white"><h2 className="border-b px-5 py-4 font-extrabold">{title}</h2>{children}</section>}
-function Row({label,children}:{label:React.ReactNode;children:React.ReactNode}){return <div className="flex items-center gap-3 border-b border-line px-5 py-3 last:border-0"><div className="min-w-0 flex-1 text-sm">{label}</div>{children}</div>}
-function Count({value,down,up}:{value:number;down:()=>void;up:()=>void}){return <div className="flex items-center rounded-lg border border-line"><button onClick={down} className="px-3 py-2">−</button><b className="min-w-7 text-center">{value}</b><button onClick={up} className="px-3 py-2 text-accent">+</button></div>}
