@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
+import { teamName } from '@/lib/judge/data';
 import { useRealtime, type Standing } from '@/lib/realtime/useRealtime';
 import { StatusBadge } from './LiveLeaderboard';
 
@@ -36,7 +37,7 @@ function Delta({ value }: { value?: number }) {
 function TeamLabel({ team, delta }: { team?: Standing; delta?: number }) {
   return (
     <>
-      <p className="truncate text-base font-semibold sm:text-2xl">{team?.teamId ?? '-'}</p>
+      <p className="truncate text-base font-semibold sm:text-2xl">{team ? teamName(team.teamId) : '-'}</p>
       <p className="flex items-center justify-center gap-2 text-xs tabular-nums sm:text-lg">
         {team && (
           <>

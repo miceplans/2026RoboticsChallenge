@@ -1,5 +1,6 @@
 'use client';
 
+import { teamName } from '@/lib/judge/data';
 import { useRealtime, type Standing, type Status } from '@/lib/realtime/useRealtime';
 
 const statusLabel: Record<Status, { text: string; dot: string }> = {
@@ -44,7 +45,7 @@ function Table({ standings }: { standings: Standing[] }) {
         {standings.map((s, i) => (
           <tr key={s.teamId}>
             <td className="py-2.5 pl-4">{i + 1}</td>
-            <td className="py-2.5">{s.teamId}</td>
+            <td className="py-2.5">{teamName(s.teamId)}</td>
             <td className="py-2.5 pr-4 text-right tabular-nums">{s.total}</td>
           </tr>
         ))}
