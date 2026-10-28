@@ -25,7 +25,7 @@ const ACK_TIMEOUT_MS = 5000;
 const serverUrl = () => process.env.NEXT_PUBLIC_REALTIME_URL ?? `${location.protocol}//${location.hostname}:4000`;
 
 // 서버로 보내는 필드만 추린다 (status 등 로컬 전용 필드 제외)
-const wire = ({ matchId, teamId, points, ts }: Score): Score => ({ matchId, teamId, points, ts });
+const wire = ({ matchId, teamId, points, ts, sheet }: Score): Score => ({ matchId, teamId, points, ts, ...(sheet && { sheet }) });
 
 export function useRealtime() {
   const [status, setStatus] = useState<Status>('connecting');
@@ -141,10 +141,10 @@ export function useRealtime() {
     };
   }, []);
 
-  const submitScore = useCallback((matchId: string, teamId: string, points: number) => {
+  const submitScore = useCallback((matchId: string, teamId: string, points: number, sheet?: Score['sheet']) => {
     const key = scoreKey({ matchId, teamId });
     const ts = Math.max(Date.now(), (ledger.current.get(key)?.ts ?? 0) + 1);
-    const entry: LedgerEntry = { matchId, teamId, points, ts, status: 'pending' };
+    const entry: LedgerEntry = { matchId, teamId, points, ts, sheet, status: 'pending' };
     ledger.current.set(key, entry);
     void saveEntry(entry);
     setRejected(null);
