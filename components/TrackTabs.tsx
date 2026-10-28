@@ -125,7 +125,7 @@ const tracks: Track[] = [
         body: (
           <>
             한국과학창의재단 온라인접수시스템(
-            <a href="https://apply.kosac.re.kr/" target="_blank" rel="noopener noreferrer" className="text-brand underline break-all">
+            <a href="https://apply.kosac.re.kr/" target="_blank" rel="noopener noreferrer" className="text-accent break-all">
               https://apply.kosac.re.kr/
             </a>
             )
@@ -176,10 +176,10 @@ export default function TrackTabs() {
               aria-selected={on}
               aria-controls={`panel-${t.id}`}
               onClick={() => select(t.id)}
-              className={`px-5 py-2.5 rounded-full border text-[15px] font-semibold transition-colors cursor-pointer ${
+              className={`h-10 px-4 rounded-full text-[17px] font-semibold transition-colors cursor-pointer ${
                 on
-                  ? 'bg-brand border-brand text-white'
-                  : 'bg-white border-gray-300 text-gray-600 hover:border-brand hover:text-brand'
+                  ? 'bg-accent-soft text-white'
+                  : 'bg-white border border-line text-gray-500 hover:border-line-hover'
               }`}
             >
               {t.chip}
@@ -197,13 +197,13 @@ export default function TrackTabs() {
           hidden={t.id !== active}
           className="text-gray-700 [word-break:keep-all]"
         >
-          <h2 className="text-lg lg:text-xl font-bold text-gray-900 mb-3">{t.title}</h2>
+          <h2 className="text-3xl font-extrabold text-heading mb-3 [word-break:keep-all]">{t.title}</h2>
           {t.lead && <p className="mb-4 text-[15px] lg:text-base">{t.lead}</p>}
           <a
             href={t.apply.href}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center px-4 py-2 rounded-full bg-brand text-white text-sm font-bold hover:bg-brand-dark transition-colors"
+            className="inline-flex h-10 items-center rounded-2xl bg-accent px-4 text-sm font-semibold text-white hover:bg-accent-soft transition-colors"
           >
             {t.apply.label}
           </a>
@@ -221,7 +221,7 @@ export default function TrackTabs() {
             href={t.file.href}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex px-4 py-2.5 bg-[#258EED]/5 border border-[#258EED]/20 rounded-xl text-sm text-gray-700 hover:bg-[#258EED]/10 hover:border-[#258EED]/30 transition-colors"
+            className="inline-flex h-10 items-center rounded-2xl border border-line bg-white px-4 text-sm font-medium text-heading hover:border-line-hover transition-colors"
           >
             {t.file.label}
           </a>

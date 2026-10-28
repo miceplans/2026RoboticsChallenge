@@ -1,11 +1,27 @@
+@import url('https://cdn.jsdelivr.net/gh/fonts-archive/Paperlogy/Paperlogy.css');
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css');
 @import 'tailwindcss';
 
 @theme {
-  --font-sans: 'Pretendard', -apple-system, 'Noto Sans KR', sans-serif;
-  --color-brand: #1e3178;
-  --color-brand-dark: #182658;
-  --color-sky: #4aadf7;
+  --font-sans: 'Paperlogy', 'Pretendard', -apple-system, 'Noto Sans KR', sans-serif;
+  --font-mono: 'SF Mono', 'JetBrains Mono', monospace;
+
+  /* Accent (로고 블루) */
+  --color-accent: #258eed;
+  --color-accent-soft: #4aadf7;
+
+  /* Neutral */
+  --color-surface: #f9fafb;
+  --color-surface-secondary: #f3f4f6;
+  --color-surface-tertiary: #e5e7eb;
+  --color-line: #dde2e9;
+  --color-line-hover: #b8c0cc;
+  --color-ink: #171717;
+  --color-heading: #111827;
+
+  /* Semantic */
+  --color-warning: #ff9500;
+  --color-error: #ff3b3b;
 }
 
 body {
