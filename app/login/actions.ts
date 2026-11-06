@@ -33,7 +33,8 @@ export async function login(_: string | null, formData: FormData): Promise<strin
 
   const target = homeAreaOf(user.role);
   // 미리보기에서는 같은 호스트의 경로로 이동해 쿠키 도메인 설정 없이 바로 확인한다.
-  redirect(target === areaOf(host) ? '/' : `/${target}`);
+  // 참가자는 로그인 직후 실시간 랭킹 화면으로 진입한다.
+  redirect(user.role === 'user' ? '/contest' : target === areaOf(host) ? '/' : `/${target}`);
 }
 
 export async function logout() {
