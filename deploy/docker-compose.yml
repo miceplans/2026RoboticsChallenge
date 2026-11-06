@@ -1,0 +1,28 @@
+# EC2 에서 실행. /opt/app/.env 에 값 필요 (docs/deploy.md 참고)
+services:
+  web:
+    image: ${ECR}/robotics-web:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      AUTH_SECRET: ${AUTH_SECRET}
+      COOKIE_DOMAIN: .${DOMAIN}
+  realtime:
+    image: ${ECR}/robotics-realtime:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      AUTH_SECRET: ${AUTH_SECRET}
+      CORS_ORIGINS: https://${DOMAIN},https://judge.${DOMAIN},https://admin.${DOMAIN}
+      DB_PATH: /data/scores.db
+    volumes:
+      - /data/realtime:/data   # 별도 EBS 볼륨 (스냅샷 대상)
+  caddy:
+    image: caddy:2.11.9
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+volumes:
+  caddy_data:
