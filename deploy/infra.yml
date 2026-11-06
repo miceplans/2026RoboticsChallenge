@@ -1,0 +1,179 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Robotics Challenge - EC2 1대(web+realtime+caddy), ECR, EBS 데이터 볼륨, GitHub OIDC 배포 롤
+
+Parameters:
+  Domain:        { Type: String, Description: "루트 도메인 (예: example.com)" }
+  GitHubRepo:    { Type: String, Default: miceplans/2026RoboticsChallenge }
+  InstanceType:  { Type: String, Default: t3.small }
+  CreateOidcProvider:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: "계정에 GitHub OIDC provider 가 이미 있으면 false"
+  ExistingOidcProviderArn: { Type: String, Default: '', Description: "위가 false 일 때 기존 provider ARN" }
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+
+Conditions:
+  MakeOidc: !Equals [!Ref CreateOidcProvider, 'true']
+
+Resources:
+  WebRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: robotics-web
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}'
+  RealtimeRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: robotics-realtime
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}'
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement: [{ Effect: Allow, Principal: { Service: ec2.amazonaws.com }, Action: 'sts:AssumeRole' }]
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+      Policies:
+        - PolicyName: read-auth-secret
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/robotics/auth-secret'
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties: { Roles: [!Ref InstanceRole] }
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: http/https only - managed via SSM, no SSH
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80,  ToPort: 80,  CidrIp: 0.0.0.0/0 }
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0 }
+        - { IpProtocol: udp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0 }
+
+  Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref InstanceProfile
+      SecurityGroupIds: [!GetAtt SecurityGroup.GroupId]
+      Tags: [{ Key: Name, Value: robotics-app }]
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euxo pipefail
+          dnf install -y docker
+          systemctl enable --now docker
+          mkdir -p /usr/local/lib/docker/cli-plugins
+          curl -fsSL https://github.com/docker/compose/releases/download/v5.7.0/docker-compose-linux-x86_64 \
+            -o /usr/local/lib/docker/cli-plugins/docker-compose
+          chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+          # 데이터 볼륨 (처음 한 번만 포맷)
+          DEV=/dev/sdf
+          for i in $(seq 1 30); do [ -b "$DEV" ] || [ -b /dev/nvme1n1 ] && break; sleep 2; done
+          [ -b /dev/nvme1n1 ] && DEV=/dev/nvme1n1
+          blkid "$DEV" || mkfs.xfs "$DEV"
+          mkdir -p /data
+          echo "UUID=$(blkid -s UUID -o value $DEV) /data xfs defaults,nofail 0 2" >> /etc/fstab
+          mount -a
+          mkdir -p /data/realtime && chown 1000:1000 /data/realtime   # 컨테이너 node 유저
+
+          mkdir -p /opt/app
+          cat > /opt/app/.env <<ENV
+          DOMAIN=${Domain}
+          AWS_REGION=${AWS::Region}
+          ACCOUNT_ID=${AWS::AccountId}
+          ENV
+          chmod 600 /opt/app/.env
+
+  DataVolume:
+    Type: AWS::EC2::Volume
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      AvailabilityZone: !GetAtt Instance.AvailabilityZone
+      Size: 10
+      VolumeType: gp3
+      Encrypted: true
+      Tags: [{ Key: Name, Value: robotics-data }, { Key: Backup, Value: robotics }]
+  DataAttachment:
+    Type: AWS::EC2::VolumeAttachment
+    Properties: { InstanceId: !Ref Instance, VolumeId: !Ref DataVolume, Device: /dev/sdf }
+
+  Eip:
+    Type: AWS::EC2::EIP
+    Properties: { InstanceId: !Ref Instance }
+
+  # 데이터 볼륨 1시간마다 스냅샷, 7일 보관
+  DlmRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement: [{ Effect: Allow, Principal: { Service: dlm.amazonaws.com }, Action: 'sts:AssumeRole' }]
+      ManagedPolicyArns: [arn:aws:iam::aws:policy/service-role/AWSDataLifecycleManagerServiceRole]
+  SnapshotPolicy:
+    Type: AWS::DLM::LifecyclePolicy
+    Properties:
+      Description: robotics-data hourly
+      State: ENABLED
+      ExecutionRoleArn: !GetAtt DlmRole.Arn
+      PolicyDetails:
+        ResourceTypes: [VOLUME]
+        TargetTags: [{ Key: Backup, Value: robotics }]
+        Schedules:
+          - Name: hourly
+            CreateRule: { Interval: 1, IntervalUnit: HOURS }
+            RetainRule: { Count: 168 }
+            CopyTags: true
+
+  GitHubOidc:
+    Type: AWS::IAM::OIDCProvider
+    Condition: MakeOidc
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Action: 'sts:AssumeRoleWithWebIdentity'
+            Principal:
+              Federated: !If [MakeOidc, !Ref GitHubOidc, !Ref ExistingOidcProviderArn]
+            Condition:
+              StringEquals: { 'token.actions.githubusercontent.com:aud': sts.amazonaws.com }
+              StringLike: { 'token.actions.githubusercontent.com:sub': !Sub 'repo:${GitHubRepo}:ref:refs/heads/main' }
+      Policies:
+        - PolicyName: deploy
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action: [ecr:BatchCheckLayerAvailability, ecr:InitiateLayerUpload, ecr:UploadLayerPart, ecr:CompleteLayerUpload, ecr:PutImage, ecr:BatchGetImage, ecr:GetDownloadUrlForLayer]
+                Resource: [!GetAtt WebRepo.Arn, !GetAtt RealtimeRepo.Arn]
+              - Effect: Allow
+                Action: ssm:SendCommand
+                Resource:
+                  - !Sub 'arn:aws:ssm:${AWS::Region}::document/AWS-RunShellScript'
+                  - !Sub 'arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/${Instance}'
+              - Effect: Allow
+                Action: [ssm:GetCommandInvocation, ssm:ListCommandInvocations, ec2:DescribeInstances]
+                Resource: '*'
+
+Outputs:
+  PublicIp:   { Value: !Ref Eip, Description: "DNS A 레코드: @, judge, admin, rt 전부 이 IP" }
+  DeployRoleArn: { Value: !GetAtt DeployRole.Arn, Description: "GitHub secret AWS_ROLE_ARN" }

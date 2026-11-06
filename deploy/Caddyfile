@@ -1,0 +1,7 @@
+{$DOMAIN}, judge.{$DOMAIN}, admin.{$DOMAIN} {
+	reverse_proxy web:3000
+}
+
+rt.{$DOMAIN} {
+	reverse_proxy realtime:4000
+}
