@@ -23,7 +23,7 @@ type Props = {
 export default function SignView({ match, team, sheet, judgeName, step, onRefSigned, onFinish, onBack }: Props) {
   const pad = useRef<PadHandle>(null);
   const [hasInk, setHasInk] = useState(false);
-  const [signer, setSigner] = useState(team.members[0]);
+  const [signer, setSigner] = useState(team.members[0]); // 명단 첫 번째가 팀장 = 기본 서명자
   const [custom, setCustom] = useState('');
   const [exception, setException] = useState(false);
   const [reason, setReason] = useState('');
@@ -67,7 +67,7 @@ export default function SignView({ match, team, sheet, judgeName, step, onRefSig
           {step === 1 && (
             <>
               <select className={`${inputCls} mt-3 w-full`} value={signer} onChange={(e) => setSigner(e.target.value)}>
-                {team.members.map((m) => <option key={m}>{m}</option>)}
+                {team.members.map((m, i) => <option key={m} value={m}>{i === 0 ? `${m} (팀장)` : m}</option>)}
                 <option value={OTHER}>직접 입력</option>
               </select>
               {signer === OTHER && (
