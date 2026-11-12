@@ -1,7 +1,10 @@
 'use client';
 
 import Image from 'next/image';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
+import { TEAMS, teamName } from '@/lib/judge/data';
+import { CATEGORY_NAMES, type Category } from '@/lib/judge/rules';
+import { BracketCanvas, SEED_ORDER, useRanking } from './TournamentBracket';
 
 type Tab = 'dashboard' | 'scores' | 'template' | 'draw' | 'teams' | 'settings';
 
@@ -9,7 +12,7 @@ const nav: { id: Tab; label: string; icon: string }[] = [
   { id: 'dashboard', label: '대시보드', icon: 'dashboard' },
   { id: 'scores', label: '채점 목록', icon: 'fact_check' },
   { id: 'template', label: '채점표 템플릿', icon: 'table_chart' },
-  { id: 'draw', label: '대진 추첨', icon: 'shuffle' },
+  { id: 'draw', label: '토너먼트 배정', icon: 'shuffle' },
   { id: 'teams', label: '팀 · 계정', icon: 'group' },
   { id: 'settings', label: '설정', icon: 'settings' },
 ];
@@ -217,61 +220,99 @@ function Template() {
   );
 }
 
-function Dropdown({ value, onChange, disabledFor }: { value: number | null; onChange: (n: number) => void; disabledFor: (n: number) => boolean }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, [open]);
-  return (
-    <div ref={ref} className="relative">
-      <button type="button" onClick={() => setOpen(o => !o)} className="flex w-28 items-center justify-between rounded border border-line bg-white px-3 py-1.5 text-sm hover:bg-gray-50">
-        <span className={value ? '' : 'text-gray-400'}>{value ? `${value}번` : '번호 선택'}</span>
-        <Icon name={open ? 'expand_less' : 'expand_more'} />
-      </button>
-      {open && (
-        <ul className="absolute right-0 z-10 mt-1 w-28 rounded border border-line bg-white py-1 shadow-sm">
-          {Array.from({ length: 8 }, (_, i) => i + 1).map(n => (
-            <li key={n}>
-              <button type="button" disabled={disabledFor(n)} onClick={() => { onChange(n); setOpen(false); }} className={`w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 disabled:text-gray-300 disabled:hover:bg-transparent ${value === n ? 'font-semibold' : ''}`}>{n}번</button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
 function Draw() {
-  const teams = ['S01 오로라', 'S02 미라클 메이커스', 'S03 레인보우', 'S04 네오', 'S05 바이너리', 'S06 코스모스', 'S07 쿼크', 'S08 스파크'];
-  const [slots, setSlots] = useState<Record<number, string>>({});
+  const [cat, setCat] = useState<Category>('S');
+  const ranking = useRanking(cat);
+  const [slots, setSlots] = useState<(string | undefined)[]>(Array(16).fill(undefined));
+  const [picked, setPicked] = useState<string>();
   const [applied, setApplied] = useState(false);
-  const complete = Object.keys(slots).length === teams.length;
-  const setSlot = (slot: number, team: string) => setSlots(prev => {
-    const next = { ...prev }; Object.keys(next).forEach(k => { if (next[Number(k)] === team) delete next[Number(k)]; });
-    if (team) next[slot] = team; else delete next[slot]; return next;
-  });
+  const placed = new Set(slots.filter(Boolean));
+  const count = placed.size;
+  const complete = count === Math.min(16, ranking.length) && count > 0;
+
+  const change = (fn: (prev: (string | undefined)[]) => (string | undefined)[]) => {
+    setSlots(fn);
+    setApplied(false);
+  };
+  const switchCat = (c: Category) => {
+    setCat(c);
+    setSlots(Array(16).fill(undefined));
+    setPicked(undefined);
+    setApplied(false);
+  };
+  const onDrop = (slot: number, payload: string) => {
+    const [kind, val] = payload.split(':');
+    change((prev) => {
+      const next = [...prev];
+      if (kind === 'slot') {
+        const from = Number(val);
+        [next[from], next[slot]] = [next[slot], next[from]]; // 칸끼리는 자리 교환
+      } else if (kind === 'team') {
+        const old = next.indexOf(val);
+        if (old >= 0) next[old] = undefined;
+        next[slot] = val;
+      }
+      return next;
+    });
+    setPicked(undefined);
+  };
+  const onClear = (slot: number) => change((prev) => prev.map((t, i) => (i === slot ? undefined : t)));
+  const autoFill = () => change(() => SEED_ORDER.map((seed) => ranking[seed - 1]?.teamId));
+
   return (
     <section className={`${card} p-6`}>
-      <h1 className="text-3xl font-extrabold text-heading">대진 추첨</h1>
-      <p className="mt-2 text-sm text-gray-500">팀마다 추첨 번호를 배정하세요. 같은 번호는 두 팀에 입력할 수 없습니다.</p>
-      <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_1.2fr]">
-        <div className="rounded-2xl bg-surface p-5">
-          <div className="flex items-center justify-between"><h2 className="font-semibold">시니어 · 참가 번호 추첨</h2><span className="text-xs text-gray-500">{Object.keys(slots).length}/8 배정</span></div>
-          <div className="mt-4 space-y-2">{teams.map(team => {
-            const current = Number(Object.entries(slots).find(([, t]) => t === team)?.[0] ?? '');
-            return <div key={team} className="flex items-center gap-3 rounded border border-line bg-white px-3 py-2 text-sm"><span className="flex-1 font-medium">{team}</span><Dropdown value={current || null} onChange={n => setSlot(n, team)} disabledFor={n => Boolean(slots[n]) && current !== n} /></div>;
-          })}</div>
-          <button onClick={() => setSlots({})} className={`${btn} mt-4`}>초기화</button>
+      <h1 className="text-3xl font-extrabold text-heading">팀 토너먼트 배정</h1>
+      <p className="mt-2 text-sm text-gray-500">1차·2차 점수를 합산한 순위입니다. 팀을 끌어서 점선 칸에 놓으면 토너먼트에 반영됩니다. (터치: 팀을 누른 뒤 칸을 누르세요)</p>
+      <nav className="mt-4 flex gap-2 border-b border-line">
+        {(['S', 'J'] as Category[]).map((c) => (
+          <button key={c} onClick={() => switchCat(c)} className={`px-4 py-2 text-sm font-bold ${cat === c ? 'border-b-2 border-accent text-accent' : 'text-gray-500'}`}>{CATEGORY_NAMES[c]}</button>
+        ))}
+      </nav>
+      <div className="mt-6 grid gap-6 xl:grid-cols-[260px_1fr]">
+        <div
+          className="rounded bg-[#e5f3ff] p-4"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            const [kind, val] = e.dataTransfer.getData('text/plain').split(':');
+            if (kind === 'slot') onClear(Number(val));
+          }}
+        >
+          <div className="flex items-center justify-between"><h2 className="font-semibold">합산 순위</h2><span className="text-xs text-gray-500">{count}/{Math.min(16, ranking.length)} 배치</span></div>
+          <ol className="mt-3 space-y-2">
+            {ranking.map((r, i) => {
+              const used = placed.has(r.teamId);
+              return (
+                <li key={r.teamId}>
+                  <button
+                    type="button"
+                    draggable={!used}
+                    disabled={used}
+                    onDragStart={(e) => e.dataTransfer.setData('text/plain', `team:${r.teamId}`)}
+                    onClick={() => setPicked((p) => (p === r.teamId ? undefined : r.teamId))}
+                    className={`flex w-full items-center gap-2 rounded border bg-white px-3 py-2 text-left text-sm ${picked === r.teamId ? 'border-accent' : 'border-line'} ${used ? 'opacity-40' : 'cursor-grab hover:border-line-hover'}`}
+                  >
+                    <span className="w-6 font-bold tabular-nums text-accent">{i + 1}</span>
+                    <span className="min-w-0 flex-1 truncate font-medium">{teamName(r.teamId)}</span>
+                    <span className="tabular-nums text-gray-500">{r.total}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+          <div className="mt-4 flex gap-2">
+            <button onClick={autoFill} className={btn}>시드 자동 배치</button>
+            <button onClick={() => change(() => Array(16).fill(undefined))} className={btn}>초기화</button>
+          </div>
         </div>
-        <div>
-          <div className="flex items-center justify-between"><h2 className="font-semibold">1차 대진표 미리보기</h2><span className={complete ? 'text-xs text-accent' : 'text-xs text-gray-500'}>{complete ? '배정 완료' : '번호를 모두 배정해 주세요'}</span></div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">{[1,2,3,4].map(i => <div key={i} className="rounded-xl border border-line bg-white p-4"><p className="text-xs font-semibold text-gray-500">{String.fromCharCode(64+i)}조 · 테이블 {Math.ceil(i/2)}</p><p className="mt-3 rounded-lg bg-surface px-3 py-2 text-sm">{slots[i] ?? `${i}번 팀 대기`}</p><p className="mt-2 rounded-lg bg-surface px-3 py-2 text-sm">{slots[i+4] ?? `${i+4}번 팀 대기`}</p></div>)}</div>
-          <div className="mt-5 flex flex-wrap gap-2"><button disabled={!complete || applied} onClick={() => setApplied(true)} className={`${btnPrimary} disabled:opacity-40`}>{applied ? '대진표 적용 완료' : '대진표 확정 · 적용'}</button><button className={btn}>대진표 PDF</button></div>
-          {applied && <p className="mt-3 rounded-xl bg-[#eaf5ff] p-3 text-sm text-[#258eed]">대진표가 확정되어 심판 담당 경기와 2차 자동 재배치에 적용됐습니다.</p>}
+        <div className="min-w-0">
+          <div className="overflow-x-auto">
+            <BracketCanvas slots={slots} seeding={{ slots, onDrop, onClear, picked }} />
+          </div>
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <button disabled={!complete || applied} onClick={() => setApplied(true)} className={`${btnPrimary} disabled:opacity-40`}>{applied ? '토너먼트 적용 완료' : '토너먼트 확정 · 적용'}</button>
+            {!complete && <span className="text-xs text-gray-500">모든 팀을 배치해 주세요</span>}
+          </div>
+          {applied && <p className="mt-3 rounded-xl bg-[#eaf5ff] p-3 text-sm text-[#258eed]">토너먼트 대진이 확정됐습니다.</p>}
         </div>
       </div>
     </section>
@@ -286,9 +327,35 @@ function Teams() {
         <button className={`${btn} inline-flex items-center gap-1`}><Icon name="download" />계정 CSV</button>
       </div>
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
-        <Stat title="참가팀" value="32" sub="주니어 16 · 시니어 16" />
+        <Stat title="참가팀" value={String(TEAMS.length)} sub="주니어 16 · 시니어 16" />
         <Stat title="활성 계정" value="29" sub="최근 24시간" />
         <Stat title="미접속" value="3" sub="" />
+      </div>
+      <div className="mt-6 overflow-x-auto rounded-xl border border-line">
+        <table className="w-full min-w-[850px] text-left text-sm">
+          <thead className="bg-accent text-white">
+            <tr>
+              <th className="px-4 py-3">부문</th>
+              <th className="px-4 py-3">팀</th>
+              <th className="px-4 py-3">팀코드</th>
+              <th className="px-4 py-3">지역 · 소속</th>
+              <th className="px-4 py-3">지도자</th>
+              <th className="px-4 py-3">참가자</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {TEAMS.map((team) => (
+              <tr key={team.id}>
+                <td className="px-4 py-3">{team.cat === 'J' ? '주니어' : '시니어'}</td>
+                <td className="px-4 py-3 font-medium">{team.id} · {team.name}</td>
+                <td className="px-4 py-3">{team.code}</td>
+                <td className="px-4 py-3">{team.region} · {team.org}</td>
+                <td className="px-4 py-3">{team.coach}</td>
+                <td className="px-4 py-3">{team.members.join(', ')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
       <button className={`${btn} mt-6`}>비밀번호 일괄 재발급</button>
     </section>

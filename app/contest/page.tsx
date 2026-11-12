@@ -1,12 +1,12 @@
 import Header from '@/components/Header';
-import RankingBoard from '@/components/RankingBoard';
+import ContestView from '@/components/ContestView';
 
 export default function ContestPage() {
   return (
     <>
       <Header />
       <main>
-        <RankingBoard />
+        <ContestView />
       </main>
     </>
   );
