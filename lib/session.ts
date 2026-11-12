@@ -1,6 +1,7 @@
 export type Role = 'user' | 'judge' | 'admin';
 
-export type Session = { id: string; name: string; role: Role; exp: number };
+// teamId: 본선 명단 기반 회원가입으로 팀에 연결된 참가자만 가진다
+export type Session = { id: string; name: string; role: Role; teamId?: string; exp: number; v: 2 };
 
 export const SESSION_COOKIE = 'session';
 export const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
@@ -20,8 +21,8 @@ const hmacKey = () => crypto.subtle.importKey('raw', enc.encode(secret), { name:
 
 const sign = async (data: string) => toB64Url(await crypto.subtle.sign('HMAC', await hmacKey(), enc.encode(data)));
 
-export async function createSessionToken(user: Omit<Session, 'exp'>) {
-  const payload = toB64Url(enc.encode(JSON.stringify({ ...user, exp: Date.now() + SESSION_MAX_AGE * 1000 })));
+export async function createSessionToken(user: Omit<Session, 'exp' | 'v'>) {
+  const payload = toB64Url(enc.encode(JSON.stringify({ ...user, exp: Date.now() + SESSION_MAX_AGE * 1000, v: 2 })));
   return `${payload}.${await sign(payload)}`;
 }
 
@@ -31,7 +32,7 @@ export async function verifySessionToken(token: string | undefined): Promise<Ses
   if (!payload || !sig || (await sign(payload)) !== sig) return null;
   try {
     const session = JSON.parse(new TextDecoder().decode(Uint8Array.from(fromB64Url(payload), (c) => c.charCodeAt(0)))) as Session;
-    return session.exp > Date.now() ? session : null;
+    return session.v === 2 && session.exp > Date.now() ? session : null;
   } catch {
     return null;
   }

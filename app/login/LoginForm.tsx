@@ -1,31 +1,35 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState } from 'react';
 import { login } from './actions';
 
-export default function LoginForm() {
+type LoginArea = 'judge' | 'admin';
+
+export default function LoginForm({ area }: { area?: LoginArea }) {
   const [error, action, pending] = useActionState(login, null);
+  const isStaff = Boolean(area);
+  const title = area === 'admin' ? '관리자 로그인' : area === 'judge' ? '심판 로그인' : '로그인';
+  const description = area
+    ? '발급받은 운영 계정으로 로그인하세요.'
+    : '발급받은 계정 또는 회원가입한 계정으로 로그인하세요.';
 
   return (
     <form action={action} className="w-full max-w-sm space-y-4">
       <div>
-        <h1 className="text-3xl font-extrabold text-heading">로그인</h1>
-        <p className="mt-2 text-sm text-gray-500">아무 아이디와 비밀번호로도 화면을 확인할 수 있습니다.</p>
+        <h1 className="text-3xl font-extrabold text-heading">{title}</h1>
+        <p className="mt-2 text-sm text-gray-500">{description}</p>
       </div>
-      <input name="id" placeholder="아이디 (표시 이름)" required className="w-full rounded-lg border border-line bg-white px-4 py-3 outline-none focus:border-accent" />
+      {area && <input type="hidden" name="area" value={area} />}
+      <input name="id" placeholder="이메일 또는 아이디" required className="w-full rounded-lg border border-line bg-white px-4 py-3 outline-none focus:border-accent" />
       <input name="password" type="password" placeholder="비밀번호" required className="w-full rounded-lg border border-line bg-white px-4 py-3 outline-none focus:border-accent" />
-      <label className="block text-sm font-medium text-gray-700">
-        확인할 화면
-        <select name="role" defaultValue="admin" className="mt-1.5 w-full rounded-lg border border-line bg-white px-4 py-3">
-          <option value="admin">관리자</option>
-          <option value="judge">심판</option>
-          <option value="user">참가팀</option>
-        </select>
-      </label>
       {error && <p className="text-sm text-error">{error}</p>}
       <button disabled={pending} className="w-full rounded-2xl bg-accent py-3 text-sm font-semibold text-white hover:bg-accent-soft transition-colors disabled:opacity-50">
         {pending ? '로그인 중...' : '로그인'}
       </button>
+      <p className="text-center text-sm text-gray-500">
+        {isStaff ? <Link href="/login" className="font-semibold text-accent hover:underline">공용 로그인으로 이동</Link> : <>참가팀이신가요? <Link href="/signup" className="font-semibold text-accent hover:underline">회원가입</Link></>}
+      </p>
     </form>
   );
 }

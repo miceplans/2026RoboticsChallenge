@@ -67,7 +67,10 @@ export default async function Header() {
                 </form>
               </>
             ) : (
-              <Link href="/login" className="inline-flex h-10 items-center rounded-2xl bg-accent px-4 text-sm font-semibold text-white hover:bg-accent-soft transition-colors">로그인</Link>
+              <>
+                <Link href="/login" className="text-[15px] font-semibold text-gray-700 hover:text-heading">로그인</Link>
+                <Link href="/signup" className="inline-flex h-10 items-center rounded-2xl bg-accent px-4 text-sm font-semibold text-white hover:bg-accent-soft transition-colors">회원가입</Link>
+              </>
             )}
             <span aria-hidden className="h-4 w-px bg-line" />
             {sns.map(({ label, href, icon }) => (

@@ -5,24 +5,35 @@ import { redirect } from 'next/navigation';
 import { demoUsers } from '@/lib/auth';
 import { areaOf, homeAreaOf } from '@/lib/hosts';
 import { createSessionToken, SESSION_COOKIE, SESSION_MAX_AGE } from '@/lib/session';
+import { verifyRegisteredUser } from '@/lib/users';
 
+type LoginArea = 'judge' | 'admin';
+
+// 발급받은 데모 계정(demoUsers) 또는 본선 명단 기반으로 직접 가입한 계정으로 로그인한다.
 export async function login(_: string | null, formData: FormData): Promise<string | null> {
-  const id = String(formData.get('id') ?? '');
+  const id = String(formData.get('id') ?? '').trim();
   const password = String(formData.get('password') ?? '');
-  const requestedRole = String(formData.get('role') ?? 'admin');
-  const demoUser = demoUsers.find((u) => u.id === id && u.password === password);
-  // 데모 화면 확인용: 지정된 데모 계정이 아니어도 어떤 값이든 로그인할 수 있다.
-  const user = demoUser ?? {
-    id: id.trim() || 'preview',
-    name: id.trim() || '미리보기',
-    role: requestedRole === 'judge' ? 'judge' : requestedRole === 'user' ? 'user' : 'admin' as const,
-  };
+  const areaValue = String(formData.get('area') ?? '');
+  const requestedArea: LoginArea | '' = areaValue === 'judge' || areaValue === 'admin' ? areaValue : '';
+
+  const demo = demoUsers.find((u) => u.id === id && u.password === password);
+  const registered = demo ? null : verifyRegisteredUser(id, password);
+  if (!demo && !registered) return '아이디 또는 비밀번호가 올바르지 않습니다.';
+
+  const user = demo ?? { id: registered!.id, name: registered!.name, role: 'user' as const, teamId: registered!.teamId };
+
+  if (requestedArea === 'judge' && user.role !== 'judge' && user.role !== 'admin') {
+    return '심판 계정으로 로그인해 주세요.';
+  }
+  if (requestedArea === 'admin' && user.role !== 'admin') {
+    return '관리자 계정으로 로그인해 주세요.';
+  }
 
   const h = await headers();
   const host = h.get('host') ?? '';
 
   // 서브도메인 간 세션 공유가 필요하면 COOKIE_DOMAIN=.example.com 설정
-  (await cookies()).set(SESSION_COOKIE, await createSessionToken({ id: user.id, name: user.name, role: user.role }), {
+  (await cookies()).set(SESSION_COOKIE, await createSessionToken(user), {
     httpOnly: true,
     sameSite: 'lax',
     secure: h.get('x-forwarded-proto') === 'https',
@@ -31,8 +42,7 @@ export async function login(_: string | null, formData: FormData): Promise<strin
     domain: process.env.COOKIE_DOMAIN || undefined,
   });
 
-  const target = homeAreaOf(user.role);
-  // 미리보기에서는 같은 호스트의 경로로 이동해 쿠키 도메인 설정 없이 바로 확인한다.
+  const target = requestedArea || homeAreaOf(user.role);
   redirect(target === areaOf(host) ? '/' : `/${target}`);
 }
 

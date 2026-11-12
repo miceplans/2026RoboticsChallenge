@@ -3,7 +3,7 @@ import { areaOf, areaRoles } from '@/lib/hosts';
 import { SESSION_COOKIE, verifySessionToken } from '@/lib/session';
 
 // 로그인/로그아웃은 모든 호스트에서 공통으로 사용
-const shared = ['/login'];
+const shared = ['/login', '/signup', '/judge/login', '/admin/login'];
 const isShared = (path: string) => shared.some((p) => path === p || path.startsWith(`${p}/`));
 
 export async function proxy(request: NextRequest) {
@@ -40,8 +40,19 @@ export async function proxy(request: NextRequest) {
   // 권한 없는 역할은 존재 자체를 숨긴다
   if (!areaRoles[area].includes(session.role)) return rewriteTo('/404');
 
+  // 영역 서브도메인은 브라우저 주소에서 루트(`/`)를 쓰지만,
+  // 직접 `/judge` 또는 `/admin`으로 들어오는 경우도 같은 페이지로
+  // 처리한다. 접두사를 이미 포함한 요청에 다시 붙이면 `/judge/judge`
+  // 같은 존재하지 않는 경로로 rewrite 되어 404가 된다.
+  const areaPrefix = `/${area}`;
+  let areaPath = pathname;
+  // 이전에 생성된 `/judge/judge`·`/admin/admin` 링크도 정상 경로로
+  // 복구해, 브라우저가 잘못된 주소를 계속 재요청하지 않게 한다.
+  while (areaPath === areaPrefix || areaPath.startsWith(`${areaPrefix}/`)) {
+    areaPath = areaPath.slice(areaPrefix.length) || '/';
+  }
   const url = request.nextUrl.clone();
-  url.pathname = `/${area}${pathname === '/' ? '' : pathname}`;
+  url.pathname = `${areaPrefix}${areaPath === '/' ? '' : areaPath}`;
   return NextResponse.rewrite(url);
 }
 

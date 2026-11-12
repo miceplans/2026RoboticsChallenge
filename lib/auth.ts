@@ -5,8 +5,8 @@ import { SESSION_COOKIE, verifySessionToken, type Role } from './session';
 // TODO: 실제 DB/인증 연동 시 교체. 현재는 데모용 계정.
 export const demoUsers = [
   { id: 'user1', password: 'user1234', name: '일반 참가자', role: 'user' },
-  { id: 'judge1', password: 'judge1234', name: '심판', role: 'judge' },
-  { id: 'admin1', password: 'admin1234', name: '관리자', role: 'admin' },
+  { id: 'judge1@gmail.com', password: 'mice1170', name: '심사위원', role: 'judge' },
+  { id: 'office1170@naver.com', password: 'mice1170', name: '관리자', role: 'admin' },
 ] as const;
 
 export async function getSession() {
