@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { Server } from 'socket.io';
-import { getStandings, saveScore } from './db.ts';
+import { getStandings, getTeamScores, saveScore } from './db.ts';
 import { sessionFromCookie, type Session } from './session.ts';
 
 const PORT = Number(process.env.PORT ?? 4000);
@@ -10,6 +10,7 @@ const BROADCAST_MS = 500;
 
 type SubmitPayload = { matchId: unknown; teamId: unknown; points: unknown; ts: unknown; sheet?: unknown };
 type Result = { ok: true } | { ok: false; error: string };
+type TeamScoresResult = { ok: true; scores: ReturnType<typeof getTeamScores> } | { ok: false; error: string };
 
 // 채점지(서명 이미지 포함) 상한. 초과분은 거부한다.
 const MAX_SHEET_BYTES = 400 * 1024;
@@ -47,12 +48,24 @@ const httpServer = createServer((req, res) => {
     res.setHeader('Access-Control-Allow-Headers', 'content-type');
     res.setHeader('Vary', 'Origin');
   }
-  const json = (status: number, body: Result) => {
+  const json = (status: number, body: Result | TeamScoresResult) => {
     res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
   };
 
-  if (req.url === '/health') return void res.end('ok');
-  if (req.url !== '/score') return void res.writeHead(404).end();
+  const url = new URL(req.url ?? '/', 'http://localhost');
+  if (url.pathname === '/health') return void res.end('ok');
+
+  // 팀 채점 표: 참가자는 자기 팀만, 심판/관리자는 모든 팀을 조회할 수 있다
+  if (url.pathname === '/team-scores' && req.method === 'GET') {
+    const session = sessionFromCookie(req.headers.cookie);
+    if (!session) return json(401, { ok: false, error: 'unauthorized' });
+    const teamId = url.searchParams.get('teamId') ?? '';
+    if (!teamId || teamId.length > 64) return json(400, { ok: false, error: 'invalid' });
+    if (session.role === 'user' && session.teamId !== teamId) return json(403, { ok: false, error: 'forbidden' });
+    return json(200, { ok: true, scores: getTeamScores(teamId) });
+  }
+
+  if (url.pathname !== '/score') return void res.writeHead(404).end();
   if (req.method === 'OPTIONS') return void res.writeHead(204).end();
   if (req.method !== 'POST') return void res.writeHead(405).end();
 

@@ -9,6 +9,7 @@ export type ScoreInput = {
   sheet: string | null; // 채점지 전체(JSON 문자열). 점수만 보내는 경우 null
 };
 export type Standing = { teamId: string; total: number };
+export type TeamScore = { matchId: string; judgeId: string; points: number; ts: number };
 
 const db = new DatabaseSync(process.env.DB_PATH ?? 'scores.db');
 db.exec(`
@@ -44,5 +45,12 @@ const standings = db.prepare(`
   ORDER BY total DESC, SUM(points) DESC, team_id
 `);
 
+// 한 팀의 채점 표(심판별 점수). 채점지 원본(sheet)은 포함하지 않는다.
+const teamScores = db.prepare(`
+  SELECT match_id AS matchId, judge_id AS judgeId, points, ts
+  FROM scores WHERE team_id = ? ORDER BY match_id, judge_id
+`);
+
 export const saveScore = (s: ScoreInput) => upsert.run(s.matchId, s.teamId, s.judgeId, s.points, s.ts, s.sheet);
 export const getStandings = () => standings.all() as Standing[];
+export const getTeamScores = (teamId: string) => teamScores.all(teamId) as TeamScore[];

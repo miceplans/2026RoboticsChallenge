@@ -2,7 +2,8 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 
 // lib/session.ts (Next) 와 동일한 토큰 포맷: base64url(payload).base64url(HMAC-SHA256)
 export type Role = 'user' | 'judge' | 'admin';
-export type Session = { id: string; name: string; role: Role; exp: number };
+// teamId: 본선 명단 기반 회원가입으로 팀에 연결된 참가자만 가진다 (lib/session.ts 와 동일 포맷)
+export type Session = { id: string; name: string; role: Role; teamId?: string; exp: number; v: 2 };
 
 const SESSION_COOKIE = 'session';
 const secret = process.env.AUTH_SECRET ?? 'dev-only-secret-change-me';
@@ -24,7 +25,7 @@ export function sessionFromCookie(cookieHeader: string | undefined): Session | n
 
   try {
     const session = JSON.parse(Buffer.from(payload, 'base64url').toString()) as Session;
-    return session.exp > Date.now() ? session : null;
+    return session.v === 2 && session.exp > Date.now() ? session : null;
   } catch {
     return null;
   }
