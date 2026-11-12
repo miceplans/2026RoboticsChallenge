@@ -2,26 +2,60 @@
 
 import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
-import { teamName } from '@/lib/judge/data';
+import ConnectionToast from './ConnectionToast';
 import { useRealtime, type Standing } from '@/lib/realtime/useRealtime';
-import { StatusBadge } from './LiveLeaderboard';
+import { TEAMS, teamName } from '@/lib/judge/data';
+import { CATEGORY_NAMES, type Category } from '@/lib/judge/rules';
 
 // 시상대 위 카드: 1등이 가운데, 2등 왼쪽, 3등 오른쪽 (위치는 시상대 이미지 기준 %)
 const podium = [
-  { rank: 1, pos: 'left-[38.3%] top-[4.5%]' },
-  { rank: 2, pos: 'left-[11.9%] top-[16.6%]' },
-  { rank: 3, pos: 'left-[65.9%] top-[26.2%]' },
+  { left: '38.3%', top: '4.5%' },
+  { left: '11.9%', top: '16.6%' },
+  { left: '65.9%', top: '26.2%' },
 ] as const;
 
+// 부문별 순위: 시니어/주니어는 각각 16팀이라 부문마다 따로 집계해서 보여준다
+const CATEGORIES: Category[] = ['S', 'J'];
+const PER_CATEGORY = 16;
+const catOf = new Map(TEAMS.map((t) => [t.id, t.cat]));
+
 // 개발 중 디자인 확인용 목데이터: 실제 점수가 없을 때만, 프로덕션이 아닐 때만 쓴다
-const MOCK: Standing[] = Array.from({ length: 10 }, (_, i) => ({ teamId: `팀명 ${i + 1}`, total: 100 - i * 7 }));
-const MOCK_DELTA: Record<string, number> = {
-  '팀명 1': 2, '팀명 2': -1, '팀명 3': 0, '팀명 4': 1, '팀명 5': -2, '팀명 6': 3, '팀명 7': 0, '팀명 8': -1, '팀명 9': 1, '팀명 10': -3,
-};
+const MOCK: Standing[] = CATEGORIES.flatMap((cat) =>
+  TEAMS.filter((t) => t.cat === cat).map((team, i) => ({ teamId: team.id, total: 100 - i * 5 })),
+);
+const MOCK_DELTA: Record<string, number> = Object.fromEntries(
+  CATEGORIES.flatMap((cat) =>
+    TEAMS.filter((t) => t.cat === cat).map((team, i) => [team.id, [2, -1, 0, 1, -2, 3, 0, -1, 1, -3, 0, 2, 0, -1, 1, 0][i]]),
+  ),
+);
 const useMock = process.env.NODE_ENV !== 'production';
 
 // 이전 집계 대비 순위 변화: 양수면 상승, 음수면 하락
 type Deltas = Record<string, number>;
+
+// 점수가 바뀌면 이전 값에서 새 값까지 숫자가 부드럽게 올라가거나 내려간다
+function CountUp({ value }: { value: number }) {
+  const [shown, setShown] = useState(value);
+  const from = useRef(value);
+  useEffect(() => {
+    const start = from.current;
+    if (start === value || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      from.current = value;
+      setShown(value);
+      return;
+    }
+    const t0 = performance.now();
+    let raf = requestAnimationFrame(function tick(now) {
+      const p = Math.min((now - t0) / 700, 1);
+      const v = start + (value - start) * (1 - (1 - p) ** 3);
+      from.current = v;
+      setShown(p < 1 ? Math.round(v) : value);
+      if (p < 1) raf = requestAnimationFrame(tick);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [value]);
+  return <>{shown}</>;
+}
 
 function Delta({ value }: { value?: number }) {
   if (!value) return <span className="text-sm font-medium text-gray-400">–</span>;
@@ -41,7 +75,7 @@ function TeamLabel({ team, delta }: { team?: Standing; delta?: number }) {
       <p className="flex items-center justify-center gap-2 text-xs tabular-nums sm:text-lg">
         {team && (
           <>
-            {team.total}점 <Delta value={delta} />
+            <CountUp value={team.total} />점 <Delta value={delta} />
           </>
         )}
       </p>
@@ -53,23 +87,36 @@ function Podium({ standings, deltas }: { standings: Standing[]; deltas: Deltas }
   return (
     <div className="relative mx-auto mt-16 aspect-[596/397] w-full max-w-[780px]">
       <Image src="/images/podium.png" alt="" fill sizes="780px" priority className="object-cover" />
-      {podium.map(({ rank, pos }) => (
-        <div
-          key={rank}
-          className={`absolute ${pos} w-[23.3%] min-w-[84px] overflow-hidden rounded-2xl border border-line bg-white px-2 py-2 text-center sm:px-[24px] sm:py-[18px]`}
-        >
-          <TeamLabel team={standings[rank - 1]} delta={deltas[standings[rank - 1]?.teamId]} />
-        </div>
-      ))}
+      {/* 카드를 팀 기준으로 그려서, 순위가 바뀌면 다른 단으로 미끄러지듯 이동한다 */}
+      {standings.slice(0, 3).map((team, i) => {
+        const { left, top } = podium[i];
+        return (
+          <div
+            key={team.teamId}
+            style={{ left, top }}
+            className="rank-enter absolute w-[23.3%] min-w-[84px] overflow-hidden rounded-2xl border border-line bg-white px-2 py-2 text-center transition-[left,top] duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none sm:px-[24px] sm:py-[18px]"
+          >
+            <TeamLabel team={team} delta={deltas[team.teamId]} />
+          </div>
+        );
+      })}
     </div>
   );
 }
 
+// 행 높이 72px + 간격 8px
+const ROW = 80;
+
 function RankList({ standings, deltas }: { standings: Standing[]; deltas: Deltas }) {
+  const rows = standings.slice(3, PER_CATEGORY);
   return (
-    <ol className="mx-auto mt-10 flex w-full max-w-[960px] flex-col gap-2">
-      {standings.slice(3, 10).map((s, i) => (
-        <li key={s.teamId} className="flex items-center gap-5">
+    <ol className="relative mx-auto mt-10 w-full max-w-[960px]" style={{ height: rows.length * ROW }}>
+      {rows.map((s, i) => (
+        <li
+          key={s.teamId}
+          style={{ transform: `translateY(${i * ROW}px)` }}
+          className="rank-fade absolute inset-x-0 top-0 flex items-center gap-5 transition-transform duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+        >
           <span className="w-[50px] shrink-0 text-[32px] font-semibold text-heading">{i + 4}</span>
           <div className="h-[72px] min-w-0 flex-1 overflow-hidden rounded-2xl border border-line bg-white px-[19px] py-[14px] sm:[&_p:first-child]:!text-xl sm:[&_p:last-child]:!text-base [&_p:last-child]:!justify-start">
             <TeamLabel team={s} delta={deltas[s.teamId]} />
@@ -80,22 +127,29 @@ function RankList({ standings, deltas }: { standings: Standing[]; deltas: Deltas
   );
 }
 
-export default function RankingBoard() {
+export default function RankingBoard({ switcher }: { switcher?: React.ReactNode }) {
   const { status, standings: live, standingsAt } = useRealtime();
   const isMock = live.length === 0 && useMock;
-  const standings = isMock ? MOCK : live;
+  const all = isMock ? MOCK : live;
+  const [cat, setCat] = useState<Category>('S');
+  const standings = all.filter((t) => catOf.get(t.teamId) === cat);
 
-  // 직전 집계의 순위를 기억해 두었다가 새 집계가 오면 변화량을 계산한다
+  // 직전 집계의 순위를 기억해 두었다가 새 집계가 오면 변화량을 계산한다 (순위는 부문 안에서 센다)
   const prevRanks = useRef(new Map<string, number>());
   const [liveDeltas, setLiveDeltas] = useState<Deltas>({});
   useEffect(() => {
     if (live.length === 0) return;
-    const next = new Map(live.map((t, i) => [t.teamId, i + 1]));
+    const count: Partial<Record<Category, number>> = {};
+    const ranked = live.map((t) => {
+      const c = catOf.get(t.teamId);
+      const rank = c ? (count[c] = (count[c] ?? 0) + 1) : 0;
+      return [t.teamId, rank] as const;
+    });
     const prev = prevRanks.current;
-    if (prev.size > 0 && live.some((t, i) => prev.get(t.teamId) !== i + 1)) {
-      setLiveDeltas(Object.fromEntries(live.map((t, i) => [t.teamId, (prev.get(t.teamId) ?? i + 1) - (i + 1)])));
+    if (prev.size > 0 && ranked.some(([id, rank]) => prev.get(id) !== rank)) {
+      setLiveDeltas(Object.fromEntries(ranked.map(([id, rank]) => [id, (prev.get(id) ?? rank) - rank])));
     }
-    prevRanks.current = next;
+    prevRanks.current = new Map(ranked);
   }, [live]);
   const deltas = isMock ? MOCK_DELTA : liveDeltas;
   return (
@@ -103,20 +157,32 @@ export default function RankingBoard() {
       <div className="relative mx-auto max-w-[1280px] px-6 pt-12">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-3xl font-extrabold text-heading [word-break:keep-all]">대회 진행</h1>
-          <span className="[&_span]:!text-gray-500"><StatusBadge status={status} /></span>
+          {switcher}
         </div>
+        <nav className="flex gap-2 border-b border-line">
+          {CATEGORIES.map((c) => (
+            <button
+              key={c}
+              onClick={() => setCat(c)}
+              className={`px-4 py-3 text-base font-bold ${cat === c ? 'border-b-2 border-accent text-accent' : 'text-gray-500'}`}
+            >
+              {CATEGORY_NAMES[c]}
+            </button>
+          ))}
+        </nav>
         {standings.length === 0 ? (
-          <p className="mt-24 text-center text-gray-500">아직 집계된 점수가 없습니다.</p>
+          <p className="mt-24 text-center text-gray-500">아직 집계된 {CATEGORY_NAMES[cat]} 점수가 없습니다.</p>
         ) : (
           <>
-            <Podium standings={standings} deltas={deltas} />
-            <RankList standings={standings} deltas={deltas} />
+            <Podium key={`podium-${cat}`} standings={standings} deltas={deltas} />
+            <RankList key={`list-${cat}`} standings={standings} deltas={deltas} />
             {standingsAt && (
               <p className="mt-6 text-center text-xs text-gray-400">마지막 수신 {new Date(standingsAt).toLocaleTimeString('ko-KR')}</p>
             )}
           </>
         )}
       </div>
+      <ConnectionToast status={status} />
     </section>
   );
 }
