@@ -40,6 +40,7 @@ pnpm dev                                # Next :3000
 | `CORS_ORIGINS` | 서버 | 허용 Origin, 쉼표 구분 (메인/judge/admin 서브도메인 전부) |
 | `PORT` | 서버 | 기본 4000 |
 | `DB_PATH` | 서버 | SQLite 파일 경로. **스냅샷 대상 볼륨 위**에 둘 것 |
+| `USERS_DB_PATH` | Next | 참가자 가입 계정 SQLite 경로 (기본 `users.db`). **스냅샷 대상 볼륨 위**에 둘 것 |
 
 ## 데이터 유실 방지 (점수를 잃지 않는 장치)
 
@@ -172,6 +173,7 @@ MVP(단일 HTML) 중 심판 흐름을 우리 코드로 옮긴 것이다. 로컬 
 |---|---|
 | `/judge` (`JudgeConsole`) | 연결됨 — 제출, 오프라인 큐, 제출 상태, 전체 재전송 |
 | `/contest` (`RankingBoard`) | 연결됨 — 순위표 실시간 구독 |
+| `/mypage` (`ParticipantPortal`) | 연결됨 — 랭킹 탭 순위표 구독, 내 점수표 탭 실시간 팀 점수·순위 |
 
 운영 전에 정리할 것:
 
