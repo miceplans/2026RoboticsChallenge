@@ -16,6 +16,7 @@ import {
 
 export type Standing = { teamId: string; total: number };
 export type Status = 'connecting' | 'online' | 'offline' | 'denied';
+export type TeamScore = { matchId: string; judgeId: string; points: number; ts: number };
 type Result = { ok: true } | { ok: false; error: string };
 
 const RETRY_MS = 3000;
@@ -166,4 +167,44 @@ export function useRealtime() {
 
   const pending = history.filter((e) => e.status === 'pending').length;
   return { status, standings, standingsAt, history, pending, rejected, submitScore, resendAll };
+}
+
+// 팀 채점 표 (심판별 제출 점수). 제출 빈도가 낮은 경량 데이터라 소켓 구독 대신 짧은 폴로 읽는다.
+// 로그인한 참가자는 자기 팀만 조회할 수 있다 (서버가 세션의 teamId 와 비교).
+export function useTeamScores(teamId: string | undefined) {
+  const [scores, setScores] = useState<TeamScore[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    setScores([]);
+    setLoaded(false);
+    if (!teamId) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await fetch(`${serverUrl()}/team-scores?teamId=${encodeURIComponent(teamId)}`, { credentials: 'include' });
+        if (res.status === 401 || res.status === 403) {
+          // 로그인 만료/타 팀 조회: 마지막 값을 유지하지 않고 비운다
+          if (alive) setScores([]);
+          return;
+        }
+        if (!res.ok) return; // 서버 끊김 등: 마지막 값 유지
+        const data = (await res.json()) as { ok: true; scores: TeamScore[] } | { ok: false };
+        if (alive && data.ok) {
+          setScores(data.scores);
+          setLoaded(true);
+        }
+      } catch {
+        // 네트워크 오류: 다음 주기에 재시도
+      }
+    };
+    void load();
+    const timer = setInterval(() => {
+      if (!document.hidden) void load();
+    }, 5000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [teamId]);
+  return { scores, loaded };
 }
