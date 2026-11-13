@@ -6,7 +6,7 @@
 ## 구성
 
 ```
-브라우저 (Next, Vercel) ──WebSocket──▶ 실시간 서버 (Node, EC2 1대, 서울 리전)
+브라우저 (Next, EC2 docker) ──WebSocket──▶ 실시간 서버 (Node, EC2 1대, 서울 리전)
    │  └─ 끊기면 HTTP POST /score ───────▶   └─ SQLite (별도 EBS 볼륨)
    └─ 미확인 점수: IndexedDB 큐
 ```
@@ -17,9 +17,11 @@
 
 | 위치 | 파일 |
 |---|---|
-| 서버 | `server/src/index.ts` (소켓 + HTTP), `db.ts`, `session.ts` |
+| 서버 | `server/src/index.ts` (소켓 + HTTP), `db.ts`, `session.ts`, `schema.ts` (users·teams DDL 단일 출처) |
 | 클라이언트 | `lib/realtime/useRealtime.ts`, `lib/realtime/outbox.ts` |
 | UI | `components/JudgeConsole.tsx`, `components/LiveLeaderboard.tsx` |
+
+스키마 관리: `server/src/schema.ts` 가 users·teams DDL 의 단일 출처이고, `lib/contest-db.ts` 의 복사본은 `node scripts/sync-schema.mjs` 로 갱신한다 (직접 편집 금지). 나머지 테이블 DDL 은 `server/src/db.ts` 가 정의하고 시작 시 컬럼 추가 마이그레이션을 수행한다. 두 프로세스가 같은 SQLite 파일을 쓰므로 양쪽 모두 `WAL + busy_timeout` 을 설정한다.
 
 ## 실행
 
@@ -34,13 +36,15 @@ pnpm dev                                # Next :3000
 
 | 변수 | 위치 | 설명 |
 |---|---|---|
-| `AUTH_SECRET` | Next, 서버 | **반드시 같은 값.** 기본값은 개발용이므로 운영에서 필수 설정 |
+| `AUTH_SECRET` | Next, 서버 | **반드시 같은 값.** 기본값은 개발용이며, 운영(`NODE_ENV=production`)에서 미설정 시 서버가 기동되지 않는다 |
+| `ADMIN_INITIAL_PASSWORD` | 서버 | 최초 기동 시 만들 관리자 계정 비밀번호. 운영에서 관리자 계정이 0개일 때 필수 |
+| `JUDGE_INITIAL_PASSWORD` | 서버 | 최초 기동 시 `REF01`~`REF08` 심판 계정을 같이 만들 때 쓸 비밀번호 (선택) |
 | `COOKIE_DOMAIN` | Next | `.example.com` — 서브도메인 간 세션 공유 |
 | `NEXT_PUBLIC_REALTIME_URL` | Next | 실시간 서버 주소. 빌드 시점에 번들에 포함되므로 바꾸면 재빌드 |
 | `CORS_ORIGINS` | 서버 | 허용 Origin, 쉼표 구분 (메인/judge/admin 서브도메인 전부) |
 | `PORT` | 서버 | 기본 4000 |
-| `DB_PATH` | 서버 | SQLite 파일 경로. **스냅샷 대상 볼륨 위**에 둘 것 |
-| `USERS_DB_PATH` | Next | 참가자 가입 계정 SQLite 경로 (기본 `users.db`). **스냅샷 대상 볼륨 위**에 둘 것 |
+| `DB_PATH` | 서버 | SQLite 파일 경로 (기본 `contest.db`). **스냅샷 대상 볼륨 위**에 둘 것 |
+| `CONTEST_DB_PATH` | Next | `contest.db` 경로 (web 컨테이너는 realtime 과 같은 볼륨을 마운트). 로그인·가입 시 읽는다. 이전 `USERS_DB_PATH`/`users.db` 는 폐기 |
 
 ## 데이터 유실 방지 (점수를 잃지 않는 장치)
 
@@ -103,8 +107,8 @@ pnpm dev                                # Next :3000
 
 ### 설정
 
-1. DB를 루트 볼륨이 아닌 **전용 EBS 볼륨**(예: `/data`)에 둔다. `DB_PATH=/data/scores.db`.
-   `scores.db-wal`, `scores.db-shm`이 같은 볼륨에 있어야 한다 (SQLite WAL 모드).
+1. DB를 루트 볼륨이 아닌 **전용 EBS 볼륨**(예: `/data`)에 둔다. `DB_PATH=/data/contest.db`.
+   `contest.db-wal`, `contest.db-shm`이 같은 볼륨에 있어야 한다 (SQLite WAL 모드).
 2. 그 볼륨에 태그를 붙인다 (예: `backup=scores`).
 3. **Amazon Data Lifecycle Manager** 정책을 만든다 (EC2 > Elastic Block Store > Lifecycle Manager):
    - 대상: 위 태그가 붙은 볼륨
@@ -144,7 +148,7 @@ MVP(단일 HTML) 중 심판 흐름을 우리 코드로 옮긴 것이다. 로컬 
 | 파일 | 역할 |
 |---|---|
 | `lib/judge/rules.ts` | 채점 항목표, 자동 보너스·감점 계산(`calc`), 입력 검증(`validate`) |
-| `lib/judge/data.ts` | 참가팀·대진 **데모 데이터** (32팀, 64경기, 테이블 1~8) |
+| `lib/judge/data.ts` | 참가팀 데모 데이터. **화면 표시는 쓰지 않는다** — 클라이언트는 `lib/contest.ts`(서버 `/config`)를 쓴다. 가입 검증(`app/signup/actions.ts`)만 아직 참조하며, 인증 교체(계정 DB화) 때 함께 제거한다 |
 | `lib/judge/sheets.ts` | 작성 중 채점지를 기기(localStorage)에 자동 저장, 서버로 보낼 채점지 생성(`sheetPayload`) |
 | `components/JudgeConsole.tsx` | 화면 전환, 서버 제출, 제출 상태 표시, 전체 재전송 버튼 |
 | `components/judge/*` | `ScoreView`, `ReviewView`, `SignView`, `SignaturePad`(캔버스 서명) |
@@ -171,19 +175,31 @@ MVP(단일 HTML) 중 심판 흐름을 우리 코드로 옮긴 것이다. 로컬 
 
 | 화면 | 상태 |
 |---|---|
-| `/judge` (`JudgeConsole`) | 연결됨 — 제출, 오프라인 큐, 제출 상태, 전체 재전송 |
-| `/contest` (`RankingBoard`) | 연결됨 — 순위표 실시간 구독 |
-| `/mypage` (`ParticipantPortal`) | 연결됨 — 랭킹 탭 순위표 구독, 내 점수표 탭 실시간 팀 점수·순위 |
+| `/judge` (`JudgeConsole`) | 연결됨 — 제출, 오프라인 큐, 제출 상태, 전체 재전송. 채점 항목은 서버 템플릿(없으면 기본 규칙) 사용 |
+| `/contest` (`RankingBoard`/`TournamentBracket`) | 연결됨 — 순위표 실시간 구독. 대진표 탭은 관리자가 저장한 배정과 경기 결과(승자·점수) 표시, 저장 전엔 예선 순위 시드 배치 |
+| `/mypage` (`ParticipantPortal`) | 연결됨 — 랭킹 탭 순위표 구독, 내 점수표 탭 실시간 팀 점수·순위, 서버 공지 배너 |
+| `/admin` (`AdminDashboard`) | 연결됨 — 대시보드 집계·활동 로그·확정 대기, 채점 목록+CSV, 템플릿 CRUD, 토너먼트 배정 저장, 계정 집계·재발급·CSV, 설정(자동 확정·보드 공개·점수 가리기·공지) |
 
 운영 전에 정리할 것:
 
-- `lib/judge/data.ts`는 데모 데이터다. 실제 참가팀·대진·심판 배정으로 교체해야 한다. 대진은 관리자 화면에서 바뀌는 값이므로 서버에서 받아오는 구조가 필요하다.
-- 관리자의 "확정" 단계가 없다. 현재는 서명 완료 즉시 서버 점수와 순위에 반영된다. (MVP는 관리자가 확정해야 순위에 반영)
-- 순위판은 `teamName()`으로 팀 ID를 이름으로 바꿔 표시한다. 데모 팀 목록(`TEAMS`)에 없는 ID는 그대로 보인다.
+- ~~팀·대진 데모 데이터~~ → 클라이언트는 서버 `/config`(`lib/contest.ts`)를 쓴다. 서버는 `contest.db`로 관리 (`docs/api-design.md` 참고). 남은 것: 인증 교체 때 `signup/actions.ts`의 정적 명단 참조 제거.
+- 점수 확정 워크플로는 서버에 구현됐다 (`scores.status`, `/admin/scores/confirm|modify|reject`, 자동 확정 설정, 감사 로그). 관리자 대시보드 UI 연결은 별도 진행 항목이다.
+- 순위판은 서버 팀 명단으로 팀 ID를 이름으로 바꿔 표시한다. 명단에 없는 ID는 그대로 보인다.
+
+## 인증과 계정
+
+- 로그인·가입은 Next 서버 액션(`app/login/actions.ts`, `app/signup/actions.ts`)이 처리하고, 비밀번호는 전부 `contest.db` users 테이블의 scrypt 해시와 비교한다 (`lib/users.ts`). 코드에 평문 계정은 없다.
+- 계정은 세 종류: 참가자(`user`, 본선 명단 팀+이름으로 가입 → 팀 연결), 심판(`judge`), 관리자(`admin`). 심판·관리자는 관리자 화면에서 CSV 일괄 발급 (`POST /admin/accounts/issue`) 하거나 비밀번호 일괄 재발급 (`POST /admin/accounts/reset-password`). 발급된 임시 비밀번호는 평문으로 한 번만 반환되고 `must_change=1` 로 표시된다.
+- 로그인할 때마다 `last_login_at` 이 갱신돼 관리자의 접속 현황 집계에 쓰인다.
+- 세션은 7일 HMAC 토큰 + `token_version` 대조다. 비밀번호 일괄 재발급이나 `POST /admin/sessions/revoke-all` 을 실행하면 기존 세션이 즉시 무효화되고 전원 재로그인한다. 토큰의 role·teamId 도 매 요청 DB 와 대조한다.
+- 로그인·가입 시도 제한이 있다 — 틀린 로그인 5회/10분이면 10분 차단, 가입은 IP 당 20회/시간. scrypt 는 비동기로 돌려 이벤트 루프를 막지 않는다.
+- 운영(`NODE_ENV=production`)에서는 `AUTH_SECRET` 이 빈 값이거나 개발용 기본값이면 Next/서버 모두 요청 처리 시점에 거부한다.
+- 최초 관리자·심판 계정은 서버 부트스트랩이 만든다. 비밀번호는 코드에 기본값이 없고 **반드시 환경변수**로만 지정한다 — 개발은 `server/.env.example` 을 `server/.env` 로 복사(`ADMIN_INITIAL_PASSWORD`, 선택 `JUDGE_INITIAL_PASSWORD`), 운영은 배포 환경변수. `pnpm dev` 는 `server/.env` 를 자동으로 읽는다. 심판 `REF01`~`REF08` 의 공유 임시 비밀번호는 감사 신뢰도를 떨어뜨리니, 운영 전에 '비밀번호 일괄 재발급' 으로 개별화한다.
+- `REF01`~`REF08` 계정은 담당 테이블이 ID 에서 고정된다 (`components/JudgeConsole.tsx` 의 `fixedTable`). 그 외 심판은 `judge_table`/`judge_assignments` 로 배정.
+- 이전 `users.db` 는 contest.db 첫 생성 시 자동으로 합쳐진다.
 
 ## 알려진 한계
 
 - 서버 1대이므로 EC2가 죽으면 그동안은 모두 끊긴다. 점수는 각 심판 브라우저에 쌓이고 서버 복구 후 전송된다.
 - 로컬 기록은 그 브라우저에만 있다. 심판이 사이트 데이터를 지우거나 기기를 바꾸면 그 기기의 기록은 사라진다 (서버에 확인된 분은 스냅샷으로 남는다).
 - 네트워크가 끊긴 상태에서는 순위표가 갱신되지 않는다 (마지막 수신 값이 유지됨).
-- 현재 로그인은 `lib/auth.ts`의 데모 계정이다. 운영 전 실제 계정으로 교체해야 한다.
