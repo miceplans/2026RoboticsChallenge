@@ -6,13 +6,18 @@ services:
     environment:
       AUTH_SECRET: ${AUTH_SECRET}
       COOKIE_DOMAIN: .${DOMAIN}
+      CONTEST_DB_PATH: /data/contest.db
+    volumes:
+      - /data/realtime:/data   # realtime 과 같은 EBS 볼륨 공유 ( contest.db 단일 파일 )
   realtime:
     image: ${ECR}/robotics-realtime:${TAG:-latest}
     restart: unless-stopped
     environment:
       AUTH_SECRET: ${AUTH_SECRET}
       CORS_ORIGINS: https://${DOMAIN},https://judge.${DOMAIN},https://admin.${DOMAIN}
-      DB_PATH: /data/scores.db
+      DB_PATH: /data/contest.db
+      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-}
+      JUDGE_INITIAL_PASSWORD: ${JUDGE_INITIAL_PASSWORD:-}
     volumes:
       - /data/realtime:/data   # 별도 EBS 볼륨 (스냅샷 대상)
   caddy:
