@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useActionState } from 'react';
 import { login } from './actions';
 
@@ -35,13 +34,6 @@ export default function StaffLoginForm({ area, title, description }: StaffLoginF
           {pending ? '로그인 중...' : `${title} 계속하기`}
         </button>
       </form>
-
-      <div className="mt-6 flex items-center justify-between text-sm">
-        <Link href="/login" className="font-semibold text-gray-500 hover:text-accent">참가자 로그인</Link>
-        <Link href={area === 'admin' ? '/judge/login' : '/admin/login'} className="font-semibold text-accent hover:underline">
-          {area === 'admin' ? '심판 로그인' : '관리자 로그인'}
-        </Link>
-      </div>
     </section>
   );
 }
