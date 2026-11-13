@@ -2,7 +2,7 @@
 FROM node:24-slim
 WORKDIR /app
 RUN corepack enable
-ENV NODE_ENV=production PORT=4000 DB_PATH=/data/scores.db
+ENV NODE_ENV=production PORT=4000 DB_PATH=/data/contest.db
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile --prod
 COPY src ./src
