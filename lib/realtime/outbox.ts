@@ -5,7 +5,7 @@
 // (경기, 팀) 당 최신 1건만 유지한다. 서버가 ts 가 더 큰 값만 반영하므로 이전 값은 필요 없다.
 // IndexedDB 를 쓸 수 없는 환경(사생활 보호 모드 등)에서는 조용히 무시하고 메모리로만 동작한다.
 // sheet: 채점지 전체(항목별 값, 서명 등). 점수(points)와 함께 서버에 저장된다.
-export type Score = { matchId: string; teamId: string; points: number; ts: number; sheet?: Record<string, unknown> };
+export type Score = { matchId: string; teamId: string; points: number; ts: number; penCnt?: number; sheet?: Record<string, unknown> };
 export type Status = 'pending' | 'acked' | 'rejected';
 export type LedgerEntry = Score & { status: Status };
 
