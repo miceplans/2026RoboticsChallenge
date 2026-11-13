@@ -78,7 +78,7 @@ export default function ParticipantPortal({ name, teamId }: { name: string; team
 function TeamNotice() {
   return (
     <p className="mt-6 rounded-2xl border border-line bg-white p-6 text-sm text-gray-500">
-      참가 팀 명단에 연결된 계정이 아닙니다. 참가자는 회원가입 시 본선 명단의 팀 이름과 본인 이름을 입력하면 우리 팀 채점 표와 팀 정보를 확인할 수 있습니다.
+      참가 팀 명단에 연결된 계정이 아닙니다. 팀에 연결된 참가자 계정으로 로그인하면 우리 팀 채점 표와 팀 정보를 확인할 수 있습니다.
     </p>
   );
 }

@@ -14,9 +14,7 @@ const scrypt = promisify(scryptCb) as (password: string, salt: string, keylen: n
 
 type Statements = {
   find: ReturnType<DatabaseSync['prepare']>;
-  findMember: ReturnType<DatabaseSync['prepare']>;
   credentials: ReturnType<DatabaseSync['prepare']>;
-  insert: ReturnType<DatabaseSync['prepare']>;
   touchLogin: ReturnType<DatabaseSync['prepare']>;
 };
 let stmts: Statements | null = null;
@@ -26,9 +24,7 @@ function getStatements(): Statements {
     const db = getDb();
     stmts = {
       find: db.prepare('SELECT id, name, role, team_id AS teamId, token_version AS tv FROM users WHERE id = ?'),
-      findMember: db.prepare("SELECT id, name, role, team_id AS teamId FROM users WHERE team_id = ? AND name = ? AND role = 'user'"),
       credentials: db.prepare('SELECT salt, hash FROM users WHERE id = ?'),
-      insert: db.prepare("INSERT INTO users (id, name, role, team_id, salt, hash, must_change, token_version, created_at) VALUES (?, ?, 'user', ?, ?, ?, 0, 0, ?)"),
       touchLogin: db.prepare('UPDATE users SET last_login_at = ? WHERE id = ?'),
     };
   }
@@ -40,18 +36,6 @@ const hashPassword = async (password: string, salt: string) => (await scrypt(pas
 export function findRegisteredUser(id: string): RegisteredUser | null {
   const row = getStatements().find.get(id) as { id: string; name: string; role: Role; teamId: string | null } | undefined;
   return row && row.role === 'user' ? { id: row.id, name: row.name, teamId: row.teamId ?? '' } : null;
-}
-
-// 같은 팀의 같은 참가자가 이미 가입했는지 확인한다 (계정 중복 방지)
-export function findTeamMemberUser(teamId: string, name: string): RegisteredUser | null {
-  const row = getStatements().findMember.get(teamId, name) as { id: string; name: string; teamId: string } | undefined;
-  return row ?? null;
-}
-
-// 모든 역할을 통틀어 아이디가 이미 쓰이는지 본다 (가입 시 중복 검사)
-export function findAnyUser(id: string): { id: string; name: string; role: Role; teamId?: string } | null {
-  const row = getStatements().find.get(id) as { id: string; name: string; role: Role; teamId: string | null } | undefined;
-  return row ? { id: row.id, name: row.name, role: row.role, ...(row.teamId ? { teamId: row.teamId } : {}) } : null;
 }
 
 export async function verifyRegisteredUser(id: string, password: string): Promise<RegisteredUser | null> {
@@ -81,12 +65,6 @@ export function assertSessionFresh(s: { id: string; role: Role; teamId?: string;
   const row = getStatements().find.get(s.id) as { role: Role; teamId: string | null; tv: number } | undefined;
   if (!row) return false;
   return row.role === s.role && (row.teamId ?? undefined) === s.teamId && row.tv === (s.tv ?? 0);
-}
-
-// UNIQUE(팀, 참가자) 제약 때문에 같은 팀원이 두 계정을 만들 수 없다. 아이디 중복도 걸러진다.
-export async function registerUser(user: RegisteredUser & { password: string }): Promise<void> {
-  const salt = randomBytes(16).toString('base64url');
-  getStatements().insert.run(user.id, user.name, user.teamId, salt, await hashPassword(user.password, salt), Date.now());
 }
 
 // 본인 비밀번호 변경. token_version 을 올려 다른 기기의 세션은 끊고, 새 tv 를 돌려줘 현재 세션을 다시 발급하게 한다.

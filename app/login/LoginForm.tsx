@@ -12,7 +12,7 @@ export default function LoginForm({ area }: { area?: LoginArea }) {
   const title = area === 'admin' ? '관리자 로그인' : area === 'judge' ? '심판 로그인' : '로그인';
   const description = area
     ? '발급받은 운영 계정으로 로그인하세요.'
-    : '발급받은 계정 또는 회원가입한 계정으로 로그인하세요.';
+    : '발급받은 계정으로 로그인하세요.';
 
   return (
     <form action={action} className="w-full max-w-sm space-y-4">
@@ -29,7 +29,7 @@ export default function LoginForm({ area }: { area?: LoginArea }) {
         {pending ? '로그인 중...' : '로그인'}
       </button>
       <p className="text-center text-sm text-gray-500">
-        {isStaff ? <Link href="/login" className="font-semibold text-accent hover:underline">공용 로그인으로 이동</Link> : <>참가팀이신가요? <Link href="/signup" className="font-semibold text-accent hover:underline">회원가입</Link></>}
+        {isStaff && <Link href="/login" className="font-semibold text-accent hover:underline">공용 로그인으로 이동</Link>}
       </p>
     </form>
   );
