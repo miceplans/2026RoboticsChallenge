@@ -23,7 +23,8 @@ export default function LoginForm({ area }: { area?: LoginArea }) {
       {area && <input type="hidden" name="area" value={area} />}
       <input name="id" placeholder="이메일 또는 아이디" required className="w-full rounded-lg border border-line bg-white px-4 py-3 outline-none focus:border-accent" />
       <input name="password" type="password" placeholder="비밀번호" required className="w-full rounded-lg border border-line bg-white px-4 py-3 outline-none focus:border-accent" />
-      {error && <p className="text-sm text-error">{error}</p>}
+      {/* 사라지지 않는 자리에 에러를 적어야 스크린리더·느린 독자도 놓치지 않는다 */}
+      {error && <p role="alert" className="text-sm font-semibold text-error">{error}</p>}
       <button disabled={pending} className="w-full rounded-2xl bg-accent py-3 text-sm font-semibold text-white hover:bg-accent-soft transition-colors disabled:opacity-50">
         {pending ? '로그인 중...' : '로그인'}
       </button>

@@ -20,7 +20,8 @@ export default function SignupForm() {
       <input name="memberName" placeholder="참가자 이름 (명단에 등록된 본인 이름)" required className="w-full rounded-lg border border-line bg-white px-4 py-3 outline-none focus:border-accent" />
       <input name="id" placeholder="아이디 (4~32자 영문/숫자/._-)" required className="w-full rounded-lg border border-line bg-white px-4 py-3 outline-none focus:border-accent" />
       <input name="password" type="password" placeholder="비밀번호 (6자 이상)" required className="w-full rounded-lg border border-line bg-white px-4 py-3 outline-none focus:border-accent" />
-      {error && <p className="text-sm text-error">{error}</p>}
+      {/* 사라지지 않는 자리에 에러를 적어야 스크린리더·느린 독자도 놓치지 않는다 */}
+      {error && <p role="alert" className="text-sm font-semibold text-error">{error}</p>}
       <button disabled={pending} className="w-full rounded-2xl bg-accent py-3 text-sm font-semibold text-white hover:bg-accent-soft transition-colors disabled:opacity-50">
         {pending ? '가입 중...' : '가입하기'}
       </button>

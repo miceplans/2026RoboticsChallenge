@@ -2,15 +2,14 @@ import { cookies } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
 import { SESSION_COOKIE, verifySessionToken, type Role } from './session';
 
-// TODO: 실제 DB/인증 연동 시 교체. 현재는 데모용 계정.
-export const demoUsers = [
-  { id: 'user1', password: 'user1234', name: '일반 참가자', role: 'user' },
-  { id: 'judge1@gmail.com', password: 'mice1170', name: '심사위원', role: 'judge' },
-  { id: 'office1170@naver.com', password: 'mice1170', name: '관리자', role: 'admin' },
-] as const;
+import { assertSessionFresh } from './users';
 
+// 계정은 contest.db users 테이블에서 검증한다 (lib/users.ts).
+// 토큰의 role·teamId·tv 를 DB 와 대조해, 비밀번호 재발급·강등 후에도 남은 오래된 세션을 무효화한다.
 export async function getSession() {
-  return verifySessionToken((await cookies()).get(SESSION_COOKIE)?.value);
+  const session = await verifySessionToken((await cookies()).get(SESSION_COOKIE)?.value);
+  if (session && !assertSessionFresh(session)) return null;
+  return session;
 }
 
 // proxy 에서 1차 차단하지만, 페이지에서도 한 번 더 검증한다.
