@@ -40,7 +40,9 @@ export const ITEMS: Item[] = [
   { id: 'b_red', m: 'M2', label: '빨강 4개 모두 H (보너스·자동)', type: 'auto', pj: 6, ps: 6 },
   { id: 'b_yel', m: 'M2', label: '노랑 PCC 2·2 분배 (보너스·자동)', type: 'auto', pj: 8, ps: 8 },
   { id: 'b_grn', m: 'M2', label: '초록 4개 모두 RZ (보너스·자동)', type: 'auto', pj: 6, ps: 6 },
-  { id: 'p_mis', m: 'M2', label: '제 목적지가 아닌 실린더 (자동)', type: 'auto', pj: 0, ps: -3 },
+  { id: 'red_out', m: 'M2', label: 'H 밖에 있는 빨강 실린더', type: 'count', max: 4, pj: 0, ps: -3 },
+  { id: 'yel_out', m: 'M2', label: 'PCC 밖에 있는 노랑 실린더', type: 'count', max: 4, pj: 0, ps: -3 },
+  { id: 'grn_out', m: 'M2', label: 'RZ 밖에 있는 초록 실린더', type: 'count', max: 4, pj: 0, ps: -3 },
   { id: 'pen_touch', m: 'PEN', label: '경기 중 로봇 접촉', type: 'count', max: 9, pj: -20, ps: -20 },
   { id: 'pen_field', m: 'PEN', label: '경기장·게임요소 조작', type: 'count', max: 9, pj: -20, ps: -20 },
   { id: 'pen_restart', m: 'PEN', label: '무단 재시작·프로그램 변경', type: 'count', max: 9, pj: -20, ps: -20 },
@@ -64,26 +66,26 @@ function autoQty(id: string, v: Values) {
     case 'b_red': return n(v, 'red_h') === 4 ? 1 : 0;
     case 'b_yel': return n(v, 'yel_l') === 2 && n(v, 'yel_r') === 2 ? 1 : 0;
     case 'b_grn': return n(v, 'grn') === 4 ? 1 : 0;
-    case 'p_mis': return 12 - (n(v, 'red_h') + n(v, 'yel_l') + n(v, 'yel_r') + n(v, 'grn'));
     default: return 0;
   }
 }
 
 export const unitPoints = (it: Item, cat: Category) => (cat === 'J' ? it.pj : it.ps);
 
-// 심판이 직접 입력하는 항목 (해당 카테고리에서 배점이 0인 항목은 숨긴다)
-export const inputItems = (cat: Category) =>
-  ITEMS.filter((it) => it.type !== 'auto' && (it.type === 'manual' || unitPoints(it, cat) !== 0));
+// 심판이 직접 입력하는 항목 (해당 카테고리에서 배점이 0인 항목은 숨긴다).
+// items 는 관리자가 저장한 채점표 템플릿 — 생략하면 기본 항목표(ITEMS)를 쓴다.
+export const inputItems = (cat: Category, items: Item[] = ITEMS) =>
+  items.filter((it) => it.type !== 'auto' && (it.type === 'manual' || unitPoints(it, cat) !== 0));
 
 export type Line = { it: Item; q: number | null; p: number; sub: number };
 export type Calc = { lines: Line[]; sum: Record<Mission, number>; total: number; penCnt: number; dq: boolean };
 
-export function calc(values: Values, cat: Category): Calc {
+export function calc(values: Values, cat: Category, items: Item[] = ITEMS): Calc {
   const lines: Line[] = [];
   const sum: Record<Mission, number> = { M1: 0, M2: 0, PEN: 0 };
   let penCnt = 0;
 
-  for (const it of ITEMS) {
+  for (const it of items) {
     const p = unitPoints(it, cat);
     if (it.type !== 'manual' && p === 0) continue;
 
@@ -99,8 +101,29 @@ export function calc(values: Values, cat: Category): Calc {
     lines.push({ it, q, p, sub });
   }
 
-  const dq = !!values.dq;
+  const dq = !!(values.dq || values.dq_danger || values.dq_breach);
   return { lines, sum, total: dq ? 0 : sum.M1 + sum.M2 + sum.PEN, penCnt, dq };
+}
+
+// 서버에서 받은 채점표 템플릿을 검증한다. 하나라도 형식이 맞지 않으면 null — 호출 측에서 기본 항목표(ITEMS)로 대체한다.
+export function parseTemplate(input: unknown): Item[] | null {
+  if (!Array.isArray(input) || input.length === 0) return null;
+  const missions: Mission[] = ['M1', 'M2', 'PEN'];
+  const types: Item['type'][] = ['count', 'bool', 'auto', 'manual'];
+  const ok = input.every((it) => {
+    if (typeof it !== 'object' || it === null) return false;
+    const o = it as Record<string, unknown>;
+    return (
+      typeof o.id === 'string' &&
+      missions.includes(o.m as Mission) &&
+      typeof o.label === 'string' &&
+      types.includes(o.type as Item['type']) &&
+      typeof o.pj === 'number' &&
+      typeof o.ps === 'number' &&
+      (o.max === undefined || typeof o.max === 'number')
+    );
+  });
+  return ok ? (input as Item[]) : null;
 }
 
 // 물리적으로 불가능한 입력 조합 (개수 합계 초과)
@@ -108,6 +131,8 @@ export function validate(values: Values) {
   const errors: string[] = [];
   if (n(values, 's_slot') + n(values, 's_out') + n(values, 's_quar') > 3) errors.push('샘플 개수 합계가 3개를 넘었어요.');
   if (n(values, 'kit_h') + n(values, 'kit_l') + n(values, 'kit_r') > 10) errors.push('의료키트 합계가 10개를 넘었어요.');
-  if (n(values, 'yel_l') + n(values, 'yel_r') > 4) errors.push('노랑 실린더 합계가 4개를 넘었어요.');
+  if (n(values, 'red_h') + n(values, 'red_out') > 4) errors.push('빨강 실린더 합계가 4개를 넘었어요.');
+  if (n(values, 'yel_l') + n(values, 'yel_r') + n(values, 'yel_out') > 4) errors.push('노랑 실린더 합계가 4개를 넘었어요.');
+  if (n(values, 'grn') + n(values, 'grn_out') > 4) errors.push('초록 실린더 합계가 4개를 넘었어요.');
   return errors;
 }

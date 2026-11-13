@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import type { Match } from './data';
-import { calc, type Values } from './rules';
+import type { Match } from '../contest';
+import { calc, ITEMS, type Item, type Values } from './rules';
 
 // 작성 중인 채점지. 심판 기기(localStorage)에 자동 저장되어 새로고침/끊김에도 사라지지 않는다.
 // 서명까지 마치면(signed) 서버로 제출하고, 제출 상태(전송 대기/저장됨)는 realtime 쪽 기록이 관리한다.
@@ -54,8 +54,8 @@ export function useSheets(judgeId: string) {
 }
 
 // 서버에 함께 저장할 채점지 (관리자 확인·PDF·정정 이력 등에 쓰인다)
-export function sheetPayload(match: Match, sheet: Sheet) {
-  const c = calc(sheet.values, match.cat);
+export function sheetPayload(match: Match, sheet: Sheet, ruleItems: Item[] = ITEMS) {
+  const c = calc(sheet.values, match.cat, ruleItems);
   return {
     category: match.cat,
     round: match.round,
