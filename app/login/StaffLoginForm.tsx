@@ -14,9 +14,8 @@ export default function StaffLoginForm({ area, title, description }: StaffLoginF
   const [error, action, pending] = useActionState(login, null);
 
   return (
-    <section className="w-full max-w-md rounded-[28px] border border-line bg-white p-8 shadow-[0_18px_60px_rgba(37,142,237,0.12)] sm:p-10">
+    <section className="w-full max-w-md">
       <div className="mb-8 border-b border-line pb-6">
-        <p className="mb-3 text-sm font-bold tracking-[0.16em] text-accent">2026 ROBOTICS CHALLENGE</p>
         <h1 className="text-3xl font-extrabold tracking-tight text-heading">{title}</h1>
         <p className="mt-3 text-sm leading-6 text-gray-500">{description}</p>
       </div>
