@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import ConnectionToast from './ConnectionToast';
 import { useRealtime } from '@/lib/realtime/useRealtime';
-import { TEAMS, teamName } from '@/lib/judge/data';
+import { teamName, useContest, type Team, type TournamentGame } from '@/lib/contest';
 import { CATEGORY_NAMES, type Category } from '@/lib/judge/rules';
 
 // 피그마 대진표(8강 토너먼트) 좌표를 그대로 옮긴 것: 캔버스 1600 x 1129
@@ -74,13 +74,25 @@ export type Seeding = {
 // 해당 부문 팀을 합산 점수(1·2차 합) 순으로. 점수가 없는 팀은 개발 중에만 명단 순서로 뒤에 붙인다.
 export function useRanking(cat: Category) {
   const { standings } = useRealtime();
-  const scored = standings.filter((s) => TEAMS.find((t) => t.id === s.teamId)?.cat === cat);
-  const mock = useMock ? TEAMS.filter((t) => t.cat === cat && !scored.some((s) => s.teamId === t.id)).map((t) => ({ teamId: t.id, total: 0 })) : [];
+  const { config } = useContest();
+  const teams = config?.teams ?? [];
+  const scored = standings.filter((s) => teams.find((t) => t.id === s.teamId)?.cat === cat);
+  const mock = useMock ? teams.filter((t) => t.cat === cat && !scored.some((s) => s.teamId === t.id)).map((t) => ({ teamId: t.id, total: 0 })) : [];
   return [...scored, ...mock];
 }
 
-function Slot({ box, strong, g }: { box: Box; strong?: boolean; g: ReturnType<typeof geometry> }) {
-  return <div style={pos(box, g)} className={`absolute rounded border bg-white ${strong ? 'border-accent' : 'border-line'}`} />;
+// 점수 슬롯 한 칸. 저장된 경기 결과가 있으면 승리 팀과 점수를 보여준다.
+function Slot({ box, strong, game, teams, g }: { box: Box; strong?: boolean; game?: TournamentGame; teams: Team[]; g: ReturnType<typeof geometry> }) {
+  return (
+    <div style={pos(box, g)} className={`absolute flex flex-col items-center justify-center gap-0.5 overflow-hidden rounded border bg-white px-1 ${strong ? 'border-accent' : 'border-line'}`}>
+      {game?.status === 'done' && game.winner && (
+        <>
+          <span className="w-full truncate text-center text-[1.1cqw] font-bold leading-tight text-heading">{teamName(teams, game.winner)}</span>
+          <span className="tabular-nums text-[1cqw] text-gray-500">{game.scoreA} : {game.scoreB}</span>
+        </>
+      )}
+    </div>
+  );
 }
 
 const pos = (b: Box, g: { W: number; H: number }, w = BW) => ({
@@ -91,7 +103,7 @@ const pos = (b: Box, g: { W: number; H: number }, w = BW) => ({
 });
 
 // 점선 슬롯 한 칸: 팀을 놓는 곳. 놓인 팀은 다시 끌어 옮기거나 누르면 비워진다.
-function DropSlot({ i, team, seeding }: { i: number; team?: string; seeding: Seeding }) {
+function DropSlot({ i, team, teams, seeding }: { i: number; team?: string; teams: Team[]; seeding: Seeding }) {
   const [over, setOver] = useState(false);
   return (
     <div
@@ -113,12 +125,16 @@ function DropSlot({ i, team, seeding }: { i: number; team?: string; seeding: See
         over ? 'border-accent bg-white' : team ? 'cursor-grab border-transparent bg-white text-heading' : 'border-gray-300 text-gray-300'
       }`}
     >
-      <span className="line-clamp-2 [word-break:keep-all]">{team ? teamName(team) : '팀'}</span>
+      <span className="line-clamp-2 [word-break:keep-all]">{team ? teamName(teams, team) : '팀'}</span>
     </div>
   );
 }
 
 export function BracketCanvas({ slots, seeding }: { slots: (string | undefined)[]; seeding?: Seeding }) {
+  const { config } = useContest();
+  const teams = config?.teams ?? [];
+  const games = config?.tournament.games ?? [];
+  const gameOf = (round: TournamentGame['round'], gameNo: number) => games.find((x) => x.round === round && x.gameNo === gameNo);
   const g = seeding ? GEO.edit : GEO.view;
   const { W, H, R1, R2, R3, FINAL, THIRD, SOLID, DASHED } = g;
   const pct = (b: Box, dy = 0) => ({ left: `${(b.x / W) * 100}%`, top: `${((b.y + dy) / H) * 100}%` });
@@ -136,22 +152,28 @@ export function BracketCanvas({ slots, seeding }: { slots: (string | undefined)[
             style={{ left: 0, top: `${(b.y / H) * 100}%`, width: `${(PW / W) * 100}%`, height: `${(BH / H) * 100}%` }}
             className="absolute flex gap-[2%] rounded bg-[#e5f3ff] p-[1.3%]"
           >
-            <DropSlot i={2 * i} team={slots[2 * i]} seeding={seeding} />
-            <DropSlot i={2 * i + 1} team={slots[2 * i + 1]} seeding={seeding} />
+            <DropSlot i={2 * i} team={slots[2 * i]} teams={teams} seeding={seeding} />
+            <DropSlot i={2 * i + 1} team={slots[2 * i + 1]} teams={teams} seeding={seeding} />
           </div>
         ))}
 
       {R1.map((b, i) => (
         <p key={i} style={pct(b, -30)} className="absolute whitespace-nowrap text-[1.1cqw] font-medium leading-none text-gray-500">
-          {slots[2 * i] ? teamName(slots[2 * i]!) : '-'} vs {slots[2 * i + 1] ? teamName(slots[2 * i + 1]!) : '-'}
+          {slots[2 * i] ? teamName(teams, slots[2 * i]!) : '-'} vs {slots[2 * i + 1] ? teamName(teams, slots[2 * i + 1]!) : '-'}
         </p>
       ))}
 
       {[...R1, ...R2, ...R3].map((b, i) => (
-        <Slot key={i} box={b} g={g} />
+        <Slot
+          key={i}
+          box={b}
+          g={g}
+          teams={teams}
+          game={i < 8 ? gameOf('R16', i + 1) : i < 12 ? gameOf('QF', i - 7) : gameOf('SF', i - 11)}
+        />
       ))}
-      <Slot box={FINAL} strong g={g} />
-      <Slot box={THIRD} g={g} />
+      <Slot box={FINAL} strong g={g} teams={teams} game={gameOf('F', 1)} />
+      <Slot box={THIRD} g={g} teams={teams} game={gameOf('3P', 1)} />
       <p style={pct(FINAL, -37)} className="absolute text-[1.2cqw] font-bold text-accent">
         결승
       </p>
@@ -164,9 +186,12 @@ export function BracketCanvas({ slots, seeding }: { slots: (string | undefined)[
 
 export default function TournamentBracket({ switcher }: { switcher?: React.ReactNode }) {
   const { status } = useRealtime();
+  const { config } = useContest();
   const [cat, setCat] = useState<Category>('S');
   const seeds = useRanking(cat).slice(0, 16).map((s) => s.teamId);
-  const slots = SEED_ORDER.map((seed) => seeds[seed - 1]);
+  // 관리자가 저장한 배정이 있으면 그것을 보여주고, 없으면 예선 순위 기반 시드 배치를 보여준다
+  const saved = config?.tournament.slots.filter((s) => s.cat === cat).sort((a, b) => a.slotNo - b.slotNo) ?? [];
+  const slots = saved.length === 16 && saved.some((s) => s.teamId) ? saved.map((s) => s.teamId ?? undefined) : SEED_ORDER.map((seed) => seeds[seed - 1]);
 
   return (
     <section className="mx-auto min-h-screen max-w-[1280px] px-6 pt-[121px] pb-24">

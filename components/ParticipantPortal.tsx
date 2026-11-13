@@ -2,12 +2,13 @@
 
 import { useState } from 'react';
 import RankingBoard from './RankingBoard';
-import { MATCHES, TEAMS, type Team } from '@/lib/judge/data';
+import { useContest, type Team } from '@/lib/contest';
 import { useRealtime, useTeamScores } from '@/lib/realtime/useRealtime';
 
 export default function ParticipantPortal({ name, teamId }: { name: string; teamId?: string }) {
-  // 회원가입 시 본선 명단(TEAMS)과 일치한 팀으로 연결된다. 데모 계정처럼 팀이 없으면 undefined
-  const team = teamId ? TEAMS.find((t) => t.id === teamId) : undefined;
+  // 회원가입 시 본선 명단과 일치한 팀으로 연결된다. 팀이 없으면(심판/관리자) undefined
+  const { config } = useContest();
+  const team = teamId ? config?.teams.find((t) => t.id === teamId) : undefined;
   const [t, setT] = useState('팀 정보');
   const tabs = ['팀 정보', '내 점수표', '내 일정', '랭킹', '경기 중계'];
   return (
@@ -24,7 +25,9 @@ export default function ParticipantPortal({ name, teamId }: { name: string; team
         </div>
       </header>
       <div className="mx-auto max-w-6xl px-5 py-7">
-        <div className="rounded-2xl bg-accent-tint px-5 py-4 text-sm text-accent">📢 결승 진출 팀 발표는 16:30에 진행됩니다.</div>
+        {config?.settings.notice.message && (
+          <div className="mt-6 rounded-2xl bg-accent-tint px-5 py-4 text-sm text-accent">📢 {config.settings.notice.message}</div>
+        )}
         <nav className="mt-6 flex gap-2 overflow-x-auto border-b border-line">
           {tabs.map((x) => (
             <button key={x} onClick={() => setT(x)} className={`whitespace-nowrap px-4 py-3 text-sm font-bold ${t === x ? 'border-b-2 border-accent text-accent' : 'text-gray-500'}`}>
@@ -92,6 +95,8 @@ function TeamInfo({ team, me }: { team?: Team; me: string }) {
 
 function Score({ team }: { team?: Team }) {
   const { standings, standingsAt } = useRealtime();
+  const { config } = useContest();
+  const matches = (config?.matches ?? []).filter((m) => m.team === team?.id);
   const { scores, loaded } = useTeamScores(team?.id);
   if (!team) return <TeamNotice />;
 
@@ -106,7 +111,6 @@ function Score({ team }: { team?: Team }) {
     arr.push(s.points);
     byMatch.set(s.matchId, arr);
   }
-  const matches = MATCHES.filter((m) => m.team === team.id);
 
   return (
     <section className="mt-7">
@@ -162,8 +166,9 @@ function Score({ team }: { team?: Team }) {
 }
 
 function Schedule({ team }: { team?: Team }) {
+  const { config } = useContest();
   if (!team) return <TeamNotice />;
-  const mine = MATCHES.filter((m) => m.team === team.id);
+  const mine = (config?.matches ?? []).filter((m) => m.team === team.id);
   return (
     <section className="mt-7">
       <h1 className="text-3xl font-extrabold">내 일정</h1>
