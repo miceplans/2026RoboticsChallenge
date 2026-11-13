@@ -2,6 +2,10 @@ name: deploy
 on:
   push:
     branches: [main]
+    paths-ignore:      # 백엔드만 바뀐 푸시는 deploy-backend.yml 이 처리
+      - 'server/**'
+      - 'docs/**'
+      - 'deploy/terraform/**'
   workflow_dispatch:
 
 permissions:
@@ -65,7 +69,7 @@ jobs:
                "echo \($c) | base64 -d > docker-compose.yml",
                "echo \($f) | base64 -d > Caddyfile",
                "echo \($d) | base64 -d > deploy.sh && chmod +x deploy.sh",
-               "./deploy.sh \($tag)" ]')
+               "./deploy.sh \($tag) all" ]')
           ID=$(aws ssm send-command \
             --targets "Key=tag:Name,Values=robotics-app" \
             --document-name AWS-RunShellScript \

@@ -1,7 +1,7 @@
 # EC2 에서 실행. /opt/app/.env 에 값 필요 (docs/deploy.md 참고)
 services:
   web:
-    image: ${ECR}/robotics-web:${TAG:-latest}
+    image: ${ECR}/robotics-web:${WEB_TAG:-latest}
     restart: unless-stopped
     environment:
       AUTH_SECRET: ${AUTH_SECRET}
@@ -10,7 +10,7 @@ services:
     volumes:
       - /data/realtime:/data   # realtime 과 같은 EBS 볼륨 공유 ( contest.db 단일 파일 )
   realtime:
-    image: ${ECR}/robotics-realtime:${TAG:-latest}
+    image: ${ECR}/robotics-realtime:${RT_TAG:-latest}
     restart: unless-stopped
     environment:
       AUTH_SECRET: ${AUTH_SECRET}
