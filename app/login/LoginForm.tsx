@@ -31,13 +31,6 @@ export default function LoginForm({ area }: { area?: LoginArea }) {
       <p className="text-center text-sm text-gray-500">
         {isStaff ? <Link href="/login" className="font-semibold text-accent hover:underline">공용 로그인으로 이동</Link> : <>참가팀이신가요? <Link href="/signup" className="font-semibold text-accent hover:underline">회원가입</Link></>}
       </p>
-      {!isStaff && (
-        <div className="flex justify-center gap-3 border-t border-line pt-4 text-xs text-gray-400">
-          <Link href="/judge/login" className="hover:text-accent hover:underline">심판 로그인</Link>
-          <span aria-hidden>·</span>
-          <Link href="/admin/login" className="hover:text-accent hover:underline">관리자 로그인</Link>
-        </div>
-      )}
     </form>
   );
 }
