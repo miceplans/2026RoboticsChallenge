@@ -3,16 +3,15 @@
 import { useState } from 'react';
 import ConnectionToast from './ConnectionToast';
 import { useRealtime } from '@/lib/realtime/useRealtime';
-import { teamName, useContest, type Team, type TournamentGame } from '@/lib/contest';
+import { SEED_ORDER, teamName, useContest, type Team, type TournamentGame } from '@/lib/contest';
 import { CATEGORY_NAMES, type Category } from '@/lib/judge/rules';
 
-// 피그마 대진표(8강 토너먼트) 좌표를 그대로 옮긴 것: 캔버스 1600 x 1129
+// 8강 토너먼트 대진표: 캔버스 1000 x 760
 // 박스 하나가 한 경기(팀 2개)이고 박스 안에는 승리한 팀이 들어간다.
-// 1라운드 8경기(16팀) → 준결승 2경기 → 결승 / 3·4위전(패자전)
+// 8강 4경기(8팀) → 준결승 2경기 → 결승 / 3·4위전(준결승 패자전)
 const BW = 256;
 const BH = 96;
 const CATEGORIES: Category[] = ['S', 'J'];
-const useMock = process.env.NODE_ENV !== 'production';
 // 관리자 편집 모드: 왼쪽에 팀을 끌어다 놓는 점선 슬롯 열(OX)을 추가한다
 const OX = 480;
 const PW = 408; // 슬롯 한 쌍(한 경기)의 너비
@@ -41,44 +40,41 @@ function loser(a: Box, to: Box) {
   return `M${x1} ${mid(a)}H${xm}V${ty}H${to.x - 12}` + `M${to.x - 22} ${ty - 8}L${to.x - 12} ${ty}L${to.x - 22} ${ty + 8}`;
 }
 
-// 피그마 대진표(8강 토너먼트) 좌표: 캔버스 1600 x 1129 (+ 편집 모드의 왼쪽 슬롯 열)
+// 8강 토너먼트 좌표: 캔버스 1000 x 760 (+ 편집 모드의 왼쪽 슬롯 열)
 function geometry(ox: number) {
-  const R1: Box[] = [41, 169, 329, 457, 617, 745, 905, 1033].map((y) => ({ x: ox, y }));
-  const R2: Box[] = [121, 377, 697, 953].map((y) => ({ x: ox + 424, y }));
-  const R3: Box[] = [265, 841].map((y) => ({ x: ox + 864, y }));
-  const FINAL: Box = { x: ox + 1344, y: 393 };
-  const THIRD: Box = { x: ox + 1344, y: 697 };
-  const SOLID = [
-    merge(R1[0], R1[1], R2[0]),
-    merge(R1[2], R1[3], R2[1]),
-    merge(R1[4], R1[5], R2[2]),
-    merge(R1[6], R1[7], R2[3]),
-    merge(R2[0], R2[1], R3[0]),
-    merge(R2[2], R2[3], R3[1]),
-    merge(R3[0], R3[1], FINAL),
-  ].join('');
-  return { W: 1600 + ox, H: 1129, R1, R2, R3, FINAL, THIRD, SOLID, DASHED: loser(R3[0], THIRD) + loser(R3[1], THIRD) };
+  const QF: Box[] = [84, 240, 424, 580].map((y) => ({ x: ox, y }));
+  const SF: Box[] = [162, 502].map((y) => ({ x: ox + 360, y }));
+  const FINAL: Box = { x: ox + 720, y: 332 };
+  const THIRD: Box = { x: ox + 720, y: 560 };
+  const SOLID = [merge(QF[0], QF[1], SF[0]), merge(QF[2], QF[3], SF[1]), merge(SF[0], SF[1], FINAL)].join('');
+  return { W: 1000 + ox, H: 760, QF, SF, FINAL, THIRD, SOLID, DASHED: loser(SF[0], THIRD) + loser(SF[1], THIRD) };
 }
 const GEO = { view: geometry(0), edit: geometry(OX) };
 
-// 16팀 시드 배치: 상위 시드끼리 결승까지 만나지 않도록 (1v16, 8v9, 4v13, 5v12, 2v15, 7v10, 3v14, 6v11)
-export const SEED_ORDER = [1, 16, 8, 9, 4, 13, 5, 12, 2, 15, 7, 10, 3, 14, 6, 11];
+// 8팀 시드 배치는 lib/contest.ts 의 표준 시드를 그대로 쓴다 (1v8, 4v5 / 2v7, 3v6)
+export { SEED_ORDER };
 
 export type Seeding = {
-  slots: (string | undefined)[]; // 16칸: 2*i, 2*i+1 이 i번째 1라운드 경기
+  slots: (string | undefined)[]; // 8칸: 2*i, 2*i+1 이 i번째 8강 경기
   onDrop: (slot: number, payload: string) => void; // payload: 'team:ID' | 'slot:N'
   onClear: (slot: number) => void;
   picked?: string; // 터치 환경: 목록에서 선택해 둔 팀
 };
 
-// 해당 부문 팀을 합산 점수(1·2차 합) 순으로. 점수가 없는 팀은 개발 중에만 명단 순서로 뒤에 붙인다.
+// 해당 부문 팀을 합산 점수(1·2차 합) 순으로. 점수가 없는 팀은 목록에 올리지 않는다.
+// 관리자가 순위 조정(rankOrder)을 저장했으면 그 순서를 우선하고, 명단에 빠진 팀은 계산 순위대로 뒤에 붙인다.
 export function useRanking(cat: Category) {
   const { standings } = useRealtime();
   const { config } = useContest();
   const teams = config?.teams ?? [];
   const scored = standings.filter((s) => teams.find((t) => t.id === s.teamId)?.cat === cat);
-  const mock = useMock ? teams.filter((t) => t.cat === cat && !scored.some((s) => s.teamId === t.id)).map((t) => ({ teamId: t.id, total: 0 })) : [];
-  return [...scored, ...mock];
+  const merged = scored;
+  const order = config?.settings.rankOrder[cat];
+  if (!order?.length) return merged;
+  const byId = new Map(merged.map((m) => [m.teamId, m]));
+  const picked = order.map((id) => byId.get(id)).filter((m) => m !== undefined);
+  const rest = merged.filter((m) => !order.includes(m.teamId));
+  return [...picked, ...rest];
 }
 
 // 점수 슬롯 한 칸. 저장된 경기 결과가 있으면 승리 팀과 점수를 보여준다.
@@ -136,17 +132,17 @@ export function BracketCanvas({ slots, seeding }: { slots: (string | undefined)[
   const games = config?.tournament.games ?? [];
   const gameOf = (round: TournamentGame['round'], gameNo: number) => games.find((x) => x.round === round && x.gameNo === gameNo);
   const g = seeding ? GEO.edit : GEO.view;
-  const { W, H, R1, R2, R3, FINAL, THIRD, SOLID, DASHED } = g;
+  const { W, H, QF, SF, FINAL, THIRD, SOLID, DASHED } = g;
   const pct = (b: Box, dy = 0) => ({ left: `${(b.x / W) * 100}%`, top: `${((b.y + dy) / H) * 100}%` });
   return (
-    <div className={`relative [container-type:inline-size] ${seeding ? 'min-w-[1100px]' : 'min-w-[760px]'}`} style={{ aspectRatio: `${W} / ${H}` }}>
+    <div className={`relative [container-type:inline-size] ${seeding ? 'min-w-[1000px]' : 'min-w-[700px]'}`} style={{ aspectRatio: `${W} / ${H}` }}>
       <svg viewBox={`0 0 ${W} ${H}`} className="absolute inset-0 h-full w-full" fill="none" aria-hidden>
         <path d={SOLID} stroke="#6B7280" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
         <path d={DASHED} stroke="#258EED" strokeWidth={3} strokeDasharray="10 8" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
 
       {seeding &&
-        R1.map((b, i) => (
+        QF.map((b, i) => (
           <div
             key={i}
             style={{ left: 0, top: `${(b.y / H) * 100}%`, width: `${(PW / W) * 100}%`, height: `${(BH / H) * 100}%` }}
@@ -157,23 +153,23 @@ export function BracketCanvas({ slots, seeding }: { slots: (string | undefined)[
           </div>
         ))}
 
-      {R1.map((b, i) => (
+      {QF.map((b, i) => (
         <p key={i} style={pct(b, -30)} className="absolute whitespace-nowrap text-[1.1cqw] font-medium leading-none text-gray-500">
           {slots[2 * i] ? teamName(teams, slots[2 * i]!) : '-'} vs {slots[2 * i + 1] ? teamName(teams, slots[2 * i + 1]!) : '-'}
         </p>
       ))}
 
-      {[...R1, ...R2, ...R3].map((b, i) => (
-        <Slot
-          key={i}
-          box={b}
-          g={g}
-          teams={teams}
-          game={i < 8 ? gameOf('R16', i + 1) : i < 12 ? gameOf('QF', i - 7) : gameOf('SF', i - 11)}
-        />
+      {[...QF, ...SF].map((b, i) => (
+        <Slot key={i} box={b} g={g} teams={teams} game={i < 4 ? gameOf('QF', i + 1) : gameOf('SF', i - 3)} />
       ))}
       <Slot box={FINAL} strong g={g} teams={teams} game={gameOf('F', 1)} />
       <Slot box={THIRD} g={g} teams={teams} game={gameOf('3P', 1)} />
+      <p style={pct(QF[0], -58)} className="absolute whitespace-nowrap text-[1.1cqw] font-medium leading-none text-gray-500">
+        8강
+      </p>
+      <p style={pct(SF[0], -58)} className="absolute whitespace-nowrap text-[1.1cqw] font-medium leading-none text-gray-500">
+        준결승
+      </p>
       <p style={pct(FINAL, -37)} className="absolute text-[1.2cqw] font-bold text-accent">
         결승
       </p>
@@ -188,10 +184,10 @@ export default function TournamentBracket({ switcher }: { switcher?: React.React
   const { status } = useRealtime();
   const { config } = useContest();
   const [cat, setCat] = useState<Category>('S');
-  const seeds = useRanking(cat).slice(0, 16).map((s) => s.teamId);
+  const ranked = useRanking(cat).slice(0, 8).map((s) => s.teamId);
   // 관리자가 저장한 배정이 있으면 그것을 보여주고, 없으면 예선 순위 기반 시드 배치를 보여준다
   const saved = config?.tournament.slots.filter((s) => s.cat === cat).sort((a, b) => a.slotNo - b.slotNo) ?? [];
-  const slots = saved.length === 16 && saved.some((s) => s.teamId) ? saved.map((s) => s.teamId ?? undefined) : SEED_ORDER.map((seed) => seeds[seed - 1]);
+  const slots = saved.length === 8 && saved.some((s) => s.teamId) ? saved.map((s) => s.teamId ?? undefined) : SEED_ORDER.map((seed) => ranked[seed - 1]);
 
   return (
     <section className="mx-auto min-h-screen max-w-[1280px] px-6 pt-[121px] pb-24">

@@ -2,8 +2,36 @@
 
 import { useState } from 'react';
 import RankingBoard from './RankingBoard';
-import { useContest, type Team } from '@/lib/contest';
+import { computeSchedule, tablesOf, useContest, withRanks, type Team } from '@/lib/contest';
 import { useRealtime, useTeamScores } from '@/lib/realtime/useRealtime';
+
+// 관리자 화면과 같은 규칙(저장된 테이블 순서, 없으면 테이블 번호 순)으로 이 팀의 1R·2R 경기를 구한다
+function useMySchedule(team?: Team) {
+  const { config } = useContest();
+  if (!team || !config) return [];
+  const order = config.settings.tableOrder?.length ? config.settings.tableOrder : tablesOf(config.matches);
+  return computeSchedule(config.matches, order).filter((m) => m.team === team.id);
+}
+
+// 로그인한 팀에게 지금 1R·2R 어느 부스(테이블)에서 몇 번째로 하는지 항상 보여준다
+function MyMatchBanner({ team }: { team?: Team }) {
+  const mine = useMySchedule(team);
+  if (!team || !mine.length) return null;
+  return (
+    <div className="mt-6 grid gap-3 sm:grid-cols-2">
+      {mine.map((m) => (
+        <div key={m.id} className="flex items-center gap-4 rounded-2xl border border-accent bg-white px-5 py-4">
+          <b className="text-2xl font-extrabold text-accent">{m.round}R</b>
+          <div className="min-w-0 flex-1">
+            <b className="block text-lg">테이블 {m.table} · {m.field}</b>
+            <span className="text-sm text-gray-500">{m.wave}조</span>
+          </div>
+          <span className="shrink-0 rounded-full bg-accent px-3 py-1 text-sm font-bold text-white">{m.seq}번째</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function ParticipantPortal({ name, teamId }: { name: string; teamId?: string }) {
   // 회원가입 시 본선 명단과 일치한 팀으로 연결된다. 팀이 없으면(심판/관리자) undefined
@@ -28,6 +56,7 @@ export default function ParticipantPortal({ name, teamId }: { name: string; team
         {config?.settings.notice.message && (
           <div className="mt-6 rounded-2xl bg-accent-tint px-5 py-4 text-sm text-accent">📢 {config.settings.notice.message}</div>
         )}
+        <MyMatchBanner team={team} />
         <nav className="mt-6 flex gap-2 overflow-x-auto border-b border-line">
           {tabs.map((x) => (
             <button key={x} onClick={() => setT(x)} className={`whitespace-nowrap px-4 py-3 text-sm font-bold ${t === x ? 'border-b-2 border-accent text-accent' : 'text-gray-500'}`}>
@@ -100,8 +129,7 @@ function Score({ team }: { team?: Team }) {
   const { scores, loaded } = useTeamScores(team?.id);
   if (!team) return <TeamNotice />;
 
-  const rank = standings.findIndex((s) => s.teamId === team.id) + 1;
-  const mine = rank > 0 ? standings[rank - 1] : undefined;
+  const mine = withRanks(standings, team.cat).find((s) => s.teamId === team.id);
   const best = scores.length ? Math.max(...scores.map((s) => s.points)) : undefined;
 
   // 심판별 제출 점수를 경기별로 묶는다. (경기, 팀, 심판)당 1건이므로 한 경기에 점수가 여러 개일 수 있다.
@@ -120,8 +148,11 @@ function Score({ team }: { team?: Team }) {
         <article className="mt-6 rounded-2xl border border-line bg-white p-6">
           <div className="flex justify-between">
             <div>
-              <b>현재 순위 {rank}위</b>
+              <b>현재 {mine.rank}위{mine.tied ? ' (동점)' : ''}</b>
               <p className="mt-1 text-sm text-gray-500">실시간 순위표 기준 (1·2차 최고점)</p>
+              {(mine.r1 !== null || mine.r2 !== null) && (
+                <p className="mt-1 text-sm text-gray-500">1차 {mine.r1 ?? '–'}점 · 2차 {mine.r2 ?? '–'}점</p>
+              )}
             </div>
             <strong className="text-3xl text-accent">{mine.total}점</strong>
           </div>
@@ -166,19 +197,19 @@ function Score({ team }: { team?: Team }) {
 }
 
 function Schedule({ team }: { team?: Team }) {
-  const { config } = useContest();
+  const mine = useMySchedule(team);
   if (!team) return <TeamNotice />;
-  const mine = (config?.matches ?? []).filter((m) => m.team === team.id);
   return (
     <section className="mt-7">
       <h1 className="text-3xl font-extrabold">내 일정</h1>
       {mine.map((m) => (
         <article key={m.id} className="mt-4 flex items-center gap-5 rounded-2xl border border-line bg-white p-5">
-          <b className="w-12 shrink-0 text-accent">{m.round}차</b>
+          <b className="w-12 shrink-0 text-accent">{m.round}R</b>
           <div>
             <b>{m.wave}조 · 테이블 {m.table} {m.field}</b>
             <p className="mt-1 text-sm text-gray-500">{m.cat === 'S' ? '시니어' : '주니어'} 부문</p>
           </div>
+          <span className="ml-auto shrink-0 rounded-full bg-accent-tint px-3 py-1 text-sm font-bold text-accent">{m.seq}번째</span>
         </article>
       ))}
     </section>

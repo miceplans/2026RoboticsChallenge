@@ -20,7 +20,7 @@ export type ScoreInput = {
   sheet: string | null; // 채점지 전체(JSON 문자열). 점수만 본내는 경우 null
   penCnt?: number; // 규정 순위 3순위(감점 적은 순) 집계용
 };
-export type Standing = { teamId: string; total: number; pen: number };
+export type Standing = { teamId: string; cat: 'J' | 'S'; total: number; sum: number; pen: number; r1: number | null; r2: number | null };
 export type TeamScore = { matchId: string; judgeId: string; points: number; ts: number; status: ScoreStatus };
 export type Team = {
   id: string;
@@ -65,7 +65,8 @@ export type AuditAction =
   | 'tournament'
   | 'login';
 export type AuditEntry = { id: number; ts: number; actorId: string; actorName?: string | null; action: AuditAction; entity: string; entityId: string | null; detail: unknown };
-export type TournamentRound = 'R16' | 'QF' | 'SF' | 'F' | '3P';
+// 토너먼트는 예선(1·2차) 순위 상위 8팀으로 8강(QF)부터 시작한다 — 16강은 없다.
+export type TournamentRound = 'QF' | 'SF' | 'F' | '3P';
 export type Tournament = {
   slots: { cat: 'J' | 'S'; slotNo: number; teamId: string | null }[];
   games: {
@@ -139,14 +140,14 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS tournament_slots (
     cat     TEXT NOT NULL CHECK (cat IN ('J','S')),
-    slot_no INTEGER NOT NULL CHECK (slot_no BETWEEN 1 AND 16),
+    slot_no INTEGER NOT NULL CHECK (slot_no BETWEEN 1 AND 8),
     team_id TEXT,
     PRIMARY KEY (cat, slot_no)
   );
 
   CREATE TABLE IF NOT EXISTS tournament_games (
     cat        TEXT NOT NULL CHECK (cat IN ('J','S')),
-    round      TEXT NOT NULL CHECK (round IN ('R16','QF','SF','F','3P')),
+    round      TEXT NOT NULL CHECK (round IN ('QF','SF','F','3P')),
     game_no    INTEGER NOT NULL,
     team_a     TEXT,
     team_b     TEXT,
@@ -167,21 +168,33 @@ for (const col of ['sheet TEXT', "status TEXT NOT NULL DEFAULT 'pending'", 'pen_
   }
 }
 
-// 라운드 구성을 R16(16강 8경기) 까지 포함하도록 바꾼 뒤에는 옛 스키마 테이블을 백업한다.
+// 예선 순위 상위 8팀이 8강(QF)부터 시작하는 구조로 바뀐 뒤에는 옛 스키마(16슬롯·16강) 테이블을 백업한다.
 // 데이터가 있으면 지우지 않고 이름을 바꿔 보존 — 운영 DB 에서 경고 없이 날아가는 일이 없게.
 {
-  const ddl = (db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'tournament_games'").get() as { sql: string } | undefined)?.sql ?? '';
-  if (ddl && !ddl.includes("'R16'")) {
-    const cnt = (db.prepare('SELECT COUNT(*) AS c FROM tournament_games').get() as { c: number }).c;
-    const backup = `tournament_games_backup_${Date.now()}`;
-    db.exec(`ALTER TABLE tournament_games RENAME TO ${backup}`);
-    console.log(`old tournament_games moved to ${backup}${cnt > 0 ? ` (${cnt} rows preserved)` : ' (was empty)'}`);
-  }
+  const ddlOf = (name: string) => (db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) as { sql: string } | undefined)?.sql ?? '';
+  const backupIf = (name: string, stale: (sql: string) => boolean) => {
+    const ddl = ddlOf(name);
+    if (ddl && stale(ddl)) {
+      const cnt = (db.prepare(`SELECT COUNT(*) AS c FROM ${name}`).get() as { c: number }).c;
+      const backup = `${name}_backup_${Date.now()}`;
+      db.exec(`ALTER TABLE ${name} RENAME TO ${backup}`);
+      console.log(`old ${name} moved to ${backup}${cnt > 0 ? ` (${cnt} rows preserved)` : ' (was empty)'}`);
+    }
+  };
+  backupIf('tournament_slots', (sql) => sql.includes('BETWEEN 1 AND 16'));
+  backupIf('tournament_games', (sql) => sql.includes("'R16'"));
 }
 db.exec(`
+  CREATE TABLE IF NOT EXISTS tournament_slots (
+    cat     TEXT NOT NULL CHECK (cat IN ('J','S')),
+    slot_no INTEGER NOT NULL CHECK (slot_no BETWEEN 1 AND 8),
+    team_id TEXT,
+    PRIMARY KEY (cat, slot_no)
+  );
+
   CREATE TABLE IF NOT EXISTS tournament_games (
     cat        TEXT NOT NULL CHECK (cat IN ('J','S')),
-    round      TEXT NOT NULL CHECK (round IN ('R16','QF','SF','F','3P')),
+    round      TEXT NOT NULL CHECK (round IN ('QF','SF','F','3P')),
     game_no    INTEGER NOT NULL,
     team_a     TEXT,
     team_b     TEXT,
@@ -256,6 +269,10 @@ export function setSetting(key: string, value: string): void {
   db.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at').run(key, value, Date.now());
   settingsCache.set(key, value);
 }
+export function deleteSetting(key: string): void {
+  db.prepare('DELETE FROM settings WHERE key = ?').run(key);
+  settingsCache.delete(key);
+}
 export const autoConfirm = () => getSetting('auto_confirm', '0') === '1';
 export const boardPublic = () => getSetting('board_public', '1') === '1';
 export const hideScores = () => getSetting('hide_scores', '0') === '1';
@@ -267,6 +284,26 @@ export function getConfigVersion(): number {
 export const getTemplate = (): unknown => getSettingJson<unknown | null>('template', null);
 export const getRoundScores = (): Record<string, { r1: string; r2: string }> => getSettingJson('round_scores', {});
 export const setTemplate = (items: unknown): void => setSetting('template', JSON.stringify(items));
+
+// 당일 진행 순서: 테이블 실행 순서 (1~8 순열). 설정이 없거나 깨졌으면 1~8 기본값.
+export function getTableOrder(): number[] {
+  const raw = getSettingJson<unknown>('table_order', null);
+  const arr = Array.isArray(raw) ? raw.filter((n): n is number => Number.isInteger(n) && n >= 1 && n <= 8) : [];
+  const uniq = [...new Set(arr)];
+  for (let n = 1; n <= 8; n++) if (!uniq.includes(n)) uniq.push(n);
+  return uniq;
+}
+
+// 관리자 순위 조정: 부문별 팀 ID 배열. 있으면 클라이언트가 계산 순위 대신 이 순서를 쓴다 (동점 8위 결정·드래그 조정).
+export function getRankOrder(): { S?: string[]; J?: string[] } {
+  const raw = getSettingJson<{ S?: unknown; J?: unknown }>('rank_order', {});
+  const pick = (v: unknown): string[] | undefined => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : undefined);
+  const out: { S?: string[]; J?: string[] } = {};
+  const s = pick(raw?.S); const j = pick(raw?.J);
+  if (s?.length) out.S = s;
+  if (j?.length) out.J = j;
+  return out;
+}
 export function resetTemplate(): void {
   db.prepare("DELETE FROM settings WHERE key = 'template'").run();
   settingsCache.delete('template');
@@ -385,12 +422,20 @@ export function modifyScore(matchId: string, teamId: string, judgeId: string, ac
   return true;
 }
 
-// 순위: 최고점 → 조별 합계 → 감점 적은 순 → 팀 ID. 확정(confirmed/modified)만 반영.
+// 순위(부문 내): 최고점 → 조별 합계 → 감점 적은 순 → 팀 ID. 확정(confirmed/modified)만 점수로 반영.
+// 명단(teams)에 올라온 팀은 확정 점수가 없어도 total=0으로 포함해 순위판에 그대로 띄운다.
+// r1/r2 는 각 라운드의 확정 최고점 — 1R→2R 흐름을 화면에 그대로 보여주기 위해 낸다.
 const standingsStmt = db.prepare(`
-  SELECT team_id AS teamId, MAX(points) AS total, SUM(pen_cnt) AS pen
-  FROM scores WHERE status IN ('confirmed','modified')
-  GROUP BY team_id
-  ORDER BY total DESC, SUM(points) DESC, pen ASC, team_id
+  SELECT teamId, cat, total, sumPts AS sum, pen, r1, r2 FROM (
+    SELECT t.id AS teamId, t.cat AS cat,
+      COALESCE(MAX(CASE WHEN s.status IN ('confirmed','modified') THEN s.points END), 0) AS total,
+      COALESCE(SUM(CASE WHEN s.status IN ('confirmed','modified') THEN s.pen_cnt END), 0) AS pen,
+      COALESCE(SUM(CASE WHEN s.status IN ('confirmed','modified') THEN s.points END), 0) AS sumPts,
+      MAX(CASE WHEN s.status IN ('confirmed','modified') AND m.round = 1 THEN s.points END) AS r1,
+      MAX(CASE WHEN s.status IN ('confirmed','modified') AND m.round = 2 THEN s.points END) AS r2
+    FROM teams t LEFT JOIN scores s ON s.team_id = t.id LEFT JOIN matches m ON m.id = s.match_id
+    GROUP BY t.id
+  ) ORDER BY cat, total DESC, sumPts DESC, pen ASC, teamId
 `);
 export const getStandings = () => standingsStmt.all() as Standing[];
 
@@ -506,7 +551,7 @@ export function getTournament(): Tournament {
   return { slots, games };
 }
 
-// 토너먼트 16슬롯 배정 저장 (전체 교체). 빈 칸은 null 로 저장한다.
+// 토너먼트 8슬롯 배정 저장 (전체 교체). 빈 칸은 null 로 저장한다.
 // 배정이 바뀌면 기존 경기 결과는 무효 — 다시 입력해야 한다.
 export function saveTournamentSlots(cat: 'J' | 'S', teamIds: (string | null)[]): void {
   db.exec('BEGIN');
@@ -522,7 +567,7 @@ export function saveTournamentSlots(cat: 'J' | 'S', teamIds: (string | null)[]):
   }
 }
 
-const ROUND_ORDER: TournamentRound[] = ['R16', 'QF', 'SF', 'F', '3P'];
+const ROUND_ORDER: TournamentRound[] = ['QF', 'SF', 'F', '3P'];
 
 // 결과 하나를 저장하고 해당 부문 전체를 일관되게 다시 계산한다 (승자 진출·3·4위전 패자 배정).
 // 더 아래 라운드에 이미 입력된 결과는 무효가 된다 — 바뀐 대진으로 다시 치러야 하므로.
@@ -546,7 +591,8 @@ export function saveTournamentResult(cat: 'J' | 'S', round: TournamentRound, gam
 }
 
 // 슬롯 배정 + 입력된 결과들로 경기 테이블 전체를 재구축한다.
-// R16(8경기) → QF(4) → SF(2) → 결승, 준결승 패자는 3·4위전. 팀이 채워지지 않거나 결과가 없는 경기는 예정 상태로 둔다.
+// 8강(QF 4경기) → 준결승(2) → 결승, 준결승 패자는 3·4위전. 팀이 채워지지 않거나 결과가 없는 경기는 예정 상태로 둔다.
+// 슬롯 2j-1 vs 2j 가 j번째 8강 경기 (홀수 승자는 A, 짝수 승자는 B).
 function rebuildTournament(cat: 'J' | 'S', results?: Map<string, { scoreA: number; scoreB: number }>): void {
   const resultsMap: Map<string, { scoreA: number; scoreB: number }> =
     results ??
@@ -562,8 +608,7 @@ function rebuildTournament(cat: 'J' | 'S', results?: Map<string, { scoreA: numbe
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   const now = Date.now();
   const games = new Map<string, { teamA: string | null; teamB: string | null; scoreA: number | null; scoreB: number | null; winner: string | null; status: 'scheduled' | 'done' }>();
-  // 배정을 저장한 부문은 16강~결승·3·4위전 행을 모두 갖는다 (빈 경기는 예정 상태)
-  for (let i = 1; i <= 8; i++) games.set(`R16-${i}`, { teamA: null, teamB: null, scoreA: null, scoreB: null, winner: null, status: 'scheduled' });
+  // 배정을 저장한 부문은 8강~결승·3·4위전 행을 모두 갖는다 (빈 경기는 예정 상태)
   for (let j = 1; j <= 4; j++) games.set(`QF-${j}`, { teamA: null, teamB: null, scoreA: null, scoreB: null, winner: null, status: 'scheduled' });
   for (let k = 1; k <= 2; k++) games.set(`SF-${k}`, { teamA: null, teamB: null, scoreA: null, scoreB: null, winner: null, status: 'scheduled' });
   games.set('F-1', { teamA: null, teamB: null, scoreA: null, scoreB: null, winner: null, status: 'scheduled' });
@@ -586,22 +631,17 @@ function rebuildTournament(cat: 'J' | 'S', results?: Map<string, { scoreA: numbe
     return { winner: g.winner, loser: res.scoreA > res.scoreB ? g.teamB : g.teamA };
   };
 
-  // R16: 슬롯 2i-1 vs 2i → QF (홀수 승자는 A, 짝수 승자는 B)
-  for (let i = 1; i <= 8; i++) {
-    const key = `R16-${i}`;
-    const a = slots[2 * i - 2] ?? null;
-    const b = slots[2 * i - 1] ?? null;
+  // 8강: 슬롯 2j-1 vs 2j → 준결승 (홀수 승자는 A, 짝수 승자는 B)
+  for (let j = 1; j <= 4; j++) {
+    const key = `QF-${j}`;
+    const a = slots[2 * j - 2] ?? null;
+    const b = slots[2 * j - 1] ?? null;
     if (a) setTeam(key, 'A', a);
     if (b) setTeam(key, 'B', b);
     const out = applyResult(key);
-    if (out) setTeam(`QF-${Math.ceil(i / 2)}`, i % 2 ? 'A' : 'B', out.winner);
-  }
-  // QF → SF
-  for (let j = 1; j <= 4; j++) {
-    const out = applyResult(`QF-${j}`);
     if (out) setTeam(`SF-${Math.ceil(j / 2)}`, j % 2 ? 'A' : 'B', out.winner);
   }
-  // SF → 결승(승자) · 3·4위전(패자)
+  // 준결승 → 결승(승자) · 3·4위전(패자)
   for (let k = 1; k <= 2; k++) {
     const out = applyResult(`SF-${k}`);
     if (out) {
@@ -616,6 +656,21 @@ function rebuildTournament(cat: 'J' | 'S', results?: Map<string, { scoreA: numbe
     const [round, no] = key.split('-') as [TournamentRound, string];
     ins.run(cat, round, Number(no), g.teamA, g.teamB, g.scoreA, g.scoreB, g.winner, g.status, now);
   }
+}
+
+// 4강 이후 슬롯에 팀을 직접 지정한다 (기권·부전승 등 점수 입력으로 반영하기 어려운 경우).
+// 해당 경기의 결과가 이미 있으면 무효가 되도록 승자를 지우고 예정 상태로 돌린다.
+// 주의: 상위 라운드 결과를 다시 저장해 rebuildTournament 가 돌면 수동 지정은 결과 기반 배정으로 덮인다.
+export function setTournamentTeam(cat: 'J' | 'S', round: TournamentRound, gameNo: number, side: 'A' | 'B', teamId: string | null): boolean {
+  if (round === 'QF') return false; // 8강은 슬롯 배정으로만 정한다
+  if (teamId) {
+    const exists = db.prepare('SELECT COUNT(*) AS c FROM teams WHERE id = ?').get(teamId) as { c: number };
+    if (exists.c === 0) throw new Error(`unknown_team:${teamId}`);
+  }
+  const col = side === 'A' ? 'team_a' : 'team_b';
+  const res = db.prepare(`UPDATE tournament_games SET ${col} = ?, winner = NULL, status = 'scheduled', score_a = NULL, score_b = NULL, updated_at = ?
+    WHERE cat = ? AND round = ? AND game_no = ?`).run(teamId, Date.now(), cat, round, gameNo);
+  return res.changes > 0;
 }
 
 // --- 시드 ---
@@ -716,16 +771,18 @@ export function revokeAllSessions(): void {
 }
 
 // 발급용 임시 비밀번호. base64url 8자 — 종이에 적어 나눠주기 짧고, 해시로 저장되므로 재사용핸도 안전하다.
+// 계정 기본 비밀번호. 관리자가 "초기화"하면 이 값으로 돌아간다 (환경변수 DEFAULT_PASSWORD 로 변경 가능).
+export const DEFAULT_PASSWORD = process.env.DEFAULT_PASSWORD || 'robotics!';
 const genPassword = () => randomBytes(6).toString('base64url');
 
 const hashPw = (password: string, salt: string) => scryptSync(password, salt, 32).toString('base64url');
 
 // 발급·재발급 계정은 모두 must_change=1 (처음 로그인 후 비밀번호를 바꾸도록 운영에서 안내)
-function insertAccount(a: { id: string; name: string; role: AccountRole; teamId?: string | null; judgeTable?: number | null; password?: string }): IssuedAccount {
+function insertAccount(a: { id: string; name: string; role: AccountRole; teamId?: string | null; judgeTable?: number | null; password?: string; mustChange?: boolean }): IssuedAccount {
   const password = a.password ?? genPassword();
   const salt = randomBytes(16).toString('base64url');
-  db.prepare('INSERT INTO users (id, name, role, team_id, judge_table, salt, hash, must_change, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)')
-    .run(a.id, a.name, a.role, a.teamId ?? null, a.judgeTable ?? null, salt, hashPw(password, salt), Date.now());
+  db.prepare('INSERT INTO users (id, name, role, team_id, judge_table, salt, hash, must_change, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(a.id, a.name, a.role, a.teamId ?? null, a.judgeTable ?? null, salt, hashPw(password, salt), a.mustChange === false ? 0 : 1, Date.now());
   return { id: a.id, name: a.name, role: a.role, password };
 }
 
@@ -748,8 +805,40 @@ export function issueAccounts(list: { id: string; name: string; role: 'judge' | 
   return out;
 }
 
-// 비밀번호 일괄 재발급. ids 로 지정하거나 역할(judge/admin) 전체를 대상으로 한다.
-export function resetPasswords(sel: { ids?: string[]; role?: 'judge' | 'admin' }): IssuedAccount[] {
+// 대회 기본 계정: 팀별 1개(team-J01 …), 관리자 2개(admin, admin2), 심판 REF01~REF16. 비밀번호는 모두 DEFAULT_PASSWORD.
+// 심판 1~8 은 같은 번호 테이블, 9~16 은 (번호-8)번 테이블로 기본 배정한다 (관리자 화면에서 바꿀 수 있다).
+// overwrite=false(기동 시): 없는 계정만 만든다. overwrite=true(수동 스크립트): 이미 있는 계정도 비밀번호를 기본값으로 되돌린다.
+export function seedDefaultAccounts(overwrite = false): { created: number; reset: number } {
+  const wanted: { id: string; name: string; role: AccountRole; teamId?: string; judgeTable?: number }[] = [
+    ...listTeams().map((t) => ({ id: `team-${t.id}`, name: t.name, role: 'user' as const, teamId: t.id })),
+    { id: 'admin', name: '관리자 1', role: 'admin' },
+    { id: 'admin2', name: '관리자 2', role: 'admin' },
+    ...Array.from({ length: 16 }, (_, i) => ({ id: `REF${String(i + 1).padStart(2, '0')}`, name: `심판 ${i + 1}`, role: 'judge' as const, judgeTable: (i % 8) + 1 })),
+  ];
+  const exists = db.prepare('SELECT role FROM users WHERE id = ?');
+  const toReset: string[] = [];
+  let created = 0;
+  db.exec('BEGIN');
+  try {
+    for (const a of wanted) {
+      const row = exists.get(a.id) as { role: AccountRole } | undefined;
+      if (!row) {
+        insertAccount({ ...a, password: DEFAULT_PASSWORD, mustChange: false });
+        created++;
+      } else if (overwrite && row.role === a.role) {
+        toReset.push(a.id);
+      }
+    }
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  return { created, reset: toReset.length ? resetPasswords({ ids: toReset }).length : 0 };
+}
+
+// 비밀번호 일괄 재발급. ids 로 지정하거나 역할(user/judge/admin) 전체를 대상으로 한다.
+export function resetPasswords(sel: { ids?: string[]; role?: AccountRole }): IssuedAccount[] {
   const rows = sel.ids?.length
     ? (db.prepare(`SELECT id, name, role FROM users WHERE id IN (${sel.ids.map(() => '?').join(',')})`).all(...sel.ids) as { id: string; name: string; role: AccountRole }[])
     : sel.role
@@ -759,9 +848,9 @@ export function resetPasswords(sel: { ids?: string[]; role?: 'judge' | 'admin' }
   db.exec('BEGIN');
   try {
     // 비밀번호를 바꾸면 기존 세션은 즉시 무효 (token_version 증가)
-    const upd = db.prepare('UPDATE users SET salt = ?, hash = ?, must_change = 1, token_version = token_version + 1 WHERE id = ?');
+    const upd = db.prepare('UPDATE users SET salt = ?, hash = ?, must_change = 0, token_version = token_version + 1 WHERE id = ?');
     for (const r of rows) {
-      const password = genPassword();
+      const password = DEFAULT_PASSWORD;
       const salt = randomBytes(16).toString('base64url');
       upd.run(salt, hashPw(password, salt), r.id);
       out.push({ id: r.id, name: r.name, role: r.role, password });

@@ -88,3 +88,11 @@ export async function registerUser(user: RegisteredUser & { password: string }):
   const salt = randomBytes(16).toString('base64url');
   getStatements().insert.run(user.id, user.name, user.teamId, salt, await hashPassword(user.password, salt), Date.now());
 }
+
+// 본인 비밀번호 변경. token_version 을 올려 다른 기기의 세션은 끊고, 새 tv 를 돌려줘 현재 세션을 다시 발급하게 한다.
+export async function changePassword(id: string, newPassword: string): Promise<number> {
+  const salt = randomBytes(16).toString('base64url');
+  const db = getDb();
+  db.prepare('UPDATE users SET salt = ?, hash = ?, must_change = 0, token_version = token_version + 1 WHERE id = ?').run(salt, await hashPassword(newPassword, salt), id);
+  return (getStatements().find.get(id) as { tv: number }).tv;
+}

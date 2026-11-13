@@ -5,8 +5,10 @@ import {
   assignJudgeTable,
   boardPublic,
   bootstrapStaffIfNone,
+  seedDefaultAccounts,
   confirmScore,
   countScores,
+  deleteSetting,
   getActivity,
   getConfigVersion,
   getJudgeTables,
@@ -16,6 +18,8 @@ import {
   getPending,
   getRoundScores,
   getStandings,
+  getTableOrder,
+  getRankOrder,
   getTeamScores,
   getTemplate,
   getTournament,
@@ -40,6 +44,7 @@ import {
   seedIfEmpty,
   setSetting,
   setTemplate,
+  setTournamentTeam,
   type AccountRole,
   type ScoreStatus,
   type TournamentRound,
@@ -66,6 +71,7 @@ const MAX_BODY_BYTES = MAX_SHEET_BYTES + 4096;
 const MAX_ADMIN_BODY_BYTES = 1024 * 1024;
 
 seedIfEmpty();
+seedDefaultAccounts(); // 없는 기본 계정만 만든다 (팀별·관리자 2·심판 16)
 bootstrapStaffIfNone();
 
 // 대회 서버 — 예외 하나로 프로세스가 날아가면 모든 심판 제출이 끊긴다.
@@ -209,6 +215,8 @@ async function handleRequest(req: import('node:http').IncomingMessage, res: impo
           autoConfirm: autoConfirm(),
           boardPublic: boardPublic(),
           notice: getNotice(),
+          tableOrder: getTableOrder(),
+          rankOrder: getRankOrder(),
         },
         template: getTemplate(),
         judgeTables,
@@ -253,7 +261,7 @@ async function handleRequest(req: import('node:http').IncomingMessage, res: impo
       return json(res, 200, { ok: true, overview: getOverview() });
     }
 
-    // 설정 조회 (관리자 전용 값 포함: 점수 가리기, 1·2라운드 심사 점수)
+    // 설정 조회 (관리자 전용 값 포함: 점수 가리기, 1·2라운드 심사 점수, 테이블 진행 순서, 순위 조정)
     if (url.pathname === '/admin/settings' && method === 'GET') {
       return json(res, 200, {
         ok: true,
@@ -263,6 +271,8 @@ async function handleRequest(req: import('node:http').IncomingMessage, res: impo
           hideScores: hideScores(),
           notice: getNotice(),
           roundScores: getRoundScores(),
+          tableOrder: getTableOrder(),
+          rankOrder: getRankOrder(),
         },
       });
     }
@@ -294,12 +304,12 @@ async function handleRequest(req: import('node:http').IncomingMessage, res: impo
       return json(res, 200, { ok: true });
     }
 
-    // 토너먼트 16슬롯 배정 저장 → /contest 대진표에 즉시 반영 (config 브로드캐스트)
+    // 토너먼트 8슬롯 배정 저장 → /contest 대진표에 즉시 반영 (config 브로드캐스트)
     if (url.pathname === '/admin/tournament/slots' && method === 'PUT') {
       const body = (await readJson(req, MAX_ADMIN_BODY_BYTES)) as { cat?: unknown; teamIds?: unknown } | null;
       const cat = body?.cat;
       const teamIds = body?.teamIds;
-      if ((cat !== 'J' && cat !== 'S') || !Array.isArray(teamIds) || teamIds.length !== 16) return bad(res);
+      if ((cat !== 'J' && cat !== 'S') || !Array.isArray(teamIds) || teamIds.length !== 8) return bad(res);
       if (!teamIds.every((t) => t === null || (typeof t === 'string' && t.length <= 16))) return bad(res);
       saveTournamentSlots(cat, teamIds as (string | null)[]);
       logAudit(session.id, 'tournament', 'tournament', cat, { slots: teamIds.filter(Boolean).length });
@@ -312,7 +322,7 @@ async function handleRequest(req: import('node:http').IncomingMessage, res: impo
     if (url.pathname === '/admin/tournament/result' && method === 'POST') {
       const body = (await readJson(req, MAX_ADMIN_BODY_BYTES)) as { cat?: unknown; round?: unknown; gameNo?: unknown; scoreA?: unknown; scoreB?: unknown } | null;
       const { cat, round, gameNo, scoreA, scoreB } = body ?? {};
-      if ((cat !== 'J' && cat !== 'S') || (round !== 'R16' && round !== 'QF' && round !== 'SF' && round !== 'F' && round !== '3P')) return bad(res);
+      if ((cat !== 'J' && cat !== 'S') || (round !== 'QF' && round !== 'SF' && round !== 'F' && round !== '3P')) return bad(res);
       if (!Number.isInteger(gameNo) || typeof scoreA !== 'number' || !Number.isFinite(scoreA) || typeof scoreB !== 'number' || !Number.isFinite(scoreB)) return bad(res);
       try {
         saveTournamentResult(cat, round as TournamentRound, gameNo as number, scoreA, scoreB);
@@ -320,6 +330,24 @@ async function handleRequest(req: import('node:http').IncomingMessage, res: impo
         return json(res, 400, { ok: false, error: (e as Error).message });
       }
       logAudit(session.id, 'tournament', 'tournament', `${cat} ${round}-${gameNo}`, { scoreA, scoreB });
+      broadcastConfig();
+      return json(res, 200, { ok: true });
+    }
+
+    // 준결승 이후 슬롯에 팀을 직접 지정 (기권·부전승 등). 빈 칸(null)으로 비울 수도 있다.
+    // 해당 경기 결과는 지워지고, 상위 라운드 결과를 다시 저장하면 자동 배정으로 덮인다.
+    if (url.pathname === '/admin/tournament/set-team' && method === 'POST') {
+      const body = (await readJson(req, MAX_ADMIN_BODY_BYTES)) as { cat?: unknown; round?: unknown; gameNo?: unknown; side?: unknown; teamId?: unknown } | null;
+      const { cat, round, gameNo, side, teamId } = body ?? {};
+      if ((cat !== 'J' && cat !== 'S') || (round !== 'SF' && round !== 'F' && round !== '3P') || !Number.isInteger(gameNo)) return bad(res);
+      if (side !== 'A' && side !== 'B') return bad(res);
+      if (teamId !== null && (typeof teamId !== 'string' || teamId.length > 16)) return bad(res);
+      try {
+        if (!setTournamentTeam(cat, round as TournamentRound, gameNo as number, side, teamId)) return json(res, 404, { ok: false, error: 'game_not_found' });
+      } catch (e) {
+        return json(res, 409, { ok: false, error: (e as Error).message });
+      }
+      logAudit(session.id, 'tournament', 'tournament', `${cat} ${round}-${gameNo}`, { setTeam: { side, teamId } });
       broadcastConfig();
       return json(res, 200, { ok: true });
     }
@@ -376,7 +404,7 @@ async function handleRequest(req: import('node:http').IncomingMessage, res: impo
     if (url.pathname === '/admin/accounts/reset-password' && method === 'POST') {
       const body = (await readJson(req, MAX_ADMIN_BODY_BYTES)) as { ids?: unknown; role?: unknown } | null;
       const ids = Array.isArray(body?.ids) ? body.ids.filter((x): x is string => typeof x === 'string') : undefined;
-      const role = body?.role === 'judge' || body?.role === 'admin' ? body.role : undefined;
+      const role = body?.role === 'judge' || body?.role === 'admin' || body?.role === 'user' ? body.role : undefined;
       if (!ids && !role) return bad(res);
       const reset = resetPasswords({ ids, role });
       if (reset.length === 0) return json(res, 404, { ok: false, error: 'no_targets' });
@@ -431,10 +459,10 @@ async function handleRequest(req: import('node:http').IncomingMessage, res: impo
       return json(res, 200, { ok: true });
     }
 
-    // 설정 변경: 자동 확정, 순위판 공개, 점수 가리기, 공지, 1·2라운드 심사 점수. 공지·보드 설정은 접속 중인 클라이언트에 즉시 반영한다.
+    // 설정 변경: 자동 확정, 순위판 공개, 점수 가리기, 공지, 1·2라운드 심사 점수, 테이블 진행 순서, 순위 조정. 공지·보드 설정은 접속 중인 클라이언트에 즉시 반영한다.
     if (url.pathname === '/admin/settings' && method === 'PUT') {
       const body = (await readJson(req, MAX_ADMIN_BODY_BYTES)) as
-        | { autoConfirm?: unknown; boardPublic?: unknown; hideScores?: unknown; notice?: unknown; roundScores?: unknown }
+        | { autoConfirm?: unknown; boardPublic?: unknown; hideScores?: unknown; notice?: unknown; roundScores?: unknown; tableOrder?: unknown; rankOrder?: unknown }
         | null;
       if (!body) return bad(res);
       if (body.autoConfirm !== undefined) {
@@ -457,6 +485,26 @@ async function handleRequest(req: import('node:http').IncomingMessage, res: impo
           if ((r1 !== undefined && typeof r1 !== 'string' && typeof r1 !== 'number') || (r2 !== undefined && typeof r2 !== 'string' && typeof r2 !== 'number')) return bad(res);
         }
         setSetting('round_scores', JSON.stringify(body.roundScores));
+      }
+      // 당일 진행 순서: 테이블 1~8 의 실행 순서 (순열)
+      if (body.tableOrder !== undefined) {
+        if (!Array.isArray(body.tableOrder) || body.tableOrder.length !== 8 || !body.tableOrder.every((n) => Number.isInteger(n) && n >= 1 && n <= 8)) return bad(res);
+        if (new Set(body.tableOrder as number[]).size !== 8) return bad(res, 'table_order_must_be_permutation');
+        setSetting('table_order', JSON.stringify(body.tableOrder));
+      }
+      // 순위 조정: 부문별 팀 ID 순서. 빈 배열이면 설정을 지워 계산 순위로 되돌린다.
+      if (body.rankOrder !== undefined) {
+        if (typeof body.rankOrder !== 'object' || body.rankOrder === null || Array.isArray(body.rankOrder)) return bad(res);
+        const { S, J } = body.rankOrder as { S?: unknown; J?: unknown };
+        for (const v of [S, J]) {
+          if (v !== undefined && (!Array.isArray(v) || !v.every((x) => typeof x === 'string' && x.length <= 16))) return bad(res);
+        }
+        const clean = { ...(Array.isArray(S) && S.length > 0 ? { S } : {}), ...(Array.isArray(J) && J.length > 0 ? { J } : {}) };
+        if (Object.keys(clean).length === 0) {
+          deleteSetting('rank_order');
+        } else {
+          setSetting('rank_order', JSON.stringify(clean));
+        }
       }
       if (body.notice !== undefined) {
         if (typeof body.notice !== 'object' || body.notice === null) return bad(res);

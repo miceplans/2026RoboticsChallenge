@@ -104,7 +104,8 @@ ALTER TABLE scores ADD COLUMN confirmed_by TEXT;
 ```
 
 - 제출 시 상태: 설정 `auto_confirm=1`이면 `confirmed`, 아니면 `pending`.
-- 순위에는 `confirmed`, `modified`만 반영. `rejected`는 사유와 함께 감사 로그에 남는다.
+- 순위에는 `confirmed`, `modified`만 점수로 반영. `rejected`는 사유와 함께 감사 로그에 남는다.
+- 확정 점수가 없는 팀도 `total=0, pen=0`으로 순위판에 포함된다 (teams 명단 전체가 항상 난다).
 - 관리자 수정: `points`(와 필요 시 sheet)를 덮고 상태를 `modified`로, 이전 값은 `score_audit`에 보관.
 - 심판 재전송 규칙: `pending`/`rejected`만 더 새로운 ts 로 덮을 수 있다. `confirmed`·`modified`는 심판이 덮지 못한다 — 정정은 관리자 확인을 거친다. 제출은 실제 대진과 대조(경기 존재, 팀 일치, 담당 테이블, 점수/ts 범위)해 검증한다.
 
@@ -134,6 +135,8 @@ CREATE TABLE settings (
 -- board_public : '0' | '1'
 -- notice       : '{"message":"...","updatedAt":0}'
 -- template     : rules.ts ITEMS 와 동일 형태의 JSON 배열 (채점표 템플릿)
+-- table_order  : '[3,1,2,...]' 테이블 1~8 의 당일 진행 순서 (운영 순서표·팀 순번 계산용)
+-- rank_order   : '{"S":["S01",...],"J":[...]}' 관리자 순위 조정 (동점 8위 결정·드래그)
 ```
 
 ### tournament_slots / tournament_games
@@ -141,13 +144,13 @@ CREATE TABLE settings (
 ```sql
 CREATE TABLE tournament_slots (
   cat     TEXT NOT NULL CHECK (cat IN ('J','S')),
-  slot_no INTEGER NOT NULL CHECK (slot_no BETWEEN 1 AND 16),
+  slot_no INTEGER NOT NULL CHECK (slot_no BETWEEN 1 AND 8),   -- 예선 순위 상위 8팀
   team_id TEXT REFERENCES teams(id),
   PRIMARY KEY (cat, slot_no)
 );
 CREATE TABLE tournament_games (
   cat        TEXT NOT NULL CHECK (cat IN ('J','S')),
-  round      TEXT NOT NULL CHECK (round IN ('R16','QF','SF','F','3P')),
+  round      TEXT NOT NULL CHECK (round IN ('QF','SF','F','3P')),
   game_no    INTEGER NOT NULL,
   team_a     TEXT,
   team_b     TEXT,
@@ -159,8 +162,9 @@ CREATE TABLE tournament_games (
 );
 ```
 
-- 16팀 단일 elimination: `R16`(8경기) → `QF`(4) → `SF`(2) → `F`(결승), 준결승 패자는 `3P`(3·4위전).
+- 부문별 8팀 단일 elimination: 16강은 없고 `QF`(8강 4경기, 슬롯 2j-1 vs 2j) → `SF`(준결승 2) → `F`(결승), 준결승 패자는 `3P`(3·4위전). 진출 팀은 예선(1·2차) 순위 상위 8팀 — 동점 컷오프는 관리자가 순위 드래그(`rank_order` 설정)로 결정한다.
 - 결과 저장(`saveTournamentResult`)은 슬롯+모든 결과로 해당 부문을 통째로 재계산한다. 승자가 다음 라운드로 진출하고, 수정한 라운드 아래의 기존 결과는 무효가진다. 배정(`saveTournamentSlots`)을 다시 저장하면 결과가 초기화된다.
+- `setTournamentTeam`으로 준결승 이후 슬롯에 팀을 직접 지정할 수 있다 (기권·부전승). 상위 라운드 결과를 다시 저장하면 결과 기반 배정으로 덮인다.
 
 ## 3. API 설계 (server/src/, REST + 세션 쿠키)
 
@@ -202,20 +206,26 @@ CREATE TABLE tournament_games (
 | PUT | `/admin/matches` | 대진·심판 배정 수정 |
 | GET/PUT | `/admin/settings` | `auto_confirm`, `board_public`, `notice` |
 | GET/PUT | `/admin/template` · POST `/admin/template/reset` | 채점표 템플릿 CRUD, "복원"=rules.ts 기본값 |
-| PUT | `/admin/tournament/slots` | `{cat, teamIds[16]}` 배정 저장 → 결과 초기화, `/contest` 즉시 반영 |
+| PUT | `/admin/tournament/slots` | `{cat, teamIds[8]}` 배정 저장 → 결과 초기화, `/contest` 즉시 반영 |
 | POST | `/admin/tournament/result` | `{cat, round, gameNo, scoreA, scoreB}` → 승자 진출·3·4위전 배정. 무승부 불가. 수정 시 하위 라운드 결과 무효 |
 
 모든 관리자 변경은 `score_audit` 기록 + 관련 소켓 브로드캐스트.
 
-## 4. 순위 규칙 (5번)
+## 4. 순위 규칙
 
 ```sql
-SELECT team_id AS teamId, MAX(points) AS total
-FROM scores
-WHERE status IN ('confirmed','modified')
-GROUP BY team_id
-ORDER BY total DESC, SUM(points) DESC, SUM(pen_cnt) ASC, team_id;
--- 규정: 최고점 → 조별 합계 → 감점 적은 순 → (마지막 정렬키는 팀 ID로 동률 처리)
+SELECT t.id AS teamId, t.cat,
+  COALESCE(MAX(CASE WHEN s.status IN ('confirmed','modified') THEN s.points END), 0) AS total,
+  COALESCE(SUM(CASE WHEN s.status IN ('confirmed','modified') THEN s.pen_cnt END), 0) AS pen,
+  COALESCE(SUM(CASE WHEN s.status IN ('confirmed','modified') THEN s.points END), 0) AS sumPts,
+  MAX(CASE WHEN s.status IN ('confirmed','modified') AND m.round = 1 THEN s.points END) AS r1,
+  MAX(CASE WHEN s.status IN ('confirmed','modified') AND m.round = 2 THEN s.points END) AS r2
+FROM teams t LEFT JOIN scores s ON s.team_id = t.id LEFT JOIN matches m ON m.id = s.match_id
+GROUP BY t.id
+ORDER BY cat, total DESC, sumPts DESC, pen ASC, teamId;
+-- 규정(부문 내): 최고점 → 조별 합계 → 감점 적은 순 → (마지막 정렬키는 팀 ID로 동률 처리)
+-- 동점 표기: total·sum·pen 이 모두 같으면 같은 순위(경쟁 순위)로 화면에 표시한다.
+-- rank_order 설정(부문별 팀 ID 배열)이 있으면 클라이언트가 계산 순위 대신 그 순서를 쓴다 — 동점 8위 컷오프 결정·순위 드래그 조정.
 ```
 
 - `pen_cnt`는 심판 콘솔이 `calc()`로 계산해 제출 시 함께 본다. 시트 JSON에도 값이 있지만 서버는 신뢰 컬럼만 집계한다.

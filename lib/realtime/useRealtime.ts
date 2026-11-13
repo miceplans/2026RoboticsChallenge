@@ -13,8 +13,9 @@ import {
   type LedgerEntry,
   type Score,
 } from './outbox';
+import type { Standing } from '../contest';
 
-export type Standing = { teamId: string; total: number };
+export type { Standing };
 export type Status = 'connecting' | 'online' | 'offline' | 'denied';
 export type TeamScore = { matchId: string; judgeId: string; points: number; ts: number };
 type Result = { ok: true } | { ok: false; error: string };

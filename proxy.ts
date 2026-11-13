@@ -3,7 +3,7 @@ import { areaOf, areaRoles } from '@/lib/hosts';
 import { SESSION_COOKIE, verifySessionToken } from '@/lib/session';
 
 // 로그인/로그아웃은 모든 호스트에서 공통으로 사용
-const shared = ['/login', '/signup', '/judge/login', '/admin/login'];
+const shared = ['/login', '/signup', '/judge/login', '/admin/login', '/password'];
 const isShared = (path: string) => shared.some((p) => path === p || path.startsWith(`${p}/`));
 
 export async function proxy(request: NextRequest) {
@@ -30,9 +30,15 @@ export async function proxy(request: NextRequest) {
     // 이전에는 이 경로를 /404로 리라이트해서, 실제 페이지가 있어도
     // localhost:3000/judge 접근이 항상 실패했다. 페이지의 requireRole이
     // 로그인 및 역할 권한은 계속 검증한다.
-    if (pathname.startsWith('/mypage') && !session) return redirectTo('/login');
+    if ((pathname.startsWith('/mypage') || pathname.startsWith('/password')) && !session) return redirectTo('/login');
     return NextResponse.next();
   }
+
+  // 운영 서브도메인의 대표 로그인 주소는 해당 운영 영역 로그인으로 연결한다.
+  // 예: admin.example.com/login → admin.example.com/admin/login
+  // 공용 로그인 페이지를 보여주면 관리자 계정으로 로그인할 수 없는 것처럼
+  // 보이기 때문에, 사용자가 자연스럽게 입력하는 주소도 지원한다.
+  if (pathname === '/login') return redirectTo(`/${area}/login`);
 
   if (isShared(pathname)) return NextResponse.next();
 

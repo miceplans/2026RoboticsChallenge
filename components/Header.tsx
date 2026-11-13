@@ -62,6 +62,7 @@ export default async function Header() {
                 {session.role === 'admin' && (
                   <a href={`${proto}://${hostFor('admin', host)}/`} className={linkClass}>관리자</a>
                 )}
+                <Link href="/password" className={linkClass}>비밀번호 변경</Link>
                 <form action={logout}>
                   <button className={linkClass}>로그아웃</button>
                 </form>

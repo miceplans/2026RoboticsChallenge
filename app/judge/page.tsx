@@ -11,6 +11,7 @@ export default async function JudgePage() {
         <span className="text-sm text-gray-500">문제해결 · 심판</span>
         <span className="flex-1" />
         <span className="text-sm text-gray-500">{session.name} ({session.id})</span>
+        <a href="/password" className="rounded-xl border border-line px-3 py-1.5 text-sm font-bold text-gray-600">비밀번호 변경</a>
         <form action={logout}>
           <button type="submit" className="rounded-xl border border-line px-3 py-1.5 text-sm font-bold text-gray-600">로그아웃</button>
         </form>

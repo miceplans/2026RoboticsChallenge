@@ -3,11 +3,11 @@
 import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
 import { useToast } from '@/components/Toast';
-import { refreshContest, tablesOf, teamName, useContest, type Team } from '@/lib/contest';
+import { computeSchedule, refreshContest, tablesOf, teamName, useContest, withRanks, type Standing, type Team, type TournamentRound } from '@/lib/contest';
 import { CATEGORY_NAMES, ITEMS, parseTemplate, type Category, type Item } from '@/lib/judge/rules';
 import { BracketCanvas, SEED_ORDER, useRanking } from './TournamentBracket';
 
-type Tab = 'dashboard' | 'users' | 'scores' | 'template' | 'draw' | 'teams' | 'settings';
+type Tab = 'dashboard' | 'users' | 'accounts' | 'scores' | 'template' | 'draw' | 'ops' | 'teams' | 'settings';
 
 const nav: { id: Tab; label: string; icon: string }[] = [
   { id: 'dashboard', label: '대시보드', icon: 'dashboard' },
@@ -15,7 +15,9 @@ const nav: { id: Tab; label: string; icon: string }[] = [
   { id: 'scores', label: '채점 목록', icon: 'fact_check' },
   { id: 'template', label: '채점표 템플릿', icon: 'table_chart' },
   { id: 'draw', label: '토너먼트 배정', icon: 'shuffle' },
+  { id: 'ops', label: '운영 순서', icon: 'order_approve' },
   { id: 'teams', label: '팀 · 계정', icon: 'group' },
+  { id: 'accounts', label: '사용자 현황', icon: 'badge' },
   { id: 'settings', label: '설정', icon: 'settings' },
 ];
 
@@ -559,8 +561,12 @@ function Draw() {
   const ranking = useRanking(cat);
   const { config } = useContest();
   const teams = config?.teams ?? [];
-  const [slots, setSlots] = useState<(string | undefined)[]>(Array(16).fill(undefined));
+  const [slots, setSlots] = useState<(string | undefined)[]>(Array(8).fill(undefined));
   const [applied, setApplied] = useState(false);
+  const [picked, setPicked] = useState<string>();
+  const [localRank, setLocalRank] = useState<string[] | null>(null); // 드래그로 바꾼 표시 순서 (null 이면 서버 순위)
+  const [dragRank, setDragRank] = useState<string | null>(null);
+  const [overRank, setOverRank] = useState<string | null>(null);
   const loadedCat = useRef<Category | null>(null);
 
   // 저장된 배정이 있으면 그대로 불러온다 (탭 진입 시 한 번)
@@ -568,7 +574,7 @@ function Draw() {
     if (loadedCat.current === cat || !config) return;
     loadedCat.current = cat;
     const saved = config.tournament.slots.filter((s) => s.cat === cat).sort((a, b) => a.slotNo - b.slotNo);
-    if (saved.length === 16) {
+    if (saved.length === 8) {
       setSlots(saved.map((s) => s.teamId ?? undefined));
       setApplied(saved.every((s) => s.teamId));
     }
@@ -576,7 +582,27 @@ function Draw() {
 
   const placed = new Set(slots.filter(Boolean));
   const count = placed.size;
-  const complete = count === Math.min(16, ranking.length) && count > 0;
+  const complete = count === Math.min(8, ranking.length) && count > 0;
+
+  // 동점 = 최고점·합계·감점이 전부 같음. useRanking 은 rankOrder 반영 순서라 그대로 그룹을 계산한다.
+  const rankKey = (r: { total: number; sum?: number; pen?: number }) => `${r.total}|${r.sum}|${r.pen}`;
+  const tieKeys = new Set<string>();
+  for (const r of ranking) {
+    const k = rankKey(r);
+    if (ranking.some((o) => o !== r && rankKey(o) === k)) tieKeys.add(k);
+  }
+  let tieAtCut = false; // 동점 그룹이 8위 경계를 걸치면 진출 팀을 수동으로 정해야 한다
+  for (let i = 0; i < ranking.length; i++) {
+    if (i > 0 && rankKey(ranking[i]) === rankKey(ranking[i - 1])) continue;
+    let j = i + 1;
+    while (j < ranking.length && rankKey(ranking[j]) === rankKey(ranking[i])) j++;
+    if (i + 1 <= 8 && j > 8) tieAtCut = true;
+  }
+
+  const baseRankIds = ranking.map((r) => r.teamId);
+  const rankIds = localRank ?? baseRankIds;
+  const rankDirty = localRank !== null && localRank.join('|') !== baseRankIds.join('|');
+  const hasOverride = Boolean(config?.settings.rankOrder?.[cat]?.length);
 
   const change = (fn: (prev: (string | undefined)[]) => (string | undefined)[]) => {
     setSlots(fn);
@@ -584,11 +610,11 @@ function Draw() {
   };
   const switchCat = (c: Category) => {
     setCat(c);
-    setSlots(Array(16).fill(undefined));
+    setSlots(Array(8).fill(undefined));
     setPicked(undefined);
     setApplied(false);
+    setLocalRank(null);
   };
-  const [picked, setPicked] = useState<string>();
   const onDrop = (slot: number, payload: string) => {
     const [kind, val] = payload.split(':');
     change((prev) => {
@@ -596,7 +622,8 @@ function Draw() {
       if (kind === 'slot') {
         const from = Number(val);
         [next[from], next[slot]] = [next[slot], next[from]]; // 칸끼리는 자리 교환
-      } else if (kind === 'team') {
+      } else if (kind === 'team' || kind === 'rank') {
+        // 순위 패널에서 온 드래그(rank:)도 팀 배치와 같이 처리한다
         const old = next.indexOf(val);
         if (old >= 0) next[old] = undefined;
         next[slot] = val;
@@ -607,6 +634,43 @@ function Draw() {
   };
   const onClear = (slot: number) => change((prev) => prev.map((t, i) => (i === slot ? undefined : t)));
   const autoFill = () => change(() => SEED_ORDER.map((seed) => ranking[seed - 1]?.teamId));
+
+  // 순위 패널끼리의 드래그: rank:팀ID 페이로드만 받아 슬롯 드래그(team:/slot:)와 섞이지 않게 한다
+  const onRankDrop = (target: string, payload: string) => {
+    if (!payload.startsWith('rank:')) return;
+    const from = payload.slice(5);
+    if (from === target) return;
+    setLocalRank((prev) => {
+      const list = [...(prev ?? baseRankIds)];
+      const fi = list.indexOf(from);
+      const ti = list.indexOf(target);
+      if (fi < 0 || ti < 0) return prev;
+      list.splice(fi, 1);
+      list.splice(ti, 0, from);
+      return list;
+    });
+  };
+
+  const saveRankOrder = async () => {
+    try {
+      await adminFetch('/admin/settings', { method: 'PUT', body: { rankOrder: { [cat]: rankIds } } });
+      setLocalRank(null);
+      toast('합산 순위 순서를 고정했습니다.');
+      refreshContest();
+    } catch (e) {
+      toast((e as Error).message);
+    }
+  };
+  const resetRankOrder = async () => {
+    try {
+      await adminFetch('/admin/settings', { method: 'PUT', body: { rankOrder: {} } });
+      setLocalRank(null);
+      toast('자동 계산 순위로 되돌렸습니다.');
+      refreshContest();
+    } catch (e) {
+      toast((e as Error).message);
+    }
+  };
 
   const apply = async () => {
     try {
@@ -622,12 +686,15 @@ function Draw() {
   return (
     <section className={`${card} p-6`}>
       <h1 className="text-3xl font-extrabold text-heading">팀 토너먼트 배정</h1>
-      <p className="mt-2 text-sm text-gray-500">1차·2차 점수를 합산한 순위입니다. 팀을 끌어서 점선 칸에 놓고 저장하면 /contest 대진표에 반영됩니다. (터치: 팀을 누른 뒤 칸을 누르세요)</p>
+      <p className="mt-2 text-sm text-gray-500">1차·2차 점수를 합산한 상위 8팀입니다. 팀을 끌어서 점선 칸에 놓고 저장하면 /contest 대진표에 반영됩니다. (터치: 팀을 누른 뒤 칸을 누르세요)</p>
       <nav className="mt-4 flex gap-2 border-b border-line">
         {(['S', 'J'] as Category[]).map((c) => (
           <button key={c} onClick={() => switchCat(c)} className={`px-4 py-2 text-sm font-bold ${cat === c ? 'border-b-2 border-accent text-accent' : 'text-gray-500'}`}>{CATEGORY_NAMES[c]}</button>
         ))}
       </nav>
+      {tieAtCut && (
+        <p className="mt-4 rounded-xl bg-[#fff4e5] p-3 text-sm font-semibold text-[#b45309]">⚠ 8위 경계에 동점이 있습니다. 드래그로 진출 팀을 결정하고 순서 고정을 누르세요.</p>
+      )}
       <div className="mt-6 grid gap-6 xl:grid-cols-[260px_1fr]">
         <div
           className="rounded bg-[#e5f3ff] p-4"
@@ -637,32 +704,45 @@ function Draw() {
             if (kind === 'slot') onClear(Number(val));
           }}
         >
-          <div className="flex items-center justify-between"><h2 className="font-semibold">합산 순위</h2><span className="text-xs text-gray-500">{count}/16 배치</span></div>
+          <div className="flex items-center justify-between"><h2 className="font-semibold">합산 순위</h2><span className="text-xs text-gray-500">{count}/8 배치</span></div>
           <ol className="mt-3 space-y-2">
-            {ranking.map((r, i) => {
-              const used = placed.has(r.teamId);
+            {rankIds.map((id, i) => {
+              const r = ranking.find((x) => x.teamId === id);
+              if (!r) return null;
+              const used = placed.has(id);
               return (
-                <li key={r.teamId}>
+                <li key={id}>
                   <button
                     type="button"
-                    draggable={!used}
-                    disabled={used}
-                    onDragStart={(e) => e.dataTransfer.setData('text/plain', `team:${r.teamId}`)}
-                    onClick={() => setPicked((p) => (p === r.teamId ? undefined : r.teamId))}
-                    className={`flex w-full items-center gap-2 rounded border bg-white px-3 py-2 text-left text-sm ${picked === r.teamId ? 'border-accent' : 'border-line'} ${used ? 'opacity-40' : 'cursor-grab hover:border-line-hover'}`}
+                    draggable
+                    onDragStart={(e) => { e.dataTransfer.setData('text/plain', `rank:${id}`); setDragRank(id); }}
+                    onDragEnd={() => { setDragRank(null); setOverRank(null); }}
+                    onDragOver={(e) => { e.preventDefault(); setOverRank(id); }}
+                    onDragLeave={() => setOverRank((o) => (o === id ? null : o))}
+                    onDrop={(e) => { e.preventDefault(); onRankDrop(id, e.dataTransfer.getData('text/plain')); setOverRank(null); setDragRank(null); }}
+                    onClick={() => setPicked((p) => (p === id ? undefined : id))}
+                    className={`flex w-full items-center gap-2 rounded border bg-white px-3 py-2 text-left text-sm ${overRank === id && dragRank !== id ? 'border-accent' : picked === id ? 'border-accent' : 'border-line'} ${used ? 'opacity-40' : 'cursor-grab hover:border-line-hover'}`}
                   >
                     <span className="w-6 font-bold tabular-nums text-accent">{i + 1}</span>
-                    <span className="min-w-0 flex-1 truncate font-medium">{teamName(teams, r.teamId)}</span>
+                    <span className="min-w-0 flex-1 truncate font-medium">{teamName(teams, id)}</span>
+                    {tieKeys.has(rankKey(r)) && <span className="text-xs font-bold text-[#b45309]">=</span>}
                     <span className="tabular-nums text-gray-500">{r.total}</span>
                   </button>
                 </li>
               );
             })}
           </ol>
-          <div className="mt-4 flex gap-2">
+          <div className="mt-4 flex flex-wrap gap-2">
             <button onClick={autoFill} className={btn}>시드 자동 배치</button>
-            <button onClick={() => change(() => Array(16).fill(undefined))} className={btn}>초기화</button>
+            <button onClick={() => change(() => Array(8).fill(undefined))} className={btn}>초기화</button>
           </div>
+          {(rankDirty || hasOverride) && (
+            <div className="mt-3 flex flex-wrap gap-2 border-t border-[#b9d9f6] pt-3">
+              {rankDirty && <button onClick={saveRankOrder} className={btnPrimary}>이 순서로 고정</button>}
+              <button onClick={resetRankOrder} className={btn}>자동 순위로 되돌리기</button>
+            </div>
+          )}
+          <div className="mt-5 border-t border-[#b9d9f6] pt-4"><TableOrderEditor /></div>
         </div>
         <div className="min-w-0">
           <div className="overflow-x-auto">
@@ -670,7 +750,7 @@ function Draw() {
           </div>
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <button disabled={!complete} onClick={apply} className={`${btnPrimary} disabled:opacity-40`}>{applied ? '저장 완료 · 적용됨' : '토너먼트 저장 · 적용'}</button>
-            {!complete && <span className="text-xs text-gray-500">모든 팀을 배치해 주세요</span>}
+            {!complete && <span className="text-xs text-gray-500">8개 팀을 모두 배치해 주세요</span>}
           </div>
           {applied && <p className="mt-3 rounded-xl bg-[#eaf5ff] p-3 text-sm text-[#258eed]">토너먼트 대진이 저장됐습니다. /contest 의 대진표 탭에서 확인하세요.</p>}
         </div>
@@ -682,17 +762,18 @@ function Draw() {
 
 // --- 토너먼트 경기 결과 입력 ---
 
-const ROUND_LABEL: Record<string, string> = { R16: '16강', QF: '8강', SF: '준결승', F: '결승', '3P': '3·4위전' };
+const ROUND_LABEL: Record<string, string> = { QF: '8강', SF: '준결승', F: '결승', '3P': '3·4위전' };
 
-function GameRow({ cat, round, gameNo, teamA, teamB, scoreA, scoreB, teams }: {
+function GameRow({ cat, round, gameNo, teamA, teamB, scoreA, scoreB, teams, pickTeams }: {
   cat: Category;
-  round: 'R16' | 'QF' | 'SF' | 'F' | '3P';
+  round: TournamentRound;
   gameNo: number;
   teamA: string | null;
   teamB: string | null;
   scoreA: number | null;
   scoreB: number | null;
   teams: Team[];
+  pickTeams?: string[]; // 준결승 이후: 빈 칸 + 해당 부문 8강 배정 8팀으로 A/B 팀을 고른다 (QF 는 슬롯 배정이 정함)
 }) {
   const toast = useToast();
   const [a, setA] = useState<string | number>(scoreA ?? '');
@@ -715,12 +796,44 @@ function GameRow({ cat, round, gameNo, teamA, teamB, scoreA, scoreB, teams }: {
     }
   };
 
+  // 4강 슬롯 팀 수동 배정: 자동 진출 대신 직접 고르거나 빈 칸으로 둔다 (기권·부전승 등)
+  const pickTeam = async (side: 'A' | 'B', teamId: string | null) => {
+    try {
+      await adminFetch('/admin/tournament/set-team', { method: 'POST', body: { cat, round, gameNo, side, teamId } });
+      toast(`${ROUND_LABEL[round]} ${gameNo}경기 ${side} 팀을 ${teamId ? teamName(teams, teamId) : '빈 칸으로'} 저장했습니다.`);
+      refreshContest();
+    } catch (e) {
+      toast((e as Error).message);
+    }
+  };
+  const teamSelect = (side: 'A' | 'B', value: string | null) => (
+    <select
+      value={value ?? ''}
+      onChange={(e) => pickTeam(side, e.target.value || null)}
+      className="max-w-44 rounded-lg border border-line bg-white px-1.5 py-1 text-sm"
+      aria-label={`${ROUND_LABEL[round]} ${gameNo}경기 ${side} 팀`}
+    >
+      <option value="">{side}팀 선택</option>
+      {(pickTeams ?? []).map((id) => (
+        <option key={id} value={id}>{teamName(teams, id)}</option>
+      ))}
+    </select>
+  );
+
   const inputCls2 = 'w-20 rounded-lg border border-line bg-white px-2 py-1 text-right tabular-nums disabled:opacity-40';
   return (
     <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2.5 text-sm last:border-0">
       <span className="w-24 shrink-0 text-gray-500">{ROUND_LABEL[round]} {gameNo}</span>
       <span className="min-w-0 flex-1 font-medium">
-        {teamA ? teamName(teams, teamA) : '—'} <span className="font-normal text-gray-400">vs</span> {teamB ? teamName(teams, teamB) : '—'}
+        {pickTeams ? (
+          <span className="flex flex-wrap items-center gap-2">
+            {teamSelect('A', teamA)}
+            <span className="font-normal text-gray-400">vs</span>
+            {teamSelect('B', teamB)}
+          </span>
+        ) : (
+          <>{teamA ? teamName(teams, teamA) : '—'} <span className="font-normal text-gray-400">vs</span> {teamB ? teamName(teams, teamB) : '—'}</>
+        )}
       </span>
       <input type="number" inputMode="numeric" value={a} disabled={!ready} onChange={(e) => setA(e.target.value === '' ? '' : Number(e.target.value))} className={inputCls2} aria-label="A 팀 점수" />
       <span className="text-gray-400">:</span>
@@ -735,20 +848,19 @@ function GameResults({ cat }: { cat: Category }) {
   const teams = config?.teams ?? [];
   const slots = (config?.tournament.slots ?? []).filter((s) => s.cat === cat).sort((x, y) => x.slotNo - y.slotNo);
   const games = config?.tournament.games ?? [];
-  const gameOf = (round: 'R16' | 'QF' | 'SF' | 'F' | '3P', gameNo: number) => games.find((g) => g.cat === cat && g.round === round && g.gameNo === gameNo);
+  const gameOf = (round: TournamentRound, gameNo: number) => games.find((g) => g.cat === cat && g.round === round && g.gameNo === gameNo);
 
-  if (slots.length < 16) {
-    return <p className="mt-8 text-sm text-gray-500">경기 결과 입력은 16개 팀 배정을 저장한 뒤 할 수 있습니다.</p>;
+  if (slots.length < 8) {
+    return <p className="mt-8 text-sm text-gray-500">경기 결과 입력은 8개 팀 배정을 저장한 뒤 할 수 있습니다.</p>;
   }
 
-  const rows: { key: string; round: 'R16' | 'QF' | 'SF' | 'F' | '3P'; gameNo: number; teamA: string | null; teamB: string | null; scoreA: number | null; scoreB: number | null; updatedAt: number }[] = [];
-  for (let i = 1; i <= 8; i++) {
-    const g = gameOf('R16', i);
-    rows.push({ key: `R16-${i}`, round: 'R16', gameNo: i, teamA: slots[2 * i - 2]?.teamId ?? null, teamB: slots[2 * i - 1]?.teamId ?? null, scoreA: g?.scoreA ?? null, scoreB: g?.scoreB ?? null, updatedAt: g?.updatedAt ?? 0 });
-  }
+  // 준결승 이후 수동 배정의 선택지: 해당 부문에 배정된 8강 8팀 전체
+  const pickTeams = slots.slice(0, 8).map((s) => s.teamId).filter((id): id is string => Boolean(id));
+
+  const rows: { key: string; round: TournamentRound; gameNo: number; teamA: string | null; teamB: string | null; scoreA: number | null; scoreB: number | null; updatedAt: number }[] = [];
   for (let j = 1; j <= 4; j++) {
     const g = gameOf('QF', j);
-    rows.push({ key: `QF-${j}`, round: 'QF', gameNo: j, teamA: g?.teamA ?? null, teamB: g?.teamB ?? null, scoreA: g?.scoreA ?? null, scoreB: g?.scoreB ?? null, updatedAt: g?.updatedAt ?? 0 });
+    rows.push({ key: `QF-${j}`, round: 'QF', gameNo: j, teamA: slots[2 * j - 2]?.teamId ?? null, teamB: slots[2 * j - 1]?.teamId ?? null, scoreA: g?.scoreA ?? null, scoreB: g?.scoreB ?? null, updatedAt: g?.updatedAt ?? 0 });
   }
   for (let k = 1; k <= 2; k++) {
     const g = gameOf('SF', k);
@@ -762,13 +874,156 @@ function GameResults({ cat }: { cat: Category }) {
   return (
     <div className="mt-8">
       <h2 className="font-semibold">경기 결과 입력</h2>
-      <p className="mt-1 text-xs text-gray-500">승자가 다음 라운드로 진출하고, 준결승 패자는 3·4위전으로 갑니다. 저장한 결과를 고치면 하위 라운드도 다시 계산됩니다.</p>
+      <p className="mt-1 text-xs text-gray-500">승자가 다음 라운드로 진출하고, 준결승 패자는 3·4위전으로 갑니다. 저장한 결과를 고치면 하위 라운드도 다시 계산됩니다. 준결승·결승·3·4위전은 자동 진출 대신 아래에서 팀을 직접 지정할 수도 있습니다.</p>
       <div className={`${card} mt-3`}>
         {rows.map((r) => (
-          <GameRow key={`${r.key}-${r.updatedAt}`} cat={cat} round={r.round} gameNo={r.gameNo} teamA={r.teamA} teamB={r.teamB} scoreA={r.scoreA} scoreB={r.scoreB} teams={teams} />
+          <GameRow key={`${r.key}-${r.updatedAt}`} cat={cat} round={r.round} gameNo={r.gameNo} teamA={r.teamA} teamB={r.teamB} scoreA={r.scoreA} scoreB={r.scoreB} teams={teams} pickTeams={r.round === 'QF' ? undefined : pickTeams} />
         ))}
       </div>
     </div>
+  );
+}
+
+// --- 운영 순서 (테이블 진행 순서 + 전체 일정표 + 팀 순번 조회) ---
+
+// 테이블 진행 순서: 끌어서 바꾼다. 1R·2R 이 같은 순서를 쓴다.
+function TableOrderEditor({ onChange }: { onChange?: (order: number[] | null) => void }) {
+  const toast = useToast();
+  const { config } = useContest();
+  const serverOrder = config?.settings.tableOrder?.length ? config.settings.tableOrder : tablesOf(config?.matches ?? []);
+  const [order, setOrder] = useState<number[] | null>(null); // null = 서버 값 그대로
+  const [drag, setDrag] = useState<number | null>(null);
+  const [over, setOver] = useState<number | null>(null);
+  const list = order ?? serverOrder;
+  const dirty = order !== null && order.join('|') !== serverOrder.join('|');
+  const set = (next: number[] | null) => {
+    setOrder(next);
+    onChange?.(next);
+  };
+  const drop = (target: number) => {
+    if (drag === null || drag === target) return;
+    const next = [...list];
+    next.splice(next.indexOf(drag), 1);
+    next.splice(next.indexOf(target), 0, drag);
+    set(next);
+  };
+  const save = async () => {
+    try {
+      await adminFetch('/admin/settings', { method: 'PUT', body: { tableOrder: list } });
+      set(null);
+      toast('테이블 진행 순서를 저장했습니다.');
+      refreshContest();
+    } catch (e) {
+      toast((e as Error).message);
+    }
+  };
+  return (
+    <div>
+      <h2 className="font-semibold">경기 진행 순서 <span className="text-xs font-normal text-gray-500">1R · 2R 동일</span></h2>
+      <p className="mt-1 text-xs text-gray-500">테이블을 끌어서 순서를 바꿉니다. 1번부터 차례로 진행하며 1R·2R에 같은 순서가 적용됩니다.</p>
+      <ol className="mt-3 flex flex-wrap items-center gap-2">
+        {list.map((t, i) => (
+          <li
+            key={t}
+            draggable
+            onDragStart={(e) => { e.dataTransfer.setData('text/plain', `table:${t}`); setDrag(t); }}
+            onDragEnd={() => { setDrag(null); setOver(null); }}
+            onDragOver={(e) => { e.preventDefault(); setOver(t); }}
+            onDragLeave={() => setOver((o) => (o === t ? null : o))}
+            onDrop={(e) => { e.preventDefault(); drop(t); setOver(null); setDrag(null); }}
+            className={`flex cursor-grab items-center gap-1.5 rounded-xl border bg-white px-3 py-2 text-sm ${over === t && drag !== t ? 'border-accent' : 'border-line'} ${drag === t ? 'opacity-40' : ''}`}
+          >
+            <span className="w-5 text-center font-bold tabular-nums text-accent">{i + 1}</span>
+            <span className="font-medium">테이블 {t}</span>
+          </li>
+        ))}
+        <button onClick={save} disabled={!dirty} className={`${btnPrimary} disabled:opacity-40`}>{dirty ? '저장' : '저장됨'}</button>
+      </ol>
+    </div>
+  );
+}
+
+
+function Ops() {
+  const { config } = useContest();
+  const teams = config?.teams ?? [];
+  const matches = config?.matches ?? [];
+  const serverOrder = config?.settings.tableOrder?.length ? config.settings.tableOrder : tablesOf(matches);
+  const [order, setOrder] = useState<number[] | null>(null); // 편집 중인 순서 (null = 서버 값)
+
+  // 일정 표시와 순번 계산은 편집 중인 순서를 기준으로 한다
+  const schedule = computeSchedule(matches, order ?? serverOrder);
+  const [catF, setCatF] = useState<'' | Category>('');
+  const [roundF, setRoundF] = useState<0 | 1 | 2>(0);
+  const visible = schedule.filter((m) => (catF ? m.cat === catF : true) && (roundF ? m.round === roundF : true));
+
+  const [teamId, setTeamId] = useState('');
+  const teamRows = teamId ? schedule.filter((m) => m.team === teamId) : schedule;
+
+  return (
+    <section className={`${card} p-6`}>
+      <h1 className="text-3xl font-extrabold text-heading">운영 순서</h1>
+      <p className="mt-2 text-sm text-gray-500">테이블 진행 순서를 정하면 전체 경기 순번이 자동으로 다시 계산됩니다. 저장하면 심판·참가자 화면의 순번 안내에도 반영됩니다.</p>
+
+      <div className="mt-8"><TableOrderEditor onChange={setOrder} /></div>
+
+      <h2 className="mt-10 font-semibold">전체 진행 일정표</h2>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {([{ id: '', label: '전체' }, { id: 'S', label: '시니어' }, { id: 'J', label: '주니어' }] as { id: '' | Category; label: string }[]).map((c) => (
+          <button key={c.id} onClick={() => setCatF(c.id)} className={`rounded-2xl border px-3 py-1.5 text-sm ${catF === c.id ? 'border-accent bg-accent text-white' : 'border-line text-gray-600 hover:border-line-hover'}`}>{c.label}</button>
+        ))}
+        <span className="mx-1 hidden h-4 w-px bg-line sm:block" />
+        {([{ id: 0, label: '전체' }, { id: 1, label: '1차' }, { id: 2, label: '2차' }] as { id: 0 | 1 | 2; label: string }[]).map((r) => (
+          <button key={r.id} onClick={() => setRoundF(r.id)} className={`rounded-2xl border px-3 py-1.5 text-sm ${roundF === r.id ? 'border-accent bg-accent text-white' : 'border-line text-gray-600 hover:border-line-hover'}`}>{r.label}</button>
+        ))}
+      </div>
+      <div className="mt-3 overflow-x-auto rounded-xl border border-line">
+        <table className="w-full min-w-[640px] text-left text-sm">
+          <thead className="bg-accent text-white">
+            <tr>
+              <th className="px-4 py-3 font-semibold">순번</th>
+              <th className="px-4 py-3 font-semibold">부문</th>
+              <th className="px-4 py-3 font-semibold">차수</th>
+              <th className="px-4 py-3 font-semibold">웨이브</th>
+              <th className="px-4 py-3 font-semibold">테이블</th>
+              <th className="px-4 py-3 font-semibold">필드</th>
+              <th className="px-4 py-3 font-semibold">팀</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {visible.map((m) => (
+              <tr key={m.id}>
+                <td className="px-4 py-2.5 font-bold tabular-nums text-accent">{m.seq}</td>
+                <td className="px-4 py-2.5">{m.cat === 'J' ? '주니어' : '시니어'}</td>
+                <td className="px-4 py-2.5">{m.round}차</td>
+                <td className="px-4 py-2.5">{m.wave}조</td>
+                <td className="px-4 py-2.5">테이블 {m.table}</td>
+                <td className="px-4 py-2.5">{m.field}</td>
+                <td className="px-4 py-2.5 font-medium">{m.team} · {teamName(teams, m.team)}</td>
+              </tr>
+            ))}
+            {visible.length === 0 && <tr><td colSpan={7} className="px-4 py-6 text-center text-gray-400">표시할 경기가 없습니다.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      <h2 className="mt-10 font-semibold">팀 순번 조회</h2>
+      <p className="mt-1 text-xs text-gray-500">팀을 고르면 그 팀 경기만 순번 순으로 봅니다. 선택하지 않으면 전체 일정을 순번 순으로 보여줍니다.</p>
+      <select value={teamId} onChange={(e) => setTeamId(e.target.value)} className="mt-3 rounded-xl border border-line bg-white px-3 py-2 text-sm" aria-label="팀 선택">
+        <option value="">팀 선택</option>
+        {[...teams].sort((a, b) => a.name.localeCompare(b.name, 'ko')).map((t) => (
+          <option key={t.id} value={t.id}>{t.name} ({t.id})</option>
+        ))}
+      </select>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        {teamRows.map((m) => (
+          <div key={m.id} className="rounded-xl border border-line bg-white px-4 py-3 text-sm">
+            <p><b className="tabular-nums text-accent">{m.seq}번째</b> <span className="text-gray-600">· {m.round}차 · {m.wave}조 테이블 {m.table} {m.field}</span></p>
+            {!teamId && <p className="mt-0.5 text-gray-500">{m.team} · {teamName(teams, m.team)}</p>}
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -784,6 +1039,23 @@ type AccountRow = {
   createdAt: number;
   lastLoginAt: number | null;
 };
+
+// 한 계정 비밀번호 초기화: 평문은 이번 한 번만 CSV 로 저장하고 토스트로도 보여준다
+async function resetPasswordOne(toast: (m: string) => void, a: { id: string; name: string; role: string }) {
+  if (!confirm(`${a.id} 의 비밀번호를 초기화할까요? 새 임시 비밀번호가 발급되며 로그인 중이면 로그아웃됩니다.`)) return;
+  try {
+    const d = await adminFetch<{ reset: { id: string; name: string; role: string; password: string }[] }>('/admin/accounts/reset-password', { method: 'POST', body: { ids: [a.id] } });
+    const roleLabel = (r: string) => (r === 'admin' ? '관리자' : r === 'judge' ? '심판' : '참가자');
+    downloadCsv(`password-reset-${new Date().toISOString().slice(0, 10)}.csv`, [
+      ['아이디', '이름', '역할', '새 비밀번호'],
+      ...d.reset.map((r) => [r.id, r.name, roleLabel(r.role), r.password]),
+    ]);
+    const first = d.reset[0];
+    toast(first ? `${first.id} 새 비밀번호: ${first.password}` : '비밀번호를 초기화했습니다.');
+  } catch (e) {
+    toast((e as Error).message);
+  }
+}
 
 function Teams() {
   const toast = useToast();
@@ -855,6 +1127,38 @@ function Teams() {
   const active = accounts.filter((a) => a.lastLoginAt !== null && a.lastLoginAt > dayAgo).length;
   const never = accounts.filter((a) => a.lastLoginAt === null).length;
   const staff = accounts.filter((a) => a.role !== 'user');
+  const participants = accounts.filter((a) => a.role === 'user');
+
+  // 소속별 팀 명단: /standings 순위(부문 내 경쟁 순위)를 붙여 org 마다 파일로 저장한다
+  const exportByOrg = async () => {
+    try {
+      const d = await adminFetch<{ standings: Standing[] }>('/standings');
+      const rankMap = new Map<string, number>();
+      for (const c of ['S', 'J'] as Category[]) {
+        for (const r of withRanks(d.standings, c)) rankMap.set(`${c}:${r.teamId}`, r.rank);
+      }
+      const standOf = (id: string) => d.standings.find((s) => s.teamId === id);
+      const byOrg = new Map<string, Team[]>();
+      for (const t of teams) {
+        byOrg.set(t.org, [...(byOrg.get(t.org) ?? []), t]);
+      }
+      for (const [org, list] of byOrg) {
+        const rows: (string | number)[][] = [
+          ['팀ID', '팀명', '팀코드', '부문', '지역', '지도자', '참가자', '최고점', '합계', '부문내순위'],
+          ...list.map((t) => {
+            const s = standOf(t.id);
+            return [t.id, t.name, t.code, t.cat === 'J' ? '주니어' : '시니어', t.region, t.coach, t.members.join(' '), s?.total ?? '', s?.sum ?? '', rankMap.get(`${t.cat}:${t.id}`) ?? ''];
+          }),
+        ];
+        const safe = org.replace(/[\\/:*?"<>|]/g, '_').trim() || '소속없음';
+        downloadCsv(`${safe}-팀명단.csv`, rows);
+        await new Promise((r) => setTimeout(r, 300)); // 브라우저가 연속 다운로드를 막지 않게 간격을 둔다
+      }
+      toast(`${byOrg.size}개 소속의 팀 명단 CSV를 다운로드했습니다.`);
+    } catch (e) {
+      toast((e as Error).message);
+    }
+  };
 
   const exportAccounts = () => {
     const header = ['아이디', '이름', '역할', '담당테이블', '마지막 로그인'];
@@ -863,12 +1167,10 @@ function Teams() {
   };
 
   const resetJudgePasswords = async () => {
-    if (!confirm('모든 심판 계정의 비밀번호를 재발급할까요? 기존 비밀번호는 즉시 쓸 수 없게 됩니다.')) return;
+    if (!confirm('모든 심판 계정의 비밀번호를 재발급할까요? 새 임시 비밀번호가 발급되며 로그인 중인 세션은 끊깁니다.')) return;
     try {
-      const d = await adminFetch<{ reset: { id: string; name: string; password: string }[] }>('/admin/accounts/reset-password', { method: 'POST', body: { role: 'judge' } });
-      const header = ['아이디', '이름', '새 비밀번호'];
-      downloadCsv(`judge-passwords-${new Date().toISOString().slice(0, 10)}.csv`, [header, ...d.reset.map((r) => [r.id, r.name, r.password])]);
-      toast(`심판 ${d.reset.length}개 계정의 비밀번호를 재발급했습니다. CSV를 안전하게 배포하세요.`);
+      const d = await adminFetch<{ reset: { id: string }[] }>('/admin/accounts/reset-password', { method: 'POST', body: { role: 'judge' } });
+      toast(`심판 ${d.reset.length}개 계정의 비밀번호를 초기화했습니다.`);
     } catch (e) {
       toast((e as Error).message);
     }
@@ -892,7 +1194,8 @@ function Teams() {
           />
           <button className={`${btn} inline-flex items-center gap-1`} onClick={() => issueInput.current?.click()}><Icon name="upload" />계정 발급 (CSV)</button>
           <button className={`${btn} inline-flex items-center gap-1`} onClick={exportAccounts}><Icon name="download" />계정 CSV</button>
-          <button className={btn} onClick={resetJudgePasswords}>비밀번호 일괄 재발급</button>
+          <button className={`${btn} inline-flex items-center gap-1`} onClick={() => void exportByOrg()}><Icon name="download" />소속별 CSV</button>
+          <button className={btn} onClick={resetJudgePasswords}>심판 비밀번호 일괄 초기화</button>
         </div>
       </div>
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
@@ -937,6 +1240,7 @@ function Teams() {
               <th className="px-4 py-3">담당 테이블</th>
               <th className="px-4 py-3">마지막 로그인</th>
               <th className="px-4 py-3">임시 비밀번호</th>
+              <th className="px-4 py-3">관리</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
@@ -962,8 +1266,128 @@ function Teams() {
                 </td>
                 <td className="px-4 py-3 text-gray-500">{a.lastLoginAt ? timeAgo(a.lastLoginAt) : '미접속'}</td>
                 <td className="px-4 py-3">{a.mustChange ? <span className="text-xs font-semibold text-error">변경 필요</span> : '-'}</td>
+                <td className="px-4 py-3"><button className={`${btn} !py-1`} onClick={() => resetPasswordOne(toast, a)}>초기화</button></td>
               </tr>
             ))}
+          </tbody>
+        </table>
+      </div>
+      <h2 className="mt-8 font-semibold">참가자 계정</h2>
+      <div className="mt-3 overflow-x-auto rounded-xl border border-line">
+        <table className="w-full min-w-[560px] text-left text-sm">
+          <thead className="bg-accent text-white">
+            <tr>
+              <th className="px-4 py-3">아이디</th>
+              <th className="px-4 py-3">이름</th>
+              <th className="px-4 py-3">팀</th>
+              <th className="px-4 py-3">마지막 로그인</th>
+              <th className="px-4 py-3">관리</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {participants.map((a) => (
+              <tr key={a.id}>
+                <td className="px-4 py-3 font-medium">{a.id}</td>
+                <td className="px-4 py-3">{a.name}</td>
+                <td className="px-4 py-3">{a.teamId ? `${a.teamId} · ${teamName(teams, a.teamId)}` : '-'}</td>
+                <td className="px-4 py-3 text-gray-500">{a.lastLoginAt ? timeAgo(a.lastLoginAt) : '미접속'}</td>
+                <td className="px-4 py-3"><button className={`${btn} !py-1`} onClick={() => resetPasswordOne(toast, a)}>초기화</button></td>
+              </tr>
+            ))}
+            {participants.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-gray-400">참가자 계정이 없습니다.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+// --- 사용자 현황 (전체 계정 + 팀별 1·2라운드·토너먼트 점수) ---
+
+const ACCOUNT_ROLES = [
+  { id: '', label: '전체' },
+  { id: 'user', label: '팀' },
+  { id: 'judge', label: '심판' },
+  { id: 'admin', label: '관리자' },
+] as const;
+const ROLE_LABEL = { user: '팀', judge: '심판', admin: '관리자' } as const;
+const T_ROUNDS = [
+  { id: 'QF', label: '8강' },
+  { id: 'SF', label: '준결승' },
+  { id: 'F', label: '결승' },
+  { id: '3P', label: '3·4위전' },
+] as const;
+
+function Accounts() {
+  const toast = useToast();
+  const { config } = useContest();
+  const [accounts, setAccounts] = useState<AccountRow[]>([]);
+  const [roundScores, setRoundScores] = useState<RoundScores>({});
+  const [role, setRole] = useState('');
+  const [q, setQ] = useState('');
+
+  useEffect(() => {
+    adminFetch<{ users: AccountRow[] }>('/admin/users').then((d) => setAccounts(d.users)).catch((e: Error) => toast(e.message));
+    adminFetch<{ settings: { roundScores: RoundScores } }>('/admin/settings').then((d) => setRoundScores(d.settings.roundScores ?? {})).catch((e: Error) => toast(e.message));
+  }, [toast]);
+
+  const teams = config?.teams ?? [];
+  const games = config?.tournament.games ?? [];
+  const score = (v?: string) => (v === undefined || v.trim() === '' ? '-' : v);
+  // 팀이 해당 라운드에서 낸 점수. 경기가 끝나지 않았으면 '-'.
+  const gameScore = (teamId: string, round: string) => {
+    const g = games.find((x) => x.round === round && x.status === 'done' && (x.teamA === teamId || x.teamB === teamId));
+    if (!g) return '-';
+    const v = g.teamA === teamId ? g.scoreA : g.scoreB;
+    return v === null ? '-' : String(v);
+  };
+
+  const rows = accounts
+    .filter((a) => (role ? a.role === role : true))
+    .filter((a) => (q ? a.id.toLowerCase().includes(q.toLowerCase()) || a.name.toLowerCase().includes(q.toLowerCase()) : true));
+
+  return (
+    <section className={`${card} p-6`}>
+      <h1 className="text-3xl font-extrabold text-heading">사용자 현황</h1>
+      <p className="mt-2 text-sm text-gray-500">모든 계정과 팀별 1·2라운드·토너먼트 점수입니다. 점수가 없으면 -로 표시합니다. 비밀번호를 잊었을 때는 행별 '초기화'로 새 임시 비밀번호를 발급합니다. 평문 비밀번호는 CSV 로 저장되고 화면에 한 번만 표시됩니다.</p>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        {ACCOUNT_ROLES.map((r) => (
+          <button key={r.id} onClick={() => setRole(r.id)} className={`rounded-2xl border px-3 py-1.5 text-sm ${role === r.id ? 'border-accent bg-accent text-white' : 'border-line bg-white text-gray-600'}`}>{r.label}</button>
+        ))}
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="아이디·이름 검색" className="ml-auto rounded-xl border border-line bg-white px-3 py-1.5 text-sm" />
+      </div>
+      <div className="mt-4 overflow-x-auto rounded-xl border border-line">
+        <table className="w-full min-w-[1000px] text-left text-sm">
+          <thead className="bg-accent text-white">
+            <tr>
+              <th className="px-3 py-3">아이디</th>
+              <th className="px-3 py-3">구분</th>
+              <th className="px-3 py-3">팀 / 이름</th>
+              <th className="px-3 py-3 text-right">1R</th>
+              <th className="px-3 py-3 text-right">2R</th>
+              {T_ROUNDS.map((r) => <th key={r.id} className="px-3 py-3 text-right">{r.label}</th>)}
+              <th className="px-3 py-3">마지막 로그인</th>
+              <th className="px-3 py-3" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {rows.map((a) => {
+              const isTeam = a.role === 'user' && !!a.teamId;
+              const team = isTeam ? teams.find((t) => t.id === a.teamId) : undefined;
+              return (
+                <tr key={a.id}>
+                  <td className="px-3 py-2 font-medium">{a.id}</td>
+                  <td className="px-3 py-2">{ROLE_LABEL[a.role]}</td>
+                  <td className="px-3 py-2">{isTeam ? `${a.teamId} · ${team?.name ?? a.name}` : a.name}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{isTeam ? score(roundScores[a.teamId!]?.r1) : '-'}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{isTeam ? score(roundScores[a.teamId!]?.r2) : '-'}</td>
+                  {T_ROUNDS.map((r) => <td key={r.id} className="px-3 py-2 text-right tabular-nums">{isTeam ? gameScore(a.teamId!, r.id) : '-'}</td>)}
+                  <td className="px-3 py-2 text-gray-500">{a.lastLoginAt ? timeAgo(a.lastLoginAt) : '미접속'}</td>
+                  <td className="px-3 py-2 text-right"><button className={btn} onClick={() => resetPasswordOne(toast, a)}>비밀번호 초기화</button></td>
+                </tr>
+              );
+            })}
+            {rows.length === 0 && <tr><td colSpan={10} className="px-3 py-6 text-center text-gray-400">표시할 계정이 없습니다.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -1047,7 +1471,9 @@ export default function AdminDashboard({ name }: { name: string }) {
     tab === 'scores' ? <ScoreList /> :
     tab === 'template' ? <Template /> :
     tab === 'draw' ? <Draw /> :
+    tab === 'ops' ? <Ops /> :
     tab === 'teams' ? <Teams /> :
+    tab === 'accounts' ? <Accounts /> :
     tab === 'settings' ? <Settings /> :
     <Dashboard go={setTab} />;
   return (
@@ -1061,6 +1487,7 @@ export default function AdminDashboard({ name }: { name: string }) {
             </button>
           ))}
           <p className="mt-auto flex items-center gap-1 px-3 py-2 text-sm text-gray-600"><Icon name="person" />{name}</p>
+          <a href="/password" className="px-3 pb-2 text-sm text-gray-500 hover:text-heading">비밀번호 변경</a>
         </aside>
         <main className="min-w-0 flex-1 p-5 sm:p-8">
           <div className="mx-auto max-w-[1200px]">

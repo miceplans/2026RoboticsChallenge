@@ -8,9 +8,13 @@ import type { Category } from './judge/rules';
 export type Team = { id: string; cat: Category; code: string; name: string; region: string; org: string; coach: string; members: string[] };
 export type Match = { id: string; round: 1 | 2; cat: Category; wave: 'A' | 'B'; table: number; field: '좌' | '우'; team: string };
 export type Notice = { message: string; updatedAt: number };
+// 순위(서버 /standings, /leaderboard). 부문(cat) 안에서 최고점 → 합계 → 감점 → 팀 ID 순.
+// r1/r2 는 각 라운드 확정 최고점 (1R→2R 흐름 표시용, 없으면 null).
+export type Standing = { teamId: string; total: number; cat: Category; sum: number; pen: number; r1: number | null; r2: number | null };
+export type TournamentRound = 'QF' | 'SF' | 'F' | '3P';
 export type TournamentGame = {
   cat: Category;
-  round: 'R16' | 'QF' | 'SF' | 'F' | '3P';
+  round: TournamentRound;
   gameNo: number;
   teamA: string | null;
   teamB: string | null;
@@ -22,13 +26,53 @@ export type TournamentGame = {
 };
 export type ContestConfig = {
   updatedAt: number;
-  settings: { autoConfirm: boolean; boardPublic: boolean; notice: Notice };
+  settings: {
+    autoConfirm: boolean;
+    boardPublic: boolean;
+    notice: Notice;
+    tableOrder: number[]; // 당일 테이블 진행 순서 (1~8 순열)
+    rankOrder: Partial<Record<Category, string[]>>; // 관리자 순위 조정 (없으면 계산 순위)
+  };
   template: unknown; // null 이면 lib/judge/rules.ts 기본 항목 사용
   judgeTables: Record<string, number>; // 심판 ID → 담당 테이블 (REF 외 추가 심판 배정)
   teams: Team[];
   matches: Match[];
   tournament: { slots: { cat: Category; slotNo: number; teamId: string | null }[]; games: TournamentGame[] };
 };
+
+// 토너먼트는 예선 순위 상위 8팀이 8강부터 시작한다.
+export const SEED_ORDER = [1, 8, 4, 5, 2, 7, 3, 6]; // 8팀 표준 시드: 1v8, 4v5 / 2v7, 3v6
+
+// 당일 진행 순서표: 라운드 → 웨이브 → 테이블 진행 순서 → 필드(좌→우) → 팀 순으로 전체 순번을 매긴다.
+export type ScheduledMatch = Match & { seq: number };
+export function computeSchedule(matches: Match[], tableOrder: number[]): ScheduledMatch[] {
+  const orderOf = (table: number) => {
+    const i = tableOrder.indexOf(table);
+    return i < 0 ? tableOrder.length + table : i;
+  };
+  const fieldOf = (f: '좌' | '우') => (f === '좌' ? 0 : 1);
+  return [...matches]
+    .sort((a, b) => a.round - b.round || (a.wave < b.wave ? -1 : a.wave > b.wave ? 1 : 0) || orderOf(a.table) - orderOf(b.table) || fieldOf(a.field) - fieldOf(b.field) || (a.team < b.team ? -1 : 1))
+    .map((m, i) => ({ ...m, seq: i + 1 }));
+}
+
+// 부문 순위에 경쟁 순위(동점 표기)를 붙인다. 동점 = 최고점·합계·감점이 모두 같음 (말단 정렬키 팀 ID 는 제외).
+export type RankedStanding = Standing & { rank: number; tied: boolean };
+export function withRanks(standings: Standing[], cat: Category): RankedStanding[] {
+  const rows = standings.filter((s) => s.cat === cat);
+  const keyOf = (s: Standing) => `${s.total}|${s.sum}|${s.pen}`;
+  let rank = 0;
+  let prevKey = '';
+  return rows.map((s, i) => {
+    const key = keyOf(s);
+    if (key !== prevKey) {
+      rank = i + 1;
+      prevKey = key;
+    }
+    const tied = (i > 0 && keyOf(rows[i - 1]) === key) || (i + 1 < rows.length && keyOf(rows[i + 1]) === key);
+    return { ...s, rank, tied };
+  });
+}
 
 // useRealtime.ts 와 같은 규칙: 개발 중에는 접속한 호스트의 :4000
 const serverUrl = () => process.env.NEXT_PUBLIC_REALTIME_URL ?? `${location.protocol}//${location.hostname}:4000`;
