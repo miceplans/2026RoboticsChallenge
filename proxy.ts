@@ -34,12 +34,6 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 운영 서브도메인의 대표 로그인 주소는 해당 운영 영역 로그인으로 연결한다.
-  // 예: admin.example.com/login → admin.example.com/admin/login
-  // 공용 로그인 페이지를 보여주면 관리자 계정으로 로그인할 수 없는 것처럼
-  // 보이기 때문에, 사용자가 자연스럽게 입력하는 주소도 지원한다.
-  if (pathname === '/login') return redirectTo(`/${area}/login`);
-
   if (isShared(pathname)) return NextResponse.next();
 
   if (!session) return redirectTo('/login');
