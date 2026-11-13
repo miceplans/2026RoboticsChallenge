@@ -3,7 +3,7 @@ import { areaOf, areaRoles } from '@/lib/hosts';
 import { SESSION_COOKIE, verifySessionToken } from '@/lib/session';
 
 // 로그인/로그아웃은 모든 호스트에서 공통으로 사용
-const shared = ['/login', '/signup', '/judge/login', '/admin/login', '/password'];
+const shared = ['/login', '/judge/login', '/admin/login', '/password'];
 const isShared = (path: string) => shared.some((p) => path === p || path.startsWith(`${p}/`));
 
 export async function proxy(request: NextRequest) {
