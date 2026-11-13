@@ -1,10 +1,10 @@
-import type { Match, Team } from '@/lib/judge/data';
-import { calc } from '@/lib/judge/rules';
+import type { Match, Team } from '@/lib/contest';
+import { calc, ITEMS, type Item } from '@/lib/judge/rules';
 import type { Sheet } from '@/lib/judge/sheets';
 import { btnGhost, btnPrimary } from './ui';
 
-export default function ReviewView({ match, team, sheet, onEdit, onSign }: { match: Match; team: Team; sheet: Sheet; onEdit: () => void; onSign: () => void }) {
-  const c = calc(sheet.values, match.cat);
+export default function ReviewView({ match, team, sheet, onEdit, onSign, ruleItems = ITEMS }: { match: Match; team: Team; sheet: Sheet; onEdit: () => void; onSign: () => void; ruleItems?: Item[] }) {
+  const c = calc(sheet.values, match.cat, ruleItems);
   // 점수가 있거나 개수형(감점 제외)인 항목만 보여준다
   const rows = c.lines.filter((l) => l.sub !== 0 || (l.it.type === 'count' && l.it.m !== 'PEN'));
 

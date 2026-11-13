@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import type { Match, Team } from '@/lib/judge/data';
-import { calc, CATEGORY_NAMES, inputItems, MISSION_NAMES, PRE_CHECKS, unitPoints, validate, type Mission } from '@/lib/judge/rules';
+import type { Match, Team } from '@/lib/contest';
+import { calc, CATEGORY_NAMES, ITEMS, MISSION_NAMES, PRE_CHECKS, validate, type Item, type Mission } from '@/lib/judge/rules';
 import type { Sheet } from '@/lib/judge/sheets';
 import { btnGhost, btnPrimary, Card, Chip, inputCls } from './ui';
 
@@ -31,6 +31,33 @@ const Toggle = ({ on, onText, offText, onClick, danger }: { on: boolean; onText:
   </button>
 );
 
+const MISSION_HEAD: Record<Mission, string> = { M1: 'bg-orange-100', M2: 'bg-sky-100', PEN: 'bg-red-100' };
+
+// PDF 심판표의 "마크" 칸처럼 숫자 / NO·YES 버튼을 한 줄로 늘어놓는다.
+function Marks<T extends string | number>({ options, value, onPick, readOnly, danger }: { options: T[]; value: T; onPick?: (o: T) => void; readOnly?: boolean; danger?: boolean }) {
+  return (
+    <div className="flex gap-1.5" role="group">
+      {options.map((o) => {
+        const on = o === value;
+        return (
+          <button
+            key={String(o)}
+            type="button"
+            disabled={readOnly}
+            aria-pressed={on}
+            onClick={() => onPick?.(o)}
+            className={`h-11 min-w-11 rounded-lg border px-3 text-base font-bold ${
+              on ? (danger && o === 'YES' ? 'border-error bg-error text-white' : 'border-accent bg-accent text-white') : 'border-line bg-white text-gray-700'
+            } ${readOnly ? 'opacity-70' : ''}`}
+          >
+            {o}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 type Props = {
   match: Match;
   team: Team;
@@ -38,13 +65,15 @@ type Props = {
   edit: (fn: (s: Sheet) => Sheet) => void;
   onBack: () => void;
   onReview: () => void;
+  ruleItems?: Item[];
 };
 
-export default function ScoreView({ match, team, sheet, edit, onBack, onReview }: Props) {
+export default function ScoreView({ match, team, sheet, edit, onBack, onReview, ruleItems = ITEMS }: Props) {
   const [savedFlash, setSavedFlash] = useState(false);
   const v = sheet.values;
-  const c = calc(v, match.cat);
+  const c = calc(v, match.cat, ruleItems);
   const errors = validate(v);
+  const firstError = errors[0];
 
   const setValue = (k: string, val: number | boolean | string) => edit((s) => ({ ...s, values: { ...s.values, [k]: val } }));
   const bump = (k: string, d: number, max = 99) =>
@@ -72,44 +101,57 @@ export default function ScoreView({ match, team, sheet, edit, onBack, onReview }
       </Card>
 
       {(['M1', 'M2', 'PEN'] as Mission[]).map((g) => {
-        const items = inputItems(match.cat).filter((i) => i.m === g);
-        if (!items.length) return null;
-        const autos = c.lines.filter((l) => l.it.m === g && l.it.type === 'auto' && l.sub !== 0);
+        const lines = c.lines.filter((l) => l.it.m === g);
+        if (!lines.length) return null;
+        const head = MISSION_HEAD[g];
         return (
-          <Card key={g} title={MISSION_NAMES[g]}>
-            {items.map((it) => {
-              const p = unitPoints(it, match.cat);
-              const sub = c.lines.find((l) => l.it.id === it.id)?.sub ?? 0;
-              const hint =
-                it.type === 'manual' ? '감점을 음수로 입력' : `${p > 0 ? '+' : ''}${p}점${it.type === 'count' ? ` / 개 · 최대 ${it.max}` : ''}`;
+          <section key={g} className="mt-4 overflow-hidden rounded-2xl border border-line bg-white">
+            <h2 className={`px-5 py-3 text-base font-bold ${head}`}>{MISSION_NAMES[g]}</h2>
+            <div className="hidden grid-cols-[1fr_auto_5rem_4rem] gap-3 bg-gray-200 px-4 py-1.5 text-center text-xs font-bold text-gray-700 sm:grid">
+              <span>행동</span><span>마크</span><span>계산</span><span>점수</span>
+            </div>
+            {lines.map(({ it, p, sub }) => {
+              const max = it.m === 'PEN' ? 3 : it.max ?? 0;
               return (
-                <Row key={it.id} label={<><b className="block font-medium">{it.label}</b><span className="text-xs text-gray-500">{hint}</span></>}>
-                  {it.type === 'count' && <Stepper value={num(it.id)} down={() => bump(it.id, -1)} up={() => bump(it.id, 1, it.max)} />}
-                  {it.type === 'bool' && <Toggle on={!!v[it.id]} onText="예" offText="아니오" onClick={() => setValue(it.id, !v[it.id])} />}
-                  {it.type === 'manual' && (
-                    <input
-                      type="number"
-                      step={1}
-                      max={0}
-                      className={`${inputCls} w-28 text-right`}
-                      defaultValue={num(it.id)}
-                      onChange={(e) => setValue(it.id, Number(e.target.value) || 0)}
-                    />
-                  )}
-                  <b className={`w-16 text-right tabular-nums ${sub < 0 ? 'text-error' : sub > 0 ? '' : 'text-gray-400'}`}>
+                <div key={it.id} className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2 border-b border-line px-4 py-2.5 last:border-0 sm:grid-cols-[1fr_auto_5rem_4rem]">
+                  <span className="text-sm">{it.label.replace(/ ?\((보너스·)?자동\)| ?\(보너스·자동\)/, '')}</span>
+                  <div className="order-last col-span-2 flex justify-center sm:order-none sm:col-span-1">
+                    {it.type === 'count' && <Marks options={Array.from({ length: max + 1 }, (_, i) => i)} value={num(it.id)} onPick={(n) => setValue(it.id, n)} />}
+                    {it.type === 'bool' && <Marks options={['NO', 'YES']} value={v[it.id] ? 'YES' : 'NO'} onPick={(n) => setValue(it.id, n === 'YES')} />}
+                    {it.type === 'auto' && <Marks options={['NO', 'YES']} value={sub !== 0 ? 'YES' : 'NO'} readOnly />}
+                    {it.type === 'manual' && (
+                      <input
+                        type="number"
+                        step={1}
+                        max={0}
+                        className={`${inputCls} w-28 text-right`}
+                        defaultValue={num(it.id)}
+                        onChange={(e) => setValue(it.id, Number(e.target.value) || 0)}
+                      />
+                    )}
+                  </div>
+                  <span className="hidden text-center text-xs font-bold text-gray-600 sm:block">
+                    {it.type === 'manual' ? '심판 재량' : it.type === 'count' ? `개수 × ${p}` : `${p > 0 ? '+' : ''}${p}`}
+                  </span>
+                  <b className={`w-14 text-right tabular-nums ${sub < 0 ? 'text-error' : sub > 0 ? '' : 'text-gray-400'}`}>
                     {sub > 0 ? '+' : ''}{sub}
                   </b>
-                </Row>
+                </div>
               );
             })}
-            {autos.length > 0 && (
-              <p className="px-5 py-3 text-xs text-gray-500">
-                자동 계산: {autos.map((l) => `${l.it.label.replace(/ \(.+\)/, '')} ${l.sub > 0 ? '+' : ''}${l.sub}`).join(' · ')}
-              </p>
-            )}
-          </Card>
+            <p className="bg-gray-100 px-5 py-2 text-sm font-bold">소계: {c.sum[g]}점</p>
+          </section>
         );
       })}
+
+      <Card title="실격 (DQ)">
+        <Row label={<b className="font-medium">관중·참가자에게 위험을 줌</b>}>
+          <Marks options={['NO', 'YES']} value={v.dq_danger ? 'YES' : 'NO'} danger onPick={(n) => setValue('dq_danger', n === 'YES')} />
+        </Row>
+        <Row label={<b className="font-medium">규칙 중대 위반</b>}>
+          <Marks options={['NO', 'YES']} value={v.dq_breach ? 'YES' : 'NO'} danger onPick={(n) => setValue('dq_breach', n === 'YES')} />
+        </Row>
+      </Card>
 
       <Card title="기록">
         <Row label={<><b className="block font-medium">리셋 요청 횟수</b><span className="text-xs text-gray-500">타이머는 재시작하지 않음</span></>}>
@@ -126,9 +168,6 @@ export default function ScoreView({ match, team, sheet, edit, onBack, onReview }
             onChange={(e) => setValue('endTime', e.target.value === '' ? '' : Number(e.target.value))}
           />
         </Row>
-        <Row label={<><b className="block font-medium">실격</b><span className="text-xs text-gray-500">안전 위험·중대 위반 시 경기 0점</span></>}>
-          <Toggle danger on={!!v.dq} onText="실격" offText="해당 없음" onClick={() => setValue('dq', !v.dq)} />
-        </Row>
         <div className="px-5 py-3">
           <input
             className={`${inputCls} w-full`}
@@ -140,27 +179,27 @@ export default function ScoreView({ match, team, sheet, edit, onBack, onReview }
       </Card>
 
       <footer className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-white p-3">
-        <div className="mx-auto flex max-w-4xl items-center gap-3">
-          <div className="mr-auto min-w-0 text-sm">
-            {errors.length > 0 ? (
-              <span className="text-error">{errors[0]}</span>
-            ) : (
+        <div className="mx-auto max-w-4xl">
+          {/* 검증 오류는 사라지지 않는 곳에 적어 둔다 ('공동 확인' 버튼이 꺼진 이유) */}
+          {firstError && <p role="alert" className="pb-2 text-center text-xs font-semibold text-error">{firstError}</p>}
+          <div className="flex items-center gap-3">
+            <div className="mr-auto min-w-0 text-sm">
               <span className="text-gray-500">미션1 {c.sum.M1} · 미션2 {c.sum.M2} · 감점 {c.sum.PEN}</span>
-            )}
-            <b className="ml-2 text-3xl">{c.total}점</b>
+              <b className="ml-2 text-3xl">{c.total}점</b>
+            </div>
+            {/* 입력은 바로바로 이 기기에 저장되므로 버튼은 확인용이다 */}
+            <button
+              type="button"
+              className={btnGhost}
+              onClick={() => {
+                setSavedFlash(true);
+                setTimeout(() => setSavedFlash(false), 1500);
+              }}
+            >
+              {savedFlash ? '임시저장됨' : '임시저장'}
+            </button>
+            <button type="button" className={btnPrimary} disabled={errors.length > 0} onClick={onReview}>공동 확인 →</button>
           </div>
-          {/* 입력은 바로바로 이 기기에 저장되므로 버튼은 확인용이다 */}
-          <button
-            type="button"
-            className={btnGhost}
-            onClick={() => {
-              setSavedFlash(true);
-              setTimeout(() => setSavedFlash(false), 1500);
-            }}
-          >
-            {savedFlash ? '임시저장됨' : '임시저장'}
-          </button>
-          <button type="button" className={btnPrimary} disabled={errors.length > 0} onClick={onReview}>공동 확인 →</button>
         </div>
       </footer>
     </main>

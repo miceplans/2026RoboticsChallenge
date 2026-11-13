@@ -1,9 +1,10 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import type { Match, Team } from '@/lib/judge/data';
-import { calc } from '@/lib/judge/rules';
+import type { Match, Team } from '@/lib/contest';
+import { calc, ITEMS, type Item } from '@/lib/judge/rules';
 import type { Sheet } from '@/lib/judge/sheets';
+import { useToast } from '@/components/Toast';
 import SignaturePad, { type PadHandle } from './SignaturePad';
 import { btnGhost, btnPrimary, inputCls } from './ui';
 
@@ -18,17 +19,18 @@ type Props = {
   onRefSigned: (patch: Partial<Sheet>) => void;
   onFinish: (patch: Partial<Sheet>) => void;
   onBack: () => void;
+  ruleItems?: Item[];
 };
 
-export default function SignView({ match, team, sheet, judgeName, step, onRefSigned, onFinish, onBack }: Props) {
+export default function SignView({ match, team, sheet, judgeName, step, onRefSigned, onFinish, onBack, ruleItems = ITEMS }: Props) {
   const pad = useRef<PadHandle>(null);
   const [hasInk, setHasInk] = useState(false);
   const [signer, setSigner] = useState(team.members[0]); // 명단 첫 번째가 팀장 = 기본 서명자
   const [custom, setCustom] = useState('');
   const [exception, setException] = useState(false);
   const [reason, setReason] = useState('');
-  const [error, setError] = useState('');
-  const total = calc(sheet.values, match.cat).total;
+  const toast = useToast();
+  const total = calc(sheet.values, match.cat, ruleItems).total;
 
   const next = () => {
     const img = pad.current!.toDataURL();
@@ -38,12 +40,12 @@ export default function SignView({ match, team, sheet, judgeName, step, onRefSig
       return;
     }
     const name = signer === OTHER ? custom.trim() : signer;
-    if (!name) return setError('대표 이름을 입력해 주세요.');
+    if (!name) return toast('대표 이름을 입력해 주세요.');
     onFinish({ teamSig: img, teamSigner: name, teamSignedAt: Date.now() });
   };
 
   const finishWithException = () => {
-    if (!reason.trim()) return setError('서명 예외 사유를 입력해 주세요.');
+    if (!reason.trim()) return toast('서명 예외 사유를 입력해 주세요.');
     onFinish({ signException: reason.trim(), teamSig: undefined, teamSigner: undefined, teamSignedAt: undefined });
   };
 
@@ -90,7 +92,7 @@ export default function SignView({ match, team, sheet, judgeName, step, onRefSig
               <p className="mt-1 text-sm text-gray-600">참가팀 대표가 서명할 수 없는 경우에만 사용하세요. 사유는 기록에 남습니다.</p>
               <input className={`${inputCls} mt-3 w-full`} placeholder="사유 (예: 참가팀 대표 부재)" value={reason} onChange={(e) => setReason(e.target.value)} />
               <div className="mt-3 flex gap-2">
-                <button type="button" className={btnGhost} onClick={() => { setException(false); setError(''); }}>취소</button>
+                <button type="button" className={btnGhost} onClick={() => setException(false)}>취소</button>
                 <button type="button" className={`${btnPrimary} bg-error`} onClick={finishWithException}>예외 처리하고 전달</button>
               </div>
             </div>
@@ -102,7 +104,7 @@ export default function SignView({ match, team, sheet, judgeName, step, onRefSig
                 <button type="button" className={btnGhost} onClick={() => pad.current?.clear()}>지우기</button>
                 <span className="flex-1" />
                 {step === 1 && (
-                  <button type="button" className={`${btnGhost} text-error`} onClick={() => { setException(true); setError(''); }}>서명 예외</button>
+                  <button type="button" className={`${btnGhost} text-error`} onClick={() => setException(true)}>서명 예외</button>
                 )}
                 <button type="button" className={btnPrimary} disabled={!hasInk} onClick={next}>
                   {step === 0 ? '다음' : '완료 · 관리자에게 전달'}
@@ -110,7 +112,6 @@ export default function SignView({ match, team, sheet, judgeName, step, onRefSig
               </div>
             </>
           )}
-          {error && <p className="mt-2 text-sm text-error">{error}</p>}
         </div>
       </div>
 
