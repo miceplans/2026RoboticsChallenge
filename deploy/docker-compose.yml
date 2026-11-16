@@ -6,9 +6,7 @@ services:
     environment:
       AUTH_SECRET: ${AUTH_SECRET}
       COOKIE_DOMAIN: .${DOMAIN}
-      CONTEST_DB_PATH: /data/contest.db
-    volumes:
-      - /data/realtime:/data   # realtime 과 같은 EBS 볼륨 공유 ( contest.db 단일 파일 )
+      REALTIME_URL: http://realtime:4000   # 로그인·세션 검증은 realtime 에 서버 간 호출 (DB 는 realtime 만 연다)
   realtime:
     image: ${ECR}/robotics-realtime:${RT_TAG:-latest}
     restart: unless-stopped

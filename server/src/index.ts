@@ -1,7 +1,11 @@
 import { createServer } from 'node:http';
 import { Server } from 'socket.io';
+import { recordAttempt, recordFail, throttle } from './rate-limit.ts';
 import {
   autoConfirm,
+  changeOwnPassword,
+  touchLogin,
+  verifyUser,
   assignJudgeTable,
   boardPublic,
   bootstrapStaffIfNone,
@@ -193,6 +197,52 @@ async function handleRequest(req: import('node:http').IncomingMessage, res: impo
   const session = sessionFromCookie(req.headers.cookie);
 
   // --- 인증 필요 조회 API ---
+  // --- 인증 (Next 서버 액션이 서버 간 호출로 쓴다. 웹이 다른 호스트(Vercel)여도 DB 는 이 서버만 연다) ---
+
+  // 로그인: 비밀번호 검증 + 시도 제한. 세션 쿠키는 Next 가 같은 AUTH_SECRET 으로 직접 서명해 설정한다.
+  if (url.pathname === '/auth/login' && method === 'POST') {
+    const body = (await readJson(req, 4096)) as { id?: unknown; password?: unknown; ip?: unknown } | null;
+    if (!body || typeof body.id !== 'string' || typeof body.password !== 'string') return bad(res);
+    const id = body.id.trim().slice(0, 64);
+    const ip = typeof body.ip === 'string' ? body.ip.slice(0, 64) : 'local';
+    // 호출자가 보낸 ip 는 위조될 수 있으니 계정 단위 한도를 함께 둔다
+    const keys = [`login:${ip}:${id.toLowerCase()}`, `login-id:${id.toLowerCase()}`];
+    const limits = [5, 20];
+    for (const [i, key] of keys.entries()) {
+      const gate = throttle(key, limits[i], 10 * 60_000, 10 * 60_000);
+      if (!gate.ok) return json(res, 429, { ok: false, error: 'throttled', retryAfterSec: gate.retryAfterSec });
+    }
+    keys.forEach((key) => recordAttempt(key, 10 * 60_000));
+    const user = await verifyUser(id, body.password);
+    if (!user) {
+      keys.forEach(recordFail);
+      return json(res, 401, { ok: false, error: 'invalid' });
+    }
+    touchLogin(user.id);
+    return json(res, 200, { ok: true, user });
+  }
+
+  // 세션 최신성 확인: Next 가 받은 쿠키를 그대로 전달한다 (비밀번호 재발급·강등으로 무효화된 세션 차단)
+  if (url.pathname === '/auth/me' && method === 'GET') {
+    return session ? json(res, 200, { ok: true }) : json(res, 401, { ok: false, error: 'unauthorized' });
+  }
+
+  // 본인 비밀번호 변경
+  if (url.pathname === '/auth/password' && method === 'POST') {
+    if (!session) return json(res, 401, { ok: false, error: 'unauthorized' });
+    const body = (await readJson(req, 4096)) as { current?: unknown; next?: unknown } | null;
+    if (!body || typeof body.current !== 'string' || typeof body.next !== 'string') return bad(res);
+    const key = `pwchange:${session.id}`;
+    const gate = throttle(key, 5, 10 * 60_000, 10 * 60_000);
+    if (!gate.ok) return json(res, 429, { ok: false, error: 'throttled', retryAfterSec: gate.retryAfterSec });
+    recordAttempt(key, 10 * 60_000);
+    if (!(await verifyUser(session.id, body.current))) {
+      recordFail(key);
+      return json(res, 401, { ok: false, error: 'invalid' });
+    }
+    return json(res, 200, { ok: true, tv: await changeOwnPassword(session.id, body.next) });
+  }
+
 
   // 대회 전체 설정(공개분)·채점표 템플릿·팀·대진·토너먼트를 한 번에. 클라이언트는 updatedAt 으로 캐시를 비교한다.
   // 팀 명단은 역할별로 최소화한다 — 참가자에게 다른 팀의 지역·소속·코치·참가자 명단(미성년자 정보)을 내주지 않는다.

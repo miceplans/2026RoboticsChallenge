@@ -21,7 +21,7 @@
 | 클라이언트 | `lib/realtime/useRealtime.ts`, `lib/realtime/outbox.ts` |
 | UI | `components/JudgeConsole.tsx`, `components/LiveLeaderboard.tsx` |
 
-스키마 관리: `server/src/schema.ts` 가 users·teams DDL 의 단일 출처이고, `lib/contest-db.ts` 의 복사본은 `node scripts/sync-schema.mjs` 로 갱신한다 (직접 편집 금지). 나머지 테이블 DDL 은 `server/src/db.ts` 가 정의하고 시작 시 컬럼 추가 마이그레이션을 수행한다. 두 프로세스가 같은 SQLite 파일을 쓰므로 양쪽 모두 `WAL + busy_timeout` 을 설정한다.
+스키마 관리: `contest.db` 는 실시간 서버(EC2)만 연다. DDL 은 `server/src/schema.ts`·`server/src/db.ts` 가 정의하고 시작 시 컬럼 추가 마이그레이션을 수행한다. Next(Vercel 등 다른 호스트 가능)는 DB 를 열지 않고 서버의 `/auth/login`·`/auth/me`·`/auth/password` 를 서버 간 호출한다 (`lib/auth-api.ts`). 로그인 시도 제한도 서버가 맡는다.
 
 ## 실행
 
@@ -44,7 +44,7 @@ pnpm dev                                # Next :3000
 | `CORS_ORIGINS` | 서버 | 허용 Origin, 쉼표 구분 (메인/judge/admin 서브도메인 전부) |
 | `PORT` | 서버 | 기본 4000 |
 | `DB_PATH` | 서버 | SQLite 파일 경로 (기본 `contest.db`). **스냅샷 대상 볼륨 위**에 둘 것 |
-| `CONTEST_DB_PATH` | Next | `contest.db` 경로 (web 컨테이너는 realtime 과 같은 볼륨을 마운트). 로그인·가입 시 읽는다. 이전 `USERS_DB_PATH`/`users.db` 는 폐기 |
+| `REALTIME_URL` | Next | 서버 간 호출용 실시간 서버 주소 (예: `https://rt.example.com`). 없으면 `NEXT_PUBLIC_REALTIME_URL` 사용. Vercel 에는 `AUTH_SECRET`(EC2 와 같은 값)·`COOKIE_DOMAIN`·`NEXT_PUBLIC_REALTIME_URL` 도 설정해야 한다 |
 
 ## 데이터 유실 방지 (점수를 잃지 않는 장치)
 

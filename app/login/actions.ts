@@ -3,15 +3,13 @@
 import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { areaOf, homeAreaOf } from '@/lib/hosts';
-import { recordAttempt, recordFail, throttle } from '@/lib/rate-limit';
+import { apiLogin } from '@/lib/auth-api';
 import { createSessionToken, SESSION_COOKIE, SESSION_MAX_AGE } from '@/lib/session';
-import { touchLogin, verifyUser } from '@/lib/users';
 
 type LoginArea = 'judge' | 'admin';
 
-// 관리자가 발급한 계정(심판·관리자) 또는 본선 명단 기반으로 직접 가입한 계정으로 로그인한다.
-// 비밀번호 검증은 모두 contest.db 해시 비교다 (lib/users.ts).
-// 틀린 시도가 잦으면 일정 시간 차단한다 — 임시 비밀번호가 짧아 무차별 대입에 약하기 때문.
+// 비밀번호 검증과 시도 제한은 계정 DB 를 가진 실시간 서버가 맡는다 (lib/auth-api.ts).
+// 웹이 Vercel 처럼 DB 가 없는 호스트에서 돌아도 동작하게 하기 위함이다.
 export async function login(_: string | null, formData: FormData): Promise<string | null> {
   const id = String(formData.get('id') ?? '').trim();
   const password = String(formData.get('password') ?? '');
@@ -20,16 +18,13 @@ export async function login(_: string | null, formData: FormData): Promise<strin
 
   const h = await headers();
   const ip = h.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'local';
-  const key = `login:${ip}:${id.toLowerCase()}`;
-  const gate = throttle(key, 5, 10 * 60_000, 10 * 60_000);
-  if (!gate.ok) return `로그인 시도가 너무 많습니다. ${Math.ceil(gate.retryAfterSec / 60)}분 후에 다시 시도해 주세요.`;
-  recordAttempt(key, 10 * 60_000);
-
-  const user = await verifyUser(id, password);
-  if (!user) {
-    recordFail(key);
+  const result = await apiLogin(id, password, ip);
+  if (!result.ok) {
+    if (result.error === 'throttled') return `로그인 시도가 너무 많습니다. ${Math.ceil((result.retryAfterSec ?? 600) / 60)}분 후에 다시 시도해 주세요.`;
+    if (result.error === 'unavailable') return '서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.';
     return '아이디 또는 비밀번호가 올바르지 않습니다.';
   }
+  const user = result.user;
 
   if (requestedArea === 'judge' && user.role !== 'judge' && user.role !== 'admin') {
     return '심판 계정으로 로그인해 주세요.';
@@ -37,8 +32,6 @@ export async function login(_: string | null, formData: FormData): Promise<strin
   if (requestedArea === 'admin' && user.role !== 'admin') {
     return '관리자 계정으로 로그인해 주세요.';
   }
-
-  touchLogin(user.id);
 
   // tv(token_version)를 함께 서명한다 — 비밀번호 재발급·강등 시 기존 세션이 무효화된다.
   (await cookies()).set(SESSION_COOKIE, await createSessionToken({ id: user.id, name: user.name, role: user.role, teamId: user.teamId, tv: user.tv }), {

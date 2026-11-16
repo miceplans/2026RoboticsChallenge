@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { existsSync } from 'node:fs';
-import { randomBytes, scryptSync } from 'node:crypto';
+import { randomBytes, scrypt as scryptCb, scryptSync, timingSafeEqual } from 'node:crypto';
+import { promisify } from 'node:util';
 import { DEFAULT_TEAMS } from './defaults.ts';
 import { TEAMS_DDL, USERS_DDL } from './schema.ts';
 
@@ -811,6 +812,36 @@ export function issueAccounts(list: { id: string; name: string; role: 'judge' | 
 export function seedDefaultAccounts(overwrite = false): { created: number; reset: number } {
   const wanted: { id: string; name: string; role: AccountRole; teamId?: string; judgeTable?: number }[] = [
     ...listTeams().map((t) => ({ id: `team-${t.id}`, name: t.name, role: 'user' as const, teamId: t.id })),
+// --- 로그인 · 비밀번호 변경 (Next 가 Vercel 등 다른 호스트에 있어도 DB 는 이 서버만 연다) ---
+
+const scryptAsync = promisify(scryptCb) as (password: string, salt: string, keylen: number) => Promise<Buffer>;
+export type VerifiedUser = { id: string; name: string; role: 'user' | 'judge' | 'admin'; teamId?: string; tv: number };
+
+// scrypt 는 비동기로 돌려 로그인 시도가 몰려도 이벤트 루프를 막지 않는다.
+export async function verifyUser(id: string, password: string): Promise<VerifiedUser | null> {
+  const row = db.prepare('SELECT salt, hash FROM users WHERE id = ?').get(id) as { salt: string; hash: string } | undefined;
+  if (!row) return null;
+  const a = Buffer.from((await scryptAsync(password, row.salt, 32)).toString('base64url'));
+  const b = Buffer.from(row.hash);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+  const u = db.prepare('SELECT id, name, role, team_id AS teamId, token_version AS tv FROM users WHERE id = ?').get(id) as
+    | { id: string; name: string; role: VerifiedUser['role']; teamId: string | null; tv: number }
+    | undefined;
+  return u ? { id: u.id, name: u.name, role: u.role, tv: u.tv, ...(u.teamId ? { teamId: u.teamId } : {}) } : null;
+}
+
+export function touchLogin(id: string): void {
+  db.prepare('UPDATE users SET last_login_at = ? WHERE id = ?').run(Date.now(), id);
+}
+
+// 본인 비밀번호 변경. token_version 을 올려 다른 기기 세션을 끊고, 새 tv 를 돌려준다.
+export async function changeOwnPassword(id: string, newPassword: string): Promise<number> {
+  const salt = randomBytes(16).toString('base64url');
+  const hash = (await scryptAsync(newPassword, salt, 32)).toString('base64url');
+  db.prepare('UPDATE users SET salt = ?, hash = ?, must_change = 0, token_version = token_version + 1 WHERE id = ?').run(salt, hash, id);
+  return (db.prepare('SELECT token_version AS tv FROM users WHERE id = ?').get(id) as { tv: number }).tv;
+}
+
     { id: 'admin', name: '관리자 1', role: 'admin' },
     { id: 'admin2', name: '관리자 2', role: 'admin' },
     ...Array.from({ length: 16 }, (_, i) => ({ id: `REF${String(i + 1).padStart(2, '0')}`, name: `심판 ${i + 1}`, role: 'judge' as const, judgeTable: (i % 8) + 1 })),
