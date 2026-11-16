@@ -233,7 +233,11 @@ resource "aws_iam_role" "deploy" {
       Principal = { Federated = local.oidc_arn }
       Condition = {
         StringEquals = { "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com" }
-        StringLike   = { "token.actions.githubusercontent.com:sub" = "repo:${var.github_repo}:ref:refs/heads/main" }
+        # 저장소가 immutable subject(owner@id/repo@id)를 쓰므로 두 형식 모두 허용
+        StringLike = { "token.actions.githubusercontent.com:sub" = [
+          "repo:${var.github_repo}:ref:refs/heads/main",
+          "repo:miceplans@297952556/2026RoboticsChallenge@1435077223:ref:refs/heads/main",
+        ] }
       }
     }]
   })

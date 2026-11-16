@@ -28,6 +28,39 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* 점수표 PDF: 화면에서는 숨기고, 인쇄(→PDF 저장) 때만 보인다 */
+.print-area {
+  display: none;
+}
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+  body * {
+    visibility: hidden;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    display: block;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+  .print-sheet {
+    break-after: page;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  .print-sheet:last-child {
+    break-after: auto;
+  }
+}
+
 /* 순위판: 새로 나타나는 카드가 아래에서 부드럽게 올라온다 */
 @keyframes rank-enter {
   from {

@@ -485,6 +485,50 @@ export function listScores(filter: { status?: ScoreStatus; cat?: 'J' | 'S'; roun
   return { scores: rows, total };
 }
 
+// 관리자 점수표 PDF 출력용: 부문·라운드별 채점지 원본(sheet, 서명 이미지 포함).
+// 서명이 없는 점수만 있는 행(sheet IS NULL)은 제외한다.
+export type ScoreSheetRow = {
+  matchId: string;
+  teamId: string;
+  teamName: string | null;
+  members: string[]; // 첫 번째가 팀장
+  judgeId: string;
+  judgeName: string | null;
+  round: 1 | 2;
+  cat: 'J' | 'S' | null;
+  wave: 'A' | 'B' | null;
+  table: number | null;
+  field: '좌' | '우' | null;
+  points: number;
+  status: ScoreStatus;
+  ts: number;
+  sheet: Record<string, unknown>;
+};
+
+export function listSheets(filter: { cat?: 'J' | 'S'; round?: 1 | 2 }): ScoreSheetRow[] {
+  const where = ['s.sheet IS NOT NULL'];
+  const args: (string | number)[] = [];
+  if (filter.cat) { where.push('t.cat = ?'); args.push(filter.cat); }
+  if (filter.round) { where.push('m.round = ?'); args.push(filter.round); }
+  const rows = db.prepare(`
+    SELECT s.match_id AS matchId, s.team_id AS teamId, t.name AS teamName, t.members,
+           s.judge_id AS judgeId, u.name AS judgeName,
+           m.round AS round, t.cat AS cat, m.wave AS wave, m.table_no AS "table", m.field AS field,
+           s.points, s.status, s.ts, s.sheet
+    FROM scores s
+    LEFT JOIN matches m ON m.id = s.match_id
+    LEFT JOIN teams t ON t.id = s.team_id
+    LEFT JOIN users u ON u.id = s.judge_id
+    WHERE ${where.join(' AND ')}
+    ORDER BY m.round, t.cat, s.match_id, s.team_id, s.judge_id
+    LIMIT 2000`).all(...args) as (Omit<ScoreSheetRow, 'members' | 'sheet'> & { members: string | null; sheet: string })[];
+  return rows.map((r) => ({
+    ...r,
+    members: JSON.parse(r.members ?? '[]') as string[],
+    sheet: JSON.parse(r.sheet) as Record<string, unknown>,
+  }));
+}
+
 // --- 팀 · 대진 ---
 
 const listTeamsStmt = db.prepare('SELECT id, cat, code, name, region, org, coach, members FROM teams ORDER BY id');
@@ -627,6 +671,8 @@ function rebuildTournament(cat: 'J' | 'S', results?: Map<string, { scoreA: numbe
     if (!res || !g?.teamA || !g.teamB) return null;
     g.scoreA = res.scoreA;
     g.scoreB = res.scoreB;
+    // 동점이면 재경기 대상 — 승자 없이 예정 상태로 두고 재경기 점수로 덮어쓴다 (룰북 i.4.3)
+    if (res.scoreA === res.scoreB) return null;
     g.status = 'done';
     g.winner = res.scoreA > res.scoreB ? g.teamA : g.teamB;
     return { winner: g.winner, loser: res.scoreA > res.scoreB ? g.teamB : g.teamA };

@@ -16,16 +16,16 @@ export type Values = Record<string, number | boolean | string>;
 export const CATEGORY_NAMES: Record<Category, string> = { J: '주니어', S: '시니어' };
 
 export const MISSION_NAMES: Record<Mission, string> = {
-  M1: '미션 1 · 오염물질 및 샘플 관리',
-  M2: '미션 2 · 보건의료 관리',
+  M1: '미션 1 · 격리 및 검체 관리',
+  M2: '미션 2 · 의료 관리',
   PEN: '공통 감점',
 };
 
 export const ITEMS: Item[] = [
-  { id: 's_slot', m: 'M1', label: '실험실 슬롯에 완전히 들어간 샘플', type: 'count', max: 3, pj: 15, ps: 15 },
-  { id: 'b_samples', m: 'M1', label: '샘플 3개 모두 슬롯 안 (보너스·자동)', type: 'auto', pj: 5, ps: 5 },
-  { id: 's_out', m: 'M1', label: '격리구역·실험실 밖에 있는 샘플', type: 'count', max: 3, pj: 0, ps: -3 },
-  { id: 's_quar', m: 'M1', label: '격리구역에 남은 샘플', type: 'count', max: 3, pj: 0, ps: -5 },
+  { id: 's_slot', m: 'M1', label: '실험실 슬롯에 완전히 들어간 검체', type: 'count', max: 3, pj: 15, ps: 15 },
+  { id: 'b_samples', m: 'M1', label: '검체 3개 모두 슬롯 안 (보너스·자동)', type: 'auto', pj: 5, ps: 5 },
+  { id: 's_out', m: 'M1', label: '격리구역·실험실 밖에 있는 검체', type: 'count', max: 3, pj: 0, ps: -3 },
+  { id: 's_quar', m: 'M1', label: '격리구역에 남은 검체', type: 'count', max: 3, pj: 0, ps: -5 },
   { id: 'beam', m: 'M1', label: '지정 위치에 혼자 서 있는 격리빔', type: 'count', max: 2, pj: 25, ps: 25 },
   { id: 'closed', m: 'M1', label: '빔 2개 + 고정벽 2개로 격리구역 완전 폐쇄', type: 'bool', pj: 20, ps: 20 },
   { id: 'kit_h', m: 'M2', label: '병원(H) 안 의료키트', type: 'count', max: 10, pj: 3, ps: 3 },
@@ -129,7 +129,8 @@ export function parseTemplate(input: unknown): Item[] | null {
 // 물리적으로 불가능한 입력 조합 (개수 합계 초과)
 export function validate(values: Values) {
   const errors: string[] = [];
-  if (n(values, 's_slot') + n(values, 's_out') + n(values, 's_quar') > 3) errors.push('샘플 개수 합계가 3개를 넘었어요.');
+  if (n(values, 's_slot') + n(values, 's_out') + n(values, 's_quar') > 3) errors.push('검체 개수 합계가 3개를 넘었어요.');
+  if (values.closed && n(values, 'beam') < 2) errors.push('격리구역 폐쇄는 빔 2개가 모두 서 있어야 인정돼요.');
   if (n(values, 'kit_h') + n(values, 'kit_l') + n(values, 'kit_r') > 10) errors.push('의료키트 합계가 10개를 넘었어요.');
   if (n(values, 'red_h') + n(values, 'red_out') > 4) errors.push('빨강 실린더 합계가 4개를 넘었어요.');
   if (n(values, 'yel_l') + n(values, 'yel_r') + n(values, 'yel_out') > 4) errors.push('노랑 실린더 합계가 4개를 넘었어요.');

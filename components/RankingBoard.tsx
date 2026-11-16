@@ -18,7 +18,7 @@ const podium = [
 const CATEGORIES: Category[] = ['S', 'J'];
 const PER_CATEGORY = 16;
 
-// 개발 중에도 실제 집계된 점수만 보여준다. 점수가 없으면 빈 상태 안내를 띄운다.
+// 명단의 모든 팀을 집계한다(점수가 없으면 0점). 명단이 비어 있으면 빈 상태 안내를 띄운다.
 
 // 이전 집계 대비 순위 변화: 양수면 상승, 음수면 하락
 type Deltas = Record<string, number>;

@@ -32,6 +32,7 @@ import {
   judgeTableOf,
   listMatches,
   listScores,
+  listSheets,
   listTeams,
   listUsers,
   logAudit,
@@ -482,6 +483,16 @@ async function handleRequest(req: import('node:http').IncomingMessage, res: impo
       return json(res, 200, { ok: true, scores: r.scores, total: r.total });
     }
 
+    // 채점지 원본(서명 이미지 포함) — 관리자 점수표 PDF 출력용. ?cat=J&round=1 필터.
+    if (url.pathname === '/admin/scores/sheets' && method === 'GET') {
+      const cat = url.searchParams.get('cat');
+      const round = url.searchParams.get('round');
+      const sheets = listSheets({
+        cat: cat === 'J' || cat === 'S' ? cat : undefined,
+        round: round === '1' || round === '2' ? (Number(round) as 1 | 2) : undefined,
+      });
+      return json(res, 200, { ok: true, sheets });
+    }
 
     // 점수 확정 / 정정 / 반려. 심판은 서명 후 스스로 고칠 수 없고 이 경로를 거친다.
     const scoreAction = url.pathname.match(/^\/admin\/scores\/(confirm|modify|reject)$/);
