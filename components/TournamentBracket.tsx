@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import ConnectionToast from './ConnectionToast';
 import { useRealtime } from '@/lib/realtime/useRealtime';
-import { eliminatedTeamIds, SEED_ORDER, teamName, useContest, type Team, type TournamentGame } from '@/lib/contest';
+import { compareStandings, eliminatedTeamIds, SEED_ORDER, teamName, useContest, type Team, type TournamentGame } from '@/lib/contest';
 import { CATEGORY_NAMES, type Category } from '@/lib/judge/rules';
 
 // 8강 토너먼트 대진표 (Figma 92:316): 캔버스 1600 x 1118
@@ -19,9 +19,11 @@ type Box = { x: number; y: number };
 
 const COL = [0, 424, 864, 1344];
 const T: Box[] = [0, 158, 318, 446, 606, 734, 894, 1022].map((y) => ({ x: COL[0], y }));
-const QF: Box[] = [110, 366, 686, 942].map((y) => ({ x: COL[1], y }));
-const SF: Box[] = [254, 830].map((y) => ({ x: COL[2], y }));
-const FINAL: Box = { x: COL[3], y: 382 };
+// 도착 박스는 항상 출발 박스 두 개의 정확히 가운데에 두어, 화살표가 합쳐지는 지점의 정중앙을 가리키게 한다.
+const between = (a: Box, b: Box, x: number): Box => ({ x, y: (a.y + b.y) / 2 });
+const QF: Box[] = [0, 1, 2, 3].map((i) => between(T[2 * i], T[2 * i + 1], COL[1]));
+const SF: Box[] = [0, 1].map((i) => between(QF[2 * i], QF[2 * i + 1], COL[2]));
+const FINAL: Box = between(SF[0], SF[1], COL[3]);
 const THIRD: Box = { x: COL[3], y: 686 };
 
 // Figma 커넥터(엘보 + 화살표 선, 굵기 4). x 는 Figma 섹션 기준에서 (941)를 뺀 값을 그대로 쓰고,
@@ -78,7 +80,7 @@ export function useRanking(cat: Category) {
   const { config } = useContest();
   const teams = config?.teams ?? [];
   const scored = standings.filter((s) => teams.find((t) => t.id === s.teamId)?.cat === cat);
-  const merged = scored;
+  const merged = [...scored].sort(compareStandings);
   const order = config?.settings.rankOrder[cat];
   if (!order?.length) return merged;
   const byId = new Map(merged.map((m) => [m.teamId, m]));

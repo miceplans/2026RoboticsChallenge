@@ -1,6 +1,6 @@
 'use client';
 
-import { teamName, useContest } from '@/lib/contest';
+import { compareStandings, teamName, useContest } from '@/lib/contest';
 import { useRealtime, type Standing, type Status } from '@/lib/realtime/useRealtime';
 
 const statusLabel: Record<Status, { text: string; dot: string }> = {
@@ -34,6 +34,7 @@ export function StandingsTable({ standings, updatedAt }: { standings: Standing[]
 function Table({ standings }: { standings: Standing[] }) {
   const { config } = useContest();
   const teams = config?.teams ?? [];
+  const ranked = [...standings].sort(compareStandings);
   return (
     <div className="mt-4 w-full max-w-md overflow-hidden rounded-xl border border-line">
       <table className="w-full text-left">
@@ -45,7 +46,7 @@ function Table({ standings }: { standings: Standing[] }) {
           </tr>
         </thead>
         <tbody className="divide-y divide-line">
-          {standings.map((s, i) => (
+          {ranked.map((s, i) => (
             <tr key={s.teamId}>
               <td className="px-4 py-3">{i + 1}</td>
               <td className="px-4 py-3">{teamName(teams, s.teamId)}</td>

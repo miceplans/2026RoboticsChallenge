@@ -82,8 +82,14 @@ export function computeSchedule(matches: Match[], tableOrder: number[]): Schedul
 
 // 부문 순위에 경쟁 순위(동점 표기)를 붙인다. 동점 = 최고점·합계·감점이 모두 같음 (말단 정렬키 팀 ID 는 제외).
 export type RankedStanding = Standing & { rank: number; tied: boolean };
+
+// 서버의 전송 순서에 의존하지 않고, 실시간 점수 변경 직후에도 화면에서 다시 정렬한다.
+export function compareStandings(a: Standing, b: Standing) {
+  return b.total - a.total || b.sum - a.sum || a.pen - b.pen || a.teamId.localeCompare(b.teamId);
+}
+
 export function withRanks(standings: Standing[], cat: Category): RankedStanding[] {
-  const rows = standings.filter((s) => s.cat === cat);
+  const rows = standings.filter((s) => s.cat === cat).sort(compareStandings);
   const keyOf = (s: Standing) => `${s.total}|${s.sum}|${s.pen}`;
   let rank = 0;
   let prevKey = '';

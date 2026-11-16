@@ -52,9 +52,14 @@ export default async function Header() {
             {session ? (
               <>
                 <Link href="/mypage" className={linkClass}>{session.name}</Link>
-                <Link href="/password" className={linkClass}>비밀번호 변경</Link>
+                <Link href="/password" className={`${linkClass} hidden sm:block`}>비밀번호 변경</Link>
                 <form action={logout}>
-                  <button className={linkClass}>로그아웃</button>
+                  <button aria-label="로그아웃" className={`flex items-center ${linkClass}`}>
+                    <span className="hidden sm:inline">로그아웃</span>
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden className="h-[18px] w-[18px] sm:hidden">
+                      <path d="M5,21q-0.83,0-1.41-0.59T3,19V5Q3,4.17 3.59,3.59T5,3h7V5H5V19h7v2H5Zm11-4l-1.38-1.45L17.18,13H9V11h8.18L14.63,8.45L16,7l5,5l-5,5Z" />
+                    </svg>
+                  </button>
                 </form>
               </>
             ) : (
@@ -62,19 +67,22 @@ export default async function Header() {
                 <Link href="/login" className="text-[15px] font-semibold text-gray-700 hover:text-heading">로그인</Link>
               </>
             )}
-            <span aria-hidden className="h-4 w-px bg-line" />
-            {sns.map(({ label, href, icon }) => (
-              <a
-                key={label}
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={label}
-                className={`flex items-center ${snsClass}`}
-              >
-                {icon}
-              </a>
-            ))}
+            {/* 모바일에서는 헤더 공간이 부족하므로 SNS 링크를 숨긴다 */}
+            <span aria-hidden className="hidden h-4 w-px bg-line sm:block" />
+            <div className="hidden items-center gap-4 sm:flex">
+              {sns.map(({ label, href, icon }) => (
+                <a
+                  key={label}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={label}
+                  className={`flex items-center ${snsClass}`}
+                >
+                  {icon}
+                </a>
+              ))}
+            </div>
           </div>
         </div>
       </div>

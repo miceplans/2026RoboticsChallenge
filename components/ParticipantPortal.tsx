@@ -47,7 +47,8 @@ export default function ParticipantPortal({ name, teamId }: { name: string; team
           <NoticeBanner />
           <MyMatchBanner team={team} />
         </div>
-        <nav className="mt-6 flex gap-2 overflow-x-auto border-b border-line">
+        {/* 모바일에서도 랭킹·경기 중계 탭이 보이도록 줄바꿈한다 */}
+        <nav className="mt-6 flex flex-wrap gap-2 border-b border-line">
           {tabs.map((x) => (
             <button key={x} onClick={() => setT(x)} className={`whitespace-nowrap px-4 py-3 text-sm font-bold ${t === x ? 'border-b-2 border-accent text-accent' : 'text-gray-500'}`}>
               {x}
