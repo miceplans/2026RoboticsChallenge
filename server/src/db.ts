@@ -644,12 +644,11 @@ const ROUND_ORDER: TournamentRound[] = ['QF', 'SF', 'F', '3P'];
 // 결과 하나를 저장하고 해당 부문 전체를 일관되게 다시 계산한다 (승자 진출·3·4위전 패자 배정).
 // 더 아래 라운드에 이미 입력된 결과는 무효가 된다 — 바뀐 대진으로 다시 치러야 하므로.
 export function saveTournamentResult(cat: 'J' | 'S', round: TournamentRound, gameNo: number, scoreA: number, scoreB: number): void {
-  if (scoreA === scoreB) throw new Error('tie_score');
   db.exec('BEGIN');
   try {
     const keepIdx = ROUND_ORDER.indexOf(round);
     const results = new Map<string, { scoreA: number; scoreB: number }>();
-    const rows = db.prepare("SELECT round, game_no, score_a, score_b FROM tournament_games WHERE cat = ? AND status = 'done'").all(cat) as { round: string; game_no: number; score_a: number; score_b: number }[];
+    const rows = db.prepare("SELECT round, game_no, score_a, score_b FROM tournament_games WHERE cat = ? AND score_a IS NOT NULL AND score_b IS NOT NULL").all(cat) as { round: string; game_no: number; score_a: number; score_b: number }[];
     for (const r of rows) {
       if (ROUND_ORDER.indexOf(r.round as TournamentRound) <= keepIdx) results.set(`${r.round}-${r.game_no}`, { scoreA: r.score_a, scoreB: r.score_b });
     }
@@ -669,7 +668,7 @@ function rebuildTournament(cat: 'J' | 'S', results?: Map<string, { scoreA: numbe
   const resultsMap: Map<string, { scoreA: number; scoreB: number }> =
     results ??
     new Map(
-      (db.prepare("SELECT round, game_no, score_a, score_b FROM tournament_games WHERE cat = ? AND status = 'done'").all(cat) as { round: string; game_no: number; score_a: number; score_b: number }[]).map(
+      (db.prepare("SELECT round, game_no, score_a, score_b FROM tournament_games WHERE cat = ? AND score_a IS NOT NULL AND score_b IS NOT NULL").all(cat) as { round: string; game_no: number; score_a: number; score_b: number }[]).map(
         (r) => [`${r.round}-${r.game_no}`, { scoreA: r.score_a, scoreB: r.score_b }],
       ),
     );
