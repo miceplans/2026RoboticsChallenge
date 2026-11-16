@@ -1,171 +1,108 @@
 'use client';
 
 import Image from 'next/image';
-import { useEffect, useRef, useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import ConnectionToast from './ConnectionToast';
-import { useRealtime, type Standing } from '@/lib/realtime/useRealtime';
+import { useRealtime } from '@/lib/realtime/useRealtime';
 import { teamName, useContest, withRanks, type RankedStanding, type Team } from '@/lib/contest';
 import { CATEGORY_NAMES, type Category } from '@/lib/judge/rules';
 
-// 시상대 위 카드: 1등 중앙, 2등 왼쪽, 3등 오른쪽 (위치는 시상대 이미지 기준 %)
-const podium = [
-  { left: '38.3%', top: '3.2%' },
-  { left: '11.9%', top: '15.4%' },
-  { left: '65.9%', top: '25%' },
-] as const;
-
-// 부문별 순위: 시니어/주니어는 각각 16팀이라 부문마다 따로 집계해서 보여준다
+// 부문별 순위: 시니어/주니어는 각각 16팀이라 부문마다 따로 집계해서 보여준다.
+// 명단의 모든 팀을 집계한다(점수가 없으면 0점). 명단이 비어 있으면 빈 상태 안내를 띄운다.
 const CATEGORIES: Category[] = ['S', 'J'];
 const PER_CATEGORY = 16;
+const CUT = 8; // 부문 순위 상위 8팀이 8강 진출
 
-// 명단의 모든 팀을 집계한다(점수가 없으면 0점). 명단이 비어 있으면 빈 상태 안내를 띄운다.
-
-// 이전 집계 대비 순위 변화: 양수면 상승, 음수면 하락
-type Deltas = Record<string, number>;
-
-// 점수가 바뀌면 이전 값에서 새 값까지 숫자가 부드럽게 올라가거나 내려간다
-function CountUp({ value }: { value: number }) {
-  const [shown, setShown] = useState(value);
-  const from = useRef(value);
-  useEffect(() => {
-    const start = from.current;
-    if (start === value || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      from.current = value;
-      setShown(value);
-      return;
-    }
-    const t0 = performance.now();
-    let raf = requestAnimationFrame(function tick(now) {
-      const p = Math.min((now - t0) / 700, 1);
-      const v = start + (value - start) * (1 - (1 - p) ** 3);
-      from.current = v;
-      setShown(p < 1 ? Math.round(v) : value);
-      if (p < 1) raf = requestAnimationFrame(tick);
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [value]);
-  return <>{shown}</>;
+// 순위표는 이름을 가려서 보여준다: 홍길동 → 홍*동, 홍길 → 홍*
+function maskName(name: string) {
+  const n = [...name.trim()];
+  if (n.length <= 1) return name;
+  if (n.length === 2) return `${n[0]}*`;
+  return `${n[0]}${'*'.repeat(n.length - 2)}${n[n.length - 1]}`;
 }
 
-function Delta({ value }: { value?: number }) {
-  if (!value) return <span className="text-sm font-medium text-gray-400">–</span>;
-  const up = value > 0;
-  return (
-    <span className={`inline-flex items-center gap-0.5 text-sm font-semibold tabular-nums ${up ? 'text-accent' : 'text-error'}`}>
-      {up ? '▲' : '▼'}
-      {Math.abs(value)}
-    </span>
-  );
+function memberLine(teams: Team[], id: string) {
+  const members = teams.find((t) => t.id === id)?.members ?? [];
+  return members.filter(Boolean).map(maskName).join(', ');
 }
 
-function TeamLabel({ teams, team, delta }: { teams: Team[]; team?: Standing; delta?: number }) {
-  return (
-    <>
-      <p className="truncate text-base font-semibold sm:text-2xl">{team ? teamName(teams, team.teamId) : '-'}</p>
-      <p className="flex items-center justify-center gap-2 text-xs tabular-nums sm:text-lg">
-        {team && (
-          <>
-            <CountUp value={team.total} />점 <Delta value={delta} />
-          </>
-        )}
-      </p>
-      {team && (
-        <p className="truncate text-[10px] tabular-nums text-gray-400 sm:text-xs">
-          1차 {team.r1 ?? '–'} · 2차 {team.r2 ?? '–'}
-        </p>
-      )}
-    </>
-  );
-}
+// 시상대 카드 (Figma 113:227): 시상대 그룹 507 x 295.5 기준 %, 글자는 컨테이너 너비 기준 cqw
+// 1등 중앙(금빛), 2등 왼쪽(흰빛), 3등 오른쪽(주황빛)
+const podium = [
+  { left: '35.1%', top: '0%', width: '27.4%', px: '3.75cqw', py: '2.76cqw', radius: '2.37cqw', name: '3.95cqw', sub: '3.16cqw', shadow: '0 -4px 50px 0 #d5a73a' },
+  { left: '8.09%', top: '24.03%', width: '22.01%', px: '3.01cqw', py: '2.22cqw', radius: '1.9cqw', name: '3.17cqw', sub: '2.53cqw', shadow: '0 -3.211px 40.141px 0 #fff' },
+  { left: '67.65%', top: '36.89%', width: '20.51%', px: '2.8cqw', py: '2.07cqw', radius: '1.77cqw', name: '2.95cqw', sub: '2.36cqw', shadow: '0 -2.993px 37.41px 0 rgba(209,91,0,0.5)' },
+] as const;
 
-function Podium({ teams, ranked, deltas }: { teams: Team[]; ranked: RankedStanding[]; deltas: Deltas }) {
+function Podium({ teams, ranked }: { teams: Team[]; ranked: RankedStanding[] }) {
   return (
-    <div className="relative mx-auto mt-16 aspect-[596/397] w-full max-w-[780px]">
-      <Image src="/images/podium.png" alt="" fill sizes="780px" priority className="object-cover" />
-      {/* 카드를 팀 기준으로 그려서, 순위가 바뀌면 다른 단으로 미끄러지듯 이동한다 */}
-      {ranked.slice(0, 3).map((team, i) => {
-        const { left, top } = podium[i];
-        return (
-          <div
-            key={team.teamId}
-            style={{ left, top }}
-            className="rank-enter absolute w-[23.3%] min-w-[84px] overflow-hidden rounded-2xl border border-line bg-white px-2 py-1.5 text-center transition-[left,top] duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none sm:px-[24px] sm:py-[14px]"
-          >
-            <p className="text-[11px] font-bold leading-tight text-accent sm:text-sm">
-              {team.rank}
-              {team.tied ? '=' : ''}
-            </p>
-            <TeamLabel teams={teams} team={team} delta={deltas[team.teamId]} />
-          </div>
-        );
-      })}
+    <div className="mx-auto mt-10 w-full max-w-[560px] [container-type:inline-size]">
+      <div className="relative w-full" style={{ aspectRatio: '507 / 295.5' }}>
+        <div className="absolute inset-x-0 bottom-0" style={{ height: `${(253.5 / 295.5) * 100}%` }}>
+          <Image src="/images/podium-figma.png" alt="" fill sizes="560px" priority className="object-cover" />
+        </div>
+        {ranked.slice(0, 3).map((team, i) => {
+          const p = podium[i];
+          const style: CSSProperties = {
+            left: p.left,
+            top: p.top,
+            width: p.width,
+            padding: `${p.py} ${p.px}`,
+            borderRadius: p.radius,
+            boxShadow: p.shadow,
+          };
+          return (
+            <div key={team.teamId} style={style} className="absolute overflow-hidden bg-white text-center text-black">
+              <p className="truncate font-semibold leading-[normal]" style={{ fontSize: p.name }}>
+                {teamName(teams, team.teamId)}
+              </p>
+              <p className="break-keep leading-[normal]" style={{ fontSize: p.sub }}>
+                {memberLine(teams, team.teamId)}
+              </p>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
-// 행 높이 96px + 간격 8px
-const ROW = 104;
-// 8강 진출 컷 구분선 높이
-const DIVIDER = 28;
-const CUT = 8; // 부문 순위 상위 8팀이 8강 진출
-
-function RankList({ teams, ranked, deltas }: { teams: Team[]; ranked: RankedStanding[]; deltas: Deltas }) {
+// 4위 이하: 높이 72px 카드, 왼쪽에 큰 순위 숫자(워터마크), 팀명과 팀원
+function RankList({ teams, ranked }: { teams: Team[]; ranked: RankedStanding[] }) {
   const rows = ranked.slice(3, PER_CATEGORY);
-  const hasCut = ranked.length > CUT;
-  const cutAfter = CUT - 4; // 컷 아래 첫 행의 rows 내 인덱스 (8위 = rows[4], 그 뒤부터 분리자만큼 밀림)
   return (
-    <ol className="relative mx-auto mt-10 w-full max-w-[960px]" style={{ height: rows.length * ROW + (hasCut ? DIVIDER : 0) }}>
+    <ol className="mx-auto mt-[15px] flex w-full max-w-[660px] flex-col gap-3">
       {rows.map((s, i) => (
-        <li
-          key={s.teamId}
-          style={{ transform: `translateY(${i * ROW + (hasCut && i > cutAfter ? DIVIDER : 0)}px)` }}
-          className="rank-fade absolute inset-x-0 top-0 flex items-center gap-5 transition-transform duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
-        >
-          <span className="w-[50px] shrink-0 text-[32px] font-semibold text-heading">
-            {s.rank}
-            {s.tied ? '=' : ''}
-          </span>
-          <div className="h-[96px] min-w-0 flex-1 overflow-hidden rounded-2xl border border-line bg-white px-[19px] py-[10px] sm:[&_p:first-child]:!text-xl sm:[&_p:nth-of-type(2)]:!text-base [&_p:nth-of-type(2)]:!justify-start">
-            <TeamLabel teams={teams} team={s} delta={deltas[s.teamId]} />
+        <li key={s.teamId} className="contents">
+          {/* 8위와 9위 사이 8강 진출 컷 */}
+          {s.rank > CUT && rows[i - 1] && rows[i - 1].rank <= CUT && (
+            <div aria-hidden className="flex items-center">
+              <span className="h-px flex-1 bg-line" />
+              <span className="px-3 text-xs font-semibold text-gray-400">8강 진출</span>
+              <span className="h-px flex-1 bg-line" />
+            </div>
+          )}
+          <div className="relative h-[72px] shrink-0 overflow-hidden rounded-xl bg-white/80 shadow-[4px_4px_20px_0_rgba(0,0,0,0.25)]">
+            <span className="absolute -top-[32px] -left-[18px] whitespace-nowrap text-[113.895px] font-bold leading-[normal] text-[#ebebf1]">{s.rank}</span>
+            <div className="absolute top-[13px] left-[80px] right-4 text-black">
+              <p className="truncate text-xl font-semibold leading-[normal]">{teamName(teams, s.teamId)}</p>
+              <p className="truncate text-base leading-[normal]">{memberLine(teams, s.teamId)}</p>
+            </div>
           </div>
         </li>
       ))}
-      {hasCut && (
-        <li
-          aria-hidden
-          style={{ transform: `translateY(${(cutAfter + 1) * ROW - (ROW - 96) / 2}px)`, height: DIVIDER }}
-          className="absolute inset-x-0 top-0 flex items-center"
-        >
-          <span className="h-px flex-1 bg-line" />
-          <span className="px-3 text-xs font-semibold text-gray-400">8강 진출</span>
-          <span className="h-px flex-1 bg-line" />
-        </li>
-      )}
     </ol>
   );
 }
 
 export default function RankingBoard({ switcher }: { switcher?: React.ReactNode }) {
-  const { status, standings: live, standingsAt } = useRealtime();
+  const { status, standings: live } = useRealtime();
   const { config } = useContest();
   const teams = config?.teams ?? [];
   const [cat, setCat] = useState<Category>('S');
   const standings = live.filter((t) => t.cat === cat);
   const ranked = withRanks(standings, cat);
 
-  // 직전 집계의 순위를 기억해 두었다가 새 집계가 오면 변화량을 계산한다 (순위는 부문 안에서 센다)
-  const prevRanks = useRef(new Map<string, number>());
-  const [liveDeltas, setLiveDeltas] = useState<Deltas>({});
-  useEffect(() => {
-    if (live.length === 0) return;
-    const rankedAll = CATEGORIES.flatMap((c) => withRanks(live, c).map((s) => [s.teamId, s.rank] as const));
-    const prev = prevRanks.current;
-    if (prev.size > 0 && rankedAll.some(([id, rank]) => prev.get(id) !== rank)) {
-      setLiveDeltas(Object.fromEntries(rankedAll.map(([id, rank]) => [id, (prev.get(id) ?? rank) - rank])));
-    }
-    prevRanks.current = new Map(rankedAll);
-  }, [live]);
-  const deltas = liveDeltas;
   return (
     <section className="relative min-h-screen overflow-hidden bg-white pt-[73px] pb-24 font-sans">
       <div className="relative mx-auto max-w-[1280px] px-6 pt-12">
@@ -188,11 +125,8 @@ export default function RankingBoard({ switcher }: { switcher?: React.ReactNode 
           <p className="mt-24 text-center text-gray-500">아직 집계된 {CATEGORY_NAMES[cat]} 점수가 없습니다.</p>
         ) : (
           <>
-            <Podium key={`podium-${cat}`} teams={teams} ranked={ranked} deltas={deltas} />
-            <RankList key={`list-${cat}`} teams={teams} ranked={ranked} deltas={deltas} />
-            {standingsAt && (
-              <p className="mt-6 text-center text-xs text-gray-400">마지막 수신 {new Date(standingsAt).toLocaleTimeString('ko-KR')}</p>
-            )}
+            <Podium key={`podium-${cat}`} teams={teams} ranked={ranked} />
+            <RankList key={`list-${cat}`} teams={teams} ranked={ranked} />
           </>
         )}
       </div>
