@@ -24,24 +24,26 @@ const SF: Box[] = [254, 830].map((y) => ({ x: COL[2], y }));
 const FINAL: Box = { x: COL[3], y: 382 };
 const THIRD: Box = { x: COL[3], y: 686 };
 
-// Figma 커넥터(엘보 + 화살표 선, 굵기 4)를 그대로 옮긴 연결선.
-// [시작 x, 시작 y, 끝 x, 끝 y, 세로선 위치(시작점 기준)] — 좌표는 Figma 섹션 기준에서 (941, 564)를 뺀 값
+// Figma 커넥터(엘보 + 화살표 선, 굵기 4). x 는 Figma 섹션 기준에서 (941)를 뺀 값을 그대로 쓰고,
+// y 는 출발/도착 박스의 세로 중앙에 맞춘다 — 화살촉 끝이 도착 박스 정중앙을 가리키도록.
+// [시작 x, 시작 y, 끝 x, 끝 y, 세로선 위치(시작점 기준)]
 const OX = 941;
-const OY = 564;
 type Conn = [number, number, number, number, number];
-const c = (sx: number, sy: number, ex: number, ey: number, vx?: number): Conn => [sx - OX, sy - OY, ex - OX, ey - OY, vx ?? (ey > sy ? 52.5 : 50)];
+const mid = (b: Box) => b.y + BH / 2;
+const k = (sx: number, from: Box, ex: number, to: Box, vx?: number): Conn => {
+  const sy = mid(from);
+  const ey = mid(to);
+  return [sx - OX, sy, ex - OX, ey, vx ?? (ey > sy ? 52.5 : 50)];
+};
 
 const SOLID_CONNS: Conn[] = [
-  c(1221, 634, 1341, 702), c(1221, 770, 1341, 702),
-  c(1221, 930, 1341, 998), c(1221, 1066, 1341, 998),
-  c(1221, 1230, 1341, 1298), c(1221, 1366, 1341, 1298),
-  c(1221, 1506, 1341, 1574), c(1221, 1642, 1341, 1574),
-  c(1645, 722, 1765, 850), c(1645, 978, 1765, 850),
-  c(1645, 1298, 1765, 1426), c(1645, 1554, 1765, 1426),
-  c(2125, 850, 2245, 978), c(2125, 1458, 2245, 978),
+  ...QF.flatMap((q, i) => [k(1221, T[2 * i], 1341, q), k(1221, T[2 * i + 1], 1341, q)]),
+  ...SF.flatMap((s, i) => [k(1645, QF[2 * i], 1765, s), k(1645, QF[2 * i + 1], 1765, s)]),
+  k(2125, SF[0], 2245, FINAL),
+  k(2125, SF[1], 2245, FINAL),
 ];
 // 준결승 패자 → 3·4위전 (파란 점선)
-const DASHED_CONNS: Conn[] = [c(2101, 850, 2244, 1298, 45), c(2124, 1458, 2244, 1298, 22)];
+const DASHED_CONNS: Conn[] = [k(2101, SF[0], 2244, THIRD, 45), k(2124, SF[1], 2244, THIRD, 22)];
 
 // 모서리가 둥근 엘보 선 + ARROW_LINES 화살표(끝점에서 45° 로 12.73 씩 벌어지는 ㅅ자)
 function elbow([sx, sy, ex, ey, vx]: Conn) {
