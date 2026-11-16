@@ -19,7 +19,7 @@ function MyMatchBanner({ team }: { team?: Team }) {
   const mine = useMySchedule(team);
   if (!team || !mine.length) return null;
   return (
-    <div className="mt-6 grid gap-3 sm:grid-cols-2">
+    <div className="grid gap-3 sm:grid-cols-2">
       {mine.map((m) => (
         <div key={m.id} className="flex items-center gap-4 rounded-2xl border border-accent bg-white px-5 py-4">
           <b className="text-2xl font-extrabold text-accent">{m.round}R</b>
@@ -43,8 +43,10 @@ export default function ParticipantPortal({ name, teamId }: { name: string; team
   return (
     <main className="mt-[73px] min-h-[calc(100vh-73px)] bg-[#f7f9fc]">
       <div className="mx-auto max-w-6xl px-5 py-7">
-        <NoticeBanner className="mt-6" />
-        <MyMatchBanner team={team} />
+        <div className="mt-6 space-y-3">
+          <NoticeBanner />
+          <MyMatchBanner team={team} />
+        </div>
         <nav className="mt-6 flex gap-2 overflow-x-auto border-b border-line">
           {tabs.map((x) => (
             <button key={x} onClick={() => setT(x)} className={`whitespace-nowrap px-4 py-3 text-sm font-bold ${t === x ? 'border-b-2 border-accent text-accent' : 'text-gray-500'}`}>
