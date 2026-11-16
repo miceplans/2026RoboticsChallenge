@@ -1,9 +1,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
-import { headers } from 'next/headers';
 import { logout } from '@/app/login/actions';
 import { getSession } from '@/lib/auth';
-import { hostFor } from '@/lib/hosts';
 
 const sns = [
   {
@@ -39,8 +37,6 @@ const sns = [
 
 export default async function Header() {
   const session = await getSession();
-  const host = (await headers()).get('host') ?? '';
-  const proto = (await headers()).get('x-forwarded-proto') ?? 'http';
   const linkClass = 'text-[15px] font-semibold text-gray-700 hover:text-heading';
   const snsClass = 'text-gray-400 hover:text-heading transition-colors';
 
@@ -56,12 +52,6 @@ export default async function Header() {
             {session ? (
               <>
                 <Link href="/mypage" className={linkClass}>{session.name}</Link>
-                {session.role !== 'user' && (
-                  <a href={`${proto}://${hostFor('judge', host)}/`} className={linkClass}>심판</a>
-                )}
-                {session.role === 'admin' && (
-                  <a href={`${proto}://${hostFor('admin', host)}/`} className={linkClass}>관리자</a>
-                )}
                 <Link href="/password" className={linkClass}>비밀번호 변경</Link>
                 <form action={logout}>
                   <button className={linkClass}>로그아웃</button>
