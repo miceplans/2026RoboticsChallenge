@@ -251,7 +251,30 @@ async function handleRequest(req: import('node:http').IncomingMessage, res: impo
   // 대회 전체 설정(공개분)·채점표 템플릿·팀·대진·토너먼트를 한 번에. 클라이언트는 updatedAt 으로 캐시를 비교한다.
   // 팀 명단은 역할별로 최소화한다 — 참가자에게 다른 팀의 지역·소속·코치·참가자 명단(미성년자 정보)을 내주지 않는다.
   if (url.pathname === '/config' && method === 'GET') {
-    if (!session) return json(res, 401, { ok: false, error: 'unauthorized' });
+    // 공개 순위판에서는 팀 이름을 표시할 수 있어야 한다. 비로그인 요청에는
+    // 순위판에 필요한 팀 식별 정보만 제공하고, 참가자 개인정보는 제외한다.
+    if (!session) {
+      if (!boardPublic()) return json(res, 401, { ok: false, error: 'unauthorized' });
+      const teams = listTeams().map(({ id, cat, code, name }) => ({ id, cat, code, name, region: '', org: '', coach: '', members: [] }));
+      return json(res, 200, {
+        ok: true,
+        config: {
+          updatedAt: getConfigVersion(),
+          settings: {
+            autoConfirm: false,
+            boardPublic: true,
+            notice: getNotice(),
+            tableOrder: [],
+            rankOrder: getRankOrder(),
+          },
+          template: null,
+          judgeTables: {},
+          teams,
+          matches: [],
+          tournament: getTournament(),
+        },
+      });
+    }
     const isStaff = session.role !== 'user';
     const teams = listTeams().map((t) =>
       isStaff || t.id === session.teamId
@@ -658,10 +681,10 @@ const io = new Server(httpServer, {
   connectionStateRecovery: { maxDisconnectionDuration: 2 * 60_000 },
 });
 
-// 로그인 쿠키(세션)로 인증. 비로그인은 연결 거부, 순위표 구독은 모든 역할 허용.
+// 공개 순위판은 비로그인도 읽을 수 있다. 점수 제출은 아래 핸들러에서 세션을 다시 확인한다.
 io.use((socket, next) => {
   const session = sessionFromCookie(socket.handshake.headers.cookie);
-  if (!session) return next(new Error('unauthorized'));
+  if (!session && !boardPublic()) return next(new Error('unauthorized'));
   socket.data.session = session;
   next();
 });
@@ -681,8 +704,8 @@ function emitLeaderboard() {
   const standings = getStandings();
   const visible = boardPublic();
   for (const socket of io.sockets.sockets.values()) {
-    const session = socket.data.session as Session;
-    socket.emit('leaderboard', visible || session.role === 'admin' ? standings : []);
+    const session = socket.data.session as Session | undefined;
+    socket.emit('leaderboard', visible || session?.role === 'admin' ? standings : []);
   }
 }
 
@@ -691,10 +714,11 @@ function broadcastConfig() {
 }
 
 io.on('connection', (socket) => {
-  const session = socket.data.session as Session;
-  socket.emit('leaderboard', boardPublic() || session.role === 'admin' ? getStandings() : []);
+  const session = socket.data.session as Session | undefined;
+  socket.emit('leaderboard', boardPublic() || session?.role === 'admin' ? getStandings() : []);
 
   socket.on('score:submit', (p: SubmitPayload, ack?: (res: Result) => void) => {
+    if (!session) return ack?.({ ok: false, error: 'unauthorized' });
     try {
       ack?.(submitScore(session, p));
     } catch (e) {
