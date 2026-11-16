@@ -175,7 +175,7 @@ CREATE TABLE tournament_games (
 | 메서드 | 경로 | 설명 |
 |---|---|---|
 | GET | `/health` | 기존 |
-| GET | `/config` | 설정(공개분), 템플릿, teams, matches, tournament 한 번에. `updatedAt` 포함 → 클라이언트 캐시 비교용. JudgeConsole·RankingBoard·AdminDashboard가 기존 `TEAMS`/`MATCHES` import 대신 사용 |
+| GET | `/config` | 설정(공개분), 템플릿, teams, matches, tournament 한 번에. `updatedAt` 포함 → 클라이언트 캐시 비교용. JudgeConsole·RankingBoard·관리자 페이지(`components/admin/*`)가 기존 `TEAMS`/`MATCHES` import 대신 사용 |
 | GET | `/standings` | 순위판 스냅샷. `board_public=0`이면 user/judge에게 빈 배열. 소켓 끊김 시 재검증용 |
 | GET | `/team-scores?teamId=` | 기존 |
 | GET | `/tournament?cat=` | 토너먼트 슬롯+경기 결과 |
