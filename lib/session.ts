@@ -6,6 +6,8 @@ export type Session = { id: string; name: string; role: Role; teamId?: string; t
 
 export const SESSION_COOKIE = 'session';
 export const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
+// 발급 후 이 시간이 지난 세션은 요청 때 새 토큰으로 갈아끼운다 (슬라이딩 만료, 하루 1회 이하).
+export const SESSION_REFRESH_AFTER_MS = 60 * 60 * 24 * 1000;
 
 const DEV_SECRET = 'dev-only-secret-change-me';
 const secret = process.env.AUTH_SECRET ?? DEV_SECRET;
@@ -38,6 +40,8 @@ export async function createSessionToken(user: Omit<Session, 'exp' | 'v'>) {
   const payload = toB64Url(enc.encode(JSON.stringify({ ...user, exp: Date.now() + SESSION_MAX_AGE * 1000, v: 2 })));
   return `${payload}.${await sign(payload)}`;
 }
+
+export const needsRefresh = (session: Session) => session.exp - Date.now() < SESSION_MAX_AGE * 1000 - SESSION_REFRESH_AFTER_MS;
 
 export async function verifySessionToken(token: string | undefined): Promise<Session | null> {
   if (!token) return null;

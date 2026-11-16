@@ -21,6 +21,7 @@ import {
   getOverview,
   getPending,
   getRoundScores,
+  getProgress,
   getStandings,
   getTableOrder,
   getRankOrder,
@@ -110,6 +111,8 @@ function submitScore(session: Session, p: SubmitPayload | undefined): Result {
   const match = getMatch(matchId);
   if (!match) return { ok: false, error: 'unknown_match' };
   if (match.team !== teamId) return { ok: false, error: 'team_mismatch' };
+  // 1차가 끝나기 전에는 2차 점수를 받지 않는다 (관리자는 불참팀 0점 처리 등 예외 입력 가능)
+  if (match.round === 2 && session.role !== 'admin' && !getProgress()[match.cat].round2Open) return { ok: false, error: 'round_locked' };
   if (session.role === 'judge') {
     const table = judgeTableOf(session.id);
     if (table !== null && match.table !== table) return { ok: false, error: 'not_your_table' };
@@ -274,6 +277,7 @@ async function handleRequest(req: import('node:http').IncomingMessage, res: impo
         teams,
         matches: listMatches(),
         tournament: getTournament(),
+        progress: getProgress(),
       },
     });
   }
@@ -362,6 +366,10 @@ async function handleRequest(req: import('node:http').IncomingMessage, res: impo
       const teamIds = body?.teamIds;
       if ((cat !== 'J' && cat !== 'S') || !Array.isArray(teamIds) || teamIds.length !== 8) return bad(res);
       if (!teamIds.every((t) => t === null || (typeof t === 'string' && t.length <= 16))) return bad(res);
+      // 예선(1·2차)이 모두 확정되기 전에는 8강 배정을 저장할 수 없다 (전부 비우는 초기화는 허용)
+      if (teamIds.some((t) => t !== null) && !getProgress()[cat].tournamentOpen) {
+        return json(res, 409, { ok: false, error: '예선(1·2차) 점수가 모두 확정된 뒤에 8강을 배정할 수 있습니다.' });
+      }
       saveTournamentSlots(cat, teamIds as (string | null)[]);
       logAudit(session.id, 'tournament', 'tournament', cat, { slots: teamIds.filter(Boolean).length });
       broadcastConfig();
@@ -572,8 +580,9 @@ async function handleRequest(req: import('node:http').IncomingMessage, res: impo
         if (typeof body.notice !== 'object' || body.notice === null) return bad(res);
         const { message, updatedAt } = body.notice as { message?: unknown; updatedAt?: unknown };
         if (typeof message !== 'string') return bad(res);
-        setSetting('notice', JSON.stringify({ message, updatedAt: typeof updatedAt === 'number' ? updatedAt : Date.now() }));
-        io.emit('notice', { message, updatedAt: Date.now() });
+        const notice = { message, updatedAt: typeof updatedAt === 'number' ? updatedAt : Date.now() };
+        setSetting('notice', JSON.stringify(notice));
+        io.emit('notice', notice);
       }
       logAudit(session.id, 'settings', 'settings', null, body);
       broadcastConfig();

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import ConnectionToast from './ConnectionToast';
 import { useRealtime } from '@/lib/realtime/useRealtime';
-import { SEED_ORDER, teamName, useContest, type Team, type TournamentGame } from '@/lib/contest';
+import { eliminatedTeamIds, SEED_ORDER, teamName, useContest, type Team, type TournamentGame } from '@/lib/contest';
 import { CATEGORY_NAMES, type Category } from '@/lib/judge/rules';
 
 // 8강 토너먼트 대진표 (Figma 92:316): 캔버스 1600 x 1118
@@ -17,21 +17,6 @@ const CATEGORIES: Category[] = ['S', 'J'];
 
 type Box = { x: number; y: number };
 
-const mid = (b: Box) => b.y + BH / 2;
-const right = (b: Box) => b.x + BW;
-const R = 8; // 모서리 둥글기
-
-// 화살표 머리: (x, y) 가 끝점, 왼쪽에서 들어온다
-const head = (x: number, y: number) => `M${x - 10} ${y - 8}L${x} ${y}L${x - 10} ${y + 8}`;
-
-// 두 박스가 중괄호(}) 모양으로 모여 다음 박스로 들어가는 연결선
-function merge(ya: number, yb: number, sx: number, xv: number, tx: number, ty: number) {
-  const tip = xv + 16;
-  const half = (y: number, dir: 1 | -1) =>
-    `M${sx} ${y}H${xv - R}Q${xv} ${y} ${xv} ${y + dir * R}V${ty - dir * R}Q${xv} ${ty} ${xv + R} ${ty}`;
-  return `${half(ya, 1)}${half(yb, -1)}M${xv + R} ${ty}H${tip}M${tip} ${ty}H${tx}${head(tx, ty)}`;
-}
-
 const COL = [0, 424, 864, 1344];
 const T: Box[] = [0, 158, 318, 446, 606, 734, 894, 1022].map((y) => ({ x: COL[0], y }));
 const QF: Box[] = [110, 366, 686, 942].map((y) => ({ x: COL[1], y }));
@@ -39,20 +24,40 @@ const SF: Box[] = [254, 830].map((y) => ({ x: COL[2], y }));
 const FINAL: Box = { x: COL[3], y: 382 };
 const THIRD: Box = { x: COL[3], y: 686 };
 
-const SOLID = [
-  ...QF.map((q, i) => merge(mid(T[2 * i]), mid(T[2 * i + 1]), right(T[0]) + 24, right(T[0]) + 72, q.x - 24, mid(q))),
-  merge(mid(QF[0]), mid(QF[1]), right(QF[0]) + 24, right(QF[0]) + 72, SF[0].x - 24, mid(SF[0])),
-  merge(mid(QF[2]), mid(QF[3]), right(QF[0]) + 24, right(QF[0]) + 72, SF[1].x - 24, mid(SF[1])),
-  merge(mid(SF[0]), mid(SF[1]), right(SF[0]) + 64, right(SF[0]) + 112, FINAL.x - 24, mid(FINAL)),
-].join('');
+// Figma 커넥터(엘보 + 화살표 선, 굵기 4)를 그대로 옮긴 연결선.
+// [시작 x, 시작 y, 끝 x, 끝 y, 세로선 위치(시작점 기준)] — 좌표는 Figma 섹션 기준에서 (941, 564)를 뺀 값
+const OX = 941;
+const OY = 564;
+type Conn = [number, number, number, number, number];
+const c = (sx: number, sy: number, ex: number, ey: number, vx?: number): Conn => [sx - OX, sy - OY, ex - OX, ey - OY, vx ?? (ey > sy ? 52.5 : 50)];
 
+const SOLID_CONNS: Conn[] = [
+  c(1221, 634, 1341, 702), c(1221, 770, 1341, 702),
+  c(1221, 930, 1341, 998), c(1221, 1066, 1341, 998),
+  c(1221, 1230, 1341, 1298), c(1221, 1366, 1341, 1298),
+  c(1221, 1506, 1341, 1574), c(1221, 1642, 1341, 1574),
+  c(1645, 722, 1765, 850), c(1645, 978, 1765, 850),
+  c(1645, 1298, 1765, 1426), c(1645, 1554, 1765, 1426),
+  c(2125, 850, 2245, 978), c(2125, 1458, 2245, 978),
+];
 // 준결승 패자 → 3·4위전 (파란 점선)
-const dx = right(SF[0]) + 40;
-const ty3 = mid(THIRD);
-const DASHED =
-  `M${right(SF[0]) + 24} ${mid(SF[0])}H${dx - R}Q${dx} ${mid(SF[0])} ${dx} ${mid(SF[0]) + R}V${ty3 - R}Q${dx} ${ty3} ${dx + R} ${ty3}H${THIRD.x - 24}` +
-  `M${right(SF[1]) + 24} ${mid(SF[1])}H${dx - R}Q${dx} ${mid(SF[1])} ${dx} ${mid(SF[1]) - R}V${ty3 + R}` +
-  head(THIRD.x - 24, ty3);
+const DASHED_CONNS: Conn[] = [c(2101, 850, 2244, 1298, 45), c(2124, 1458, 2244, 1298, 22)];
+
+// 모서리가 둥근 엘보 선 + ARROW_LINES 화살표(끝점에서 45° 로 12.73 씩 벌어지는 ㅅ자)
+function elbow([sx, sy, ex, ey, vx]: Conn) {
+  const down = ey > sy;
+  const x = sx + vx;
+  const r1 = Math.min(24, vx, Math.abs(ey - sy) / 2);
+  const r2 = Math.min(24, ex - x, Math.abs(ey - sy) / 2);
+  const d = down ? 1 : -1;
+  const A = 12.728;
+  return (
+    `M${sx} ${sy}H${x - r1}Q${x} ${sy} ${x} ${sy + d * r1}V${ey - d * r2}Q${x} ${ey} ${x + r2} ${ey}H${ex}` +
+    `M${ex - A} ${ey - A}L${ex} ${ey}L${ex - A} ${ey + A}`
+  );
+}
+const SOLID = SOLID_CONNS.map(elbow).join('');
+const DASHED = DASHED_CONNS.map(elbow).join('');
 
 // 8팀 시드 배치는 lib/contest.ts 의 표준 시드를 그대로 쓴다 (1v8, 4v5 / 2v7, 3v6)
 export { SEED_ORDER };
@@ -104,9 +109,14 @@ function Slot({ box, game, teams }: { box: Box; game?: TournamentGame; teams: Te
 }
 
 // 1열 팀 박스 (보기 모드)
-function TeamBox({ box, team, teams }: { box: Box; team?: string; teams: Team[] }) {
+function TeamBox({ box, team, teams, eliminated }: { box: Box; team?: string; teams: Team[]; eliminated: boolean }) {
   return (
-    <div style={pos(box)} className={`${BOX} border-gray-500`}>
+    <div style={pos(box)} className={`${BOX} overflow-visible border-gray-500 ${eliminated ? 'bracket-eliminated' : ''}`}>
+      {eliminated && (
+        <span className="bracket-smoke" aria-hidden>
+          <i /><i /><i />
+        </span>
+      )}
       {team && <span className="line-clamp-2 text-center text-[1.4cqw] font-semibold leading-tight text-heading [word-break:keep-all]">{teamName(teams, team)}</span>}
     </div>
   );
@@ -141,21 +151,22 @@ function DropSlot({ i, box, team, teams, seeding }: { i: number; box: Box; team?
   );
 }
 
-export function BracketCanvas({ slots, seeding }: { slots: (string | undefined)[]; seeding?: Seeding }) {
+export function BracketCanvas({ slots, cat, seeding }: { slots: (string | undefined)[]; cat: Category; seeding?: Seeding }) {
   const { config } = useContest();
   const teams = config?.teams ?? [];
   const games = config?.tournament.games ?? [];
-  const gameOf = (round: TournamentGame['round'], gameNo: number) => games.find((x) => x.round === round && x.gameNo === gameNo);
+  const gameOf = (round: TournamentGame['round'], gameNo: number) => games.find((x) => x.cat === cat && x.round === round && x.gameNo === gameNo);
+  const eliminated = eliminatedTeamIds(cat, games);
   const label = (b: Box) => ({ left: `${(b.x / W) * 100}%`, top: `${((b.y - 30) / H) * 100}%` });
   return (
     <div className="relative min-w-[900px] [container-type:inline-size]" style={{ aspectRatio: `${W} / ${H}` }}>
       <svg viewBox={`0 0 ${W} ${H}`} className="absolute inset-0 h-full w-full" fill="none" aria-hidden>
-        <path d={SOLID} stroke="#6B7280" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-        <path d={DASHED} stroke="#258EED" strokeWidth={2} strokeDasharray="6 6" strokeLinecap="round" strokeLinejoin="round" />
+        <path d={SOLID} stroke="#757575" strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" />
+        <path d={DASHED} stroke="#258EED" strokeWidth={4} strokeDasharray="8 8" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
 
       {T.map((b, i) =>
-        seeding ? <DropSlot key={i} i={i} box={b} team={slots[i]} teams={teams} seeding={seeding} /> : <TeamBox key={i} box={b} team={slots[i]} teams={teams} />,
+        seeding ? <DropSlot key={i} i={i} box={b} team={slots[i]} teams={teams} seeding={seeding} /> : <TeamBox key={i} box={b} team={slots[i]} teams={teams} eliminated={Boolean(slots[i] && eliminated.has(slots[i]!))} />,
       )}
       {QF.map((b, i) => (
         <Slot key={`q${i}`} box={b} teams={teams} game={gameOf('QF', i + 1)} />
@@ -202,7 +213,7 @@ export default function TournamentBracket({ switcher }: { switcher?: React.React
         ))}
       </nav>
       <div className="mt-8 overflow-x-auto">
-        <BracketCanvas slots={slots} />
+        <BracketCanvas slots={slots} cat={cat} />
       </div>
       <ConnectionToast status={status} />
     </section>

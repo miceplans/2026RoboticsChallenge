@@ -80,9 +80,54 @@ body {
 .rank-fade {
   animation: rank-fade 0.6s ease-out both;
 }
+
+/* 토너먼트 탈락: 연기가 피어오른 뒤 카드가 내려앉으며 회색으로 바뀐다. */
+@keyframes bracket-eliminated {
+  0% { background-color: #fff; border-color: #6b7280; color: var(--color-heading); filter: grayscale(0); transform: translateY(0); }
+  45% { background-color: #f3f4f6; }
+  100% { background-color: #d1d5db; border-color: #9ca3af; color: #6b7280; filter: grayscale(1); transform: translateY(14px); }
+}
+.bracket-eliminated {
+  animation: bracket-eliminated 1.15s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.bracket-eliminated > :not(.bracket-smoke) {
+  color: #6b7280;
+}
+.bracket-smoke {
+  position: absolute;
+  inset: -16% 0 auto;
+  height: 60%;
+  pointer-events: none;
+}
+.bracket-smoke i {
+  position: absolute;
+  bottom: 0;
+  width: 22%;
+  aspect-ratio: 1;
+  border-radius: 9999px;
+  background: rgb(107 114 128 / 55%);
+  filter: blur(5px);
+  animation: bracket-smoke 0.9s ease-out both;
+}
+.bracket-smoke i:nth-child(1) { left: 23%; animation-delay: 0.05s; }
+.bracket-smoke i:nth-child(2) { left: 43%; width: 27%; animation-delay: 0.16s; }
+.bracket-smoke i:nth-child(3) { left: 63%; animation-delay: 0.09s; }
+@keyframes bracket-smoke {
+  from { opacity: 0; transform: translate(0, 15%) scale(0.35); }
+  35% { opacity: 0.75; }
+  to { opacity: 0; transform: translate(10%, -145%) scale(1.8); }
+}
 @media (prefers-reduced-motion: reduce) {
   .rank-enter,
-  .rank-fade {
+  .rank-fade,
+  .bracket-eliminated,
+  .bracket-smoke i {
     animation: none;
+  }
+  .bracket-eliminated {
+    background-color: #d1d5db;
+    border-color: #9ca3af;
+    filter: grayscale(1);
+    transform: translateY(14px);
   }
 }

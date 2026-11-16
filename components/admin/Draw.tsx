@@ -36,6 +36,9 @@ export default function Draw() {
   const placed = new Set(slots.filter(Boolean));
   const count = placed.size;
   const complete = count === Math.min(8, ranking.length) && count > 0;
+  // 서버가 강제하는 잠금: 그 부문 1·2차가 모두 확정돼야 8강을 배정할 수 있다 (progress 가 없는 구버전 응답은 잠그지 않음)
+  const prog = config?.progress?.[cat];
+  const locked = prog ? !prog.tournamentOpen : false;
 
   // 동점 = 최고점·합계·감점이 전부 같음. useRanking 은 rankOrder 반영 순서라 그대로 그룹을 계산한다.
   const rankKey = (r: { total: number; sum?: number; pen?: number }) => `${r.total}|${r.sum}|${r.pen}`;
@@ -86,7 +89,7 @@ export default function Draw() {
     setPicked(undefined);
   };
   const onClear = (slot: number) => change((prev) => prev.map((t, i) => (i === slot ? undefined : t)));
-  const autoFill = () => change(() => SEED_ORDER.map((seed) => ranking[seed - 1]?.teamId));
+  const autoFill = () => !locked && change(() => SEED_ORDER.map((seed) => ranking[seed - 1]?.teamId));
 
   // 순위 패널끼리의 드래그: rank:팀ID 페이로드만 받아 슬롯 드래그(team:/slot:)와 섞이지 않게 한다
   const onRankDrop = (target: string, payload: string) => {
@@ -145,6 +148,11 @@ export default function Draw() {
           <button key={c} onClick={() => switchCat(c)} className={`px-4 py-2 text-sm font-bold ${cat === c ? 'border-b-2 border-accent text-accent' : 'text-gray-500'}`}>{CATEGORY_NAMES[c]}</button>
         ))}
       </nav>
+      {locked && prog && (
+        <p className="mt-4 rounded-xl bg-[#fff4e5] p-3 text-sm font-semibold text-[#b45309]">
+          🔒 예선이 끝나야 8강을 배정할 수 있습니다. 1차 확정 {prog.r1.confirmed}/{prog.r1.total} · 2차 확정 {prog.r2.confirmed}/{prog.r2.total}경기 (점수 탭에서 대기 중인 점수를 확정하세요)
+        </p>
+      )}
       {tieAtCut && (
         <p className="mt-4 rounded-xl bg-[#fff4e5] p-3 text-sm font-semibold text-[#b45309]">⚠ 8위 경계에 동점이 있습니다. 드래그로 진출 팀을 결정하고 순서 고정을 누르세요.</p>
       )}
@@ -186,7 +194,7 @@ export default function Draw() {
             })}
           </ol>
           <div className="mt-4 flex flex-wrap gap-2">
-            <button onClick={autoFill} className={btn}>시드 자동 배치</button>
+            <button onClick={autoFill} disabled={locked} className={`${btn} disabled:opacity-40`}>시드 자동 배치</button>
             <button onClick={() => change(() => Array(8).fill(undefined))} className={btn}>초기화</button>
           </div>
           {(rankDirty || hasOverride) && (
@@ -199,10 +207,10 @@ export default function Draw() {
         </div>
         <div className="min-w-0">
           <div className="overflow-x-auto">
-            <BracketCanvas slots={slots} seeding={{ slots, onDrop, onClear, picked }} />
+            <BracketCanvas slots={slots} cat={cat} seeding={{ slots, onDrop, onClear, picked }} />
           </div>
           <div className="mt-5 flex flex-wrap items-center gap-3">
-            <button disabled={!complete} onClick={apply} className={`${btnPrimary} disabled:opacity-40`}>{applied ? '저장 완료 · 적용됨' : '토너먼트 저장 · 적용'}</button>
+            <button disabled={!complete || locked} onClick={apply} className={`${btnPrimary} disabled:opacity-40`}>{applied ? '저장 완료 · 적용됨' : '토너먼트 저장 · 적용'}</button>
             {!complete && <span className="text-xs text-gray-500">8개 팀을 모두 배치해 주세요</span>}
           </div>
           {applied && <p className="mt-3 rounded-xl bg-[#eaf5ff] p-3 text-sm text-[#258eed]">토너먼트 대진이 저장됐습니다. /contest 의 대진표 탭에서 확인하세요.</p>}

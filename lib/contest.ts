@@ -3,6 +3,7 @@
 // 서버 /config 를 받아오는 클라이언트 데이터 레이어.
 // lib/judge/data.ts 의 정적 TEAMS/MATCHES 를 대체한다 (관리자가 서버에서 바꾸는 값이므로).
 import { useSyncExternalStore } from 'react';
+import { io, type Socket } from 'socket.io-client';
 import type { Category } from './judge/rules';
 
 export type Team = { id: string; cat: Category; code: string; name: string; region: string; org: string; coach: string; members: string[] };
@@ -24,6 +25,28 @@ export type TournamentGame = {
   status: 'scheduled' | 'done';
   updatedAt?: number;
 };
+
+// 끝난 경기에서 패했지만 이후 라운드에 배정된 경기가 없는 팀만 탈락으로 본다.
+// 준결승 패자는 3·4위전에 배정되므로, 그 경기가 끝날 때까지는 탈락 처리하지 않는다.
+const TOURNAMENT_STAGE: Record<TournamentRound, number> = { QF: 1, SF: 2, F: 3, '3P': 3 };
+export function eliminatedTeamIds(cat: Category, games: TournamentGame[]): Set<string> {
+  const categoryGames = games.filter((game) => game.cat === cat);
+  const eliminated = new Set<string>();
+
+  for (const game of categoryGames) {
+    if (game.status !== 'done' || !game.winner) continue;
+    const loser = game.winner === game.teamA ? game.teamB : game.teamA;
+    if (!loser) continue;
+    const advances = categoryGames.some(
+      (next) => TOURNAMENT_STAGE[next.round] > TOURNAMENT_STAGE[game.round] && (next.teamA === loser || next.teamB === loser),
+    );
+    if (!advances) eliminated.add(loser);
+  }
+  return eliminated;
+}
+// 진행 단계 잠금 (서버 getProgress). 부문별로 1차 → 2차 → 토너먼트 순서를 서버가 강제한다.
+export type RoundProgress = { total: number; submitted: number; confirmed: number };
+export type CatProgress = { r1: RoundProgress; r2: RoundProgress; round2Open: boolean; tournamentOpen: boolean };
 export type ContestConfig = {
   updatedAt: number;
   settings: {
@@ -38,6 +61,7 @@ export type ContestConfig = {
   teams: Team[];
   matches: Match[];
   tournament: { slots: { cat: Category; slotNo: number; teamId: string | null }[]; games: TournamentGame[] };
+  progress?: Record<Category, CatProgress>; // 구버전 서버 응답에는 없음 — 없으면 잠그지 않는다
 };
 
 // 토너먼트는 예선 순위 상위 8팀이 8강부터 시작한다.
@@ -86,6 +110,8 @@ let snapshot: ContestSnapshot = { config: null, failed: false };
 const listeners = new Set<() => void>();
 let interval: ReturnType<typeof setInterval> | null = null;
 let inflight: Promise<void> | null = null;
+let socket: Socket | null = null;
+let refreshQueued = false;
 
 function setSnapshot(next: ContestSnapshot) {
   if (next.config === snapshot.config && next.failed === snapshot.failed) return;
@@ -110,9 +136,23 @@ async function fetchConfig(): Promise<void> {
       setSnapshot({ config: snapshot.config, failed: true });
     } finally {
       inflight = null;
+      // 요청 중에 소켓 알림을 받으면 해당 요청이 이전 설정을 읽었을 수 있다.
+      // 한 번 더 읽어 이벤트 시점의 최신 공지를 보장한다.
+      if (refreshQueued) {
+        refreshQueued = false;
+        void fetchConfig();
+      }
     }
   })();
   return inflight;
+}
+
+function refreshFromServerEvent() {
+  if (inflight) {
+    refreshQueued = true;
+    return;
+  }
+  void fetchConfig();
 }
 
 function subscribe(listener: () => void) {
@@ -123,11 +163,22 @@ function subscribe(listener: () => void) {
       if (!document.hidden) void fetchConfig();
     }, REFRESH_MS);
   }
+  if (!socket) {
+    socket = io(serverUrl(), { withCredentials: true });
+    // 설정 변경은 서버가 즉시 알린다. 공지 전용 이벤트도 지원해, 서버와 클라이언트의
+    // 설정 이벤트가 잠시 엇갈리더라도 최신 설정을 다시 읽는다.
+    socket.on('config', refreshFromServerEvent);
+    socket.on('notice', refreshFromServerEvent);
+  }
   return () => {
     listeners.delete(listener);
-    if (listeners.size === 0 && interval) {
-      clearInterval(interval);
-      interval = null;
+    if (listeners.size === 0) {
+      if (interval) {
+        clearInterval(interval);
+        interval = null;
+      }
+      socket?.disconnect();
+      socket = null;
     }
   };
 }

@@ -1,4 +1,5 @@
 import JudgeConsole from '@/components/JudgeConsole';
+import NoticeBanner from '@/components/NoticeBanner';
 import { logout } from '@/app/login/actions';
 import { requireRole } from '@/lib/auth';
 
@@ -17,6 +18,7 @@ export default async function JudgePage() {
         </form>
       </header>
       <div className="px-4 py-6">
+        <NoticeBanner className="mb-6" />
         <JudgeConsole judgeId={session.id} judgeName={session.name} />
       </div>
     </main>

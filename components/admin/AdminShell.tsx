@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { Icon } from './shared';
+import NoticeBanner from '../NoticeBanner';
 
 export const adminNav: { href: string; label: string; icon: string }[] = [
   { href: '/admin', label: '대시보드', icon: 'dashboard' },
@@ -43,6 +44,7 @@ export default function AdminShell({ name, children }: { name: string; children:
               <Link key={x.href} href={x.href} className={`whitespace-nowrap rounded-2xl border px-3 py-1.5 text-sm ${current === x.href ? 'border-accent bg-accent text-white' : 'border-line bg-white text-gray-600'}`}>{x.label}</Link>
             ))}
           </div>
+          <NoticeBanner className="mb-6" />
           {children}
         </main>
       </div>

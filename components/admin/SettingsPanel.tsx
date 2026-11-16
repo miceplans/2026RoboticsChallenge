@@ -13,7 +13,9 @@ export default function SettingsPanel() {
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
-    if (!loaded) return;
+    // 관리자가 입력 중이면 주기적 config 재검증 결과로 textarea를 덮어쓰지 않는다.
+    // 저장 후에는 dirty가 false가 되어 서버의 최신 설정으로 다시 동기화된다.
+    if (!loaded || dirty) return;
     setFlags({
       autoConfirm: config?.settings.autoConfirm ?? true,
       boardPublic: config?.settings.boardPublic ?? true,
@@ -25,7 +27,7 @@ export default function SettingsPanel() {
         setFlags((f) => ({ ...f, hideScores: d.settings.hideScores }));
       })
       .catch(() => {});
-  }, [loaded, config]);
+  }, [loaded, config, dirty]);
 
   const items: { key: keyof typeof flags; label: string; hint: string }[] = [
     { key: 'autoConfirm', label: '자동 확정', hint: '서명 완료 즉시 순위에 반영합니다. 끄면 관리자 확정이 필요합니다.' },

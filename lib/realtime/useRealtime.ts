@@ -90,7 +90,7 @@ export function useRealtime() {
           // 로그인이 풀린 경우 점수는 pending 으로 남겨둔다 (재로그인 후 전송됨)
           if (!res.ok && res.error === 'unauthorized') return setRejected('로그인이 만료되었습니다. 다시 로그인하면 대기 중인 점수가 전송됩니다.');
           // 그 외 거부(invalid/forbidden)는 재시도해도 같으므로 rejected 로 두고 알린다
-          if (!res.ok) setRejected(`${entry.matchId} / ${entry.teamId}: ${res.error}`);
+          if (!res.ok) setRejected(res.error === 'round_locked' ? `${entry.matchId}: 1차가 모두 끝나야 2차 점수를 낼 수 있어요.` : `${entry.matchId} / ${entry.teamId}: ${res.error}`);
           // 전송 중에 같은 키로 더 새로운 점수가 들어왔다면 그건 건드리지 않는다
           const cur = ledger.current.get(scoreKey(entry));
           if (cur && cur.ts === entry.ts) {

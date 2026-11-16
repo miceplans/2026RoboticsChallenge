@@ -440,6 +440,33 @@ const standingsStmt = db.prepare(`
 `);
 export const getStandings = () => standingsStmt.all() as Standing[];
 
+// 진행 단계 잠금: 부문별로 1차 → 2차 → 토너먼트 순서를 강제한다.
+// - 2차 열림: 그 부문 1차 경기가 전부 제출됨 (대기·확정·정정 중 하나라도 있으면 제출로 본다, 반려 제외)
+// - 토너먼트 열림: 1·2차 경기가 전부 확정(confirmed/modified)됨 — 순위가 확정 점수만 반영하므로
+export type RoundProgress = { total: number; submitted: number; confirmed: number };
+export type CatProgress = { r1: RoundProgress; r2: RoundProgress; round2Open: boolean; tournamentOpen: boolean };
+export type Progress = Record<'J' | 'S', CatProgress>;
+const progressStmt = db.prepare(`
+  SELECT m.cat AS cat, m.round AS round, COUNT(DISTINCT m.id) AS total,
+    COUNT(DISTINCT CASE WHEN s.status IN ('pending','confirmed','modified') THEN m.id END) AS submitted,
+    COUNT(DISTINCT CASE WHEN s.status IN ('confirmed','modified') THEN m.id END) AS confirmed
+  FROM matches m LEFT JOIN scores s ON s.match_id = m.id AND s.team_id = m.team_id
+  GROUP BY m.cat, m.round
+`);
+export function getProgress(): Progress {
+  const rows = progressStmt.all() as { cat: 'J' | 'S'; round: 1 | 2; total: number; submitted: number; confirmed: number }[];
+  const empty = (): RoundProgress => ({ total: 0, submitted: 0, confirmed: 0 });
+  const out = { J: { r1: empty(), r2: empty() }, S: { r1: empty(), r2: empty() } } as Record<'J' | 'S', { r1: RoundProgress; r2: RoundProgress }>;
+  for (const r of rows) out[r.cat][r.round === 1 ? 'r1' : 'r2'] = { total: r.total, submitted: r.submitted, confirmed: r.confirmed };
+  const done = (p: RoundProgress, key: 'submitted' | 'confirmed') => p[key] >= p.total;
+  const build = (c: 'J' | 'S'): CatProgress => ({
+    ...out[c],
+    round2Open: done(out[c].r1, 'submitted'),
+    tournamentOpen: done(out[c].r1, 'confirmed') && done(out[c].r2, 'confirmed'),
+  });
+  return { J: build('J'), S: build('S') };
+}
+
 // 명단 교체 가능 여부 — 점수가 하나라도 있으면 교체하지 못하게 막는다 (고아 데이터 방지)
 export function countScores(): number {
   return (db.prepare('SELECT COUNT(*) AS c FROM scores').get() as { c: number }).c;

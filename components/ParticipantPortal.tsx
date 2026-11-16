@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import NoticeBanner from './NoticeBanner';
 import RankingBoard from './RankingBoard';
 import { computeSchedule, tablesOf, useContest, withRanks, type Team } from '@/lib/contest';
 import { useRealtime, useTeamScores } from '@/lib/realtime/useRealtime';
@@ -40,22 +41,9 @@ export default function ParticipantPortal({ name, teamId }: { name: string; team
   const [t, setT] = useState('팀 정보');
   const tabs = ['팀 정보', '내 점수표', '내 일정', '랭킹', '경기 중계'];
   return (
-    <main className="min-h-screen bg-[#f7f9fc]">
-      <header className="border-b border-line bg-white">
-        <div className="mx-auto flex h-[73px] max-w-6xl items-center justify-between px-5">
-          <div>
-            <b>2026 로보틱스 챌린지</b>
-            <p className="text-xs text-gray-500">문제해결 트랙 본선</p>
-          </div>
-          <span className="rounded-full bg-accent-tint px-3 py-1 text-sm font-bold text-accent">
-            {name}{team ? ` · ${team.id} ${team.name}` : ''}
-          </span>
-        </div>
-      </header>
+    <main className="mt-[73px] min-h-[calc(100vh-73px)] bg-[#f7f9fc]">
       <div className="mx-auto max-w-6xl px-5 py-7">
-        {config?.settings.notice.message && (
-          <div className="mt-6 rounded-2xl bg-accent-tint px-5 py-4 text-sm text-accent">📢 {config.settings.notice.message}</div>
-        )}
+        <NoticeBanner className="mt-6" />
         <MyMatchBanner team={team} />
         <nav className="mt-6 flex gap-2 overflow-x-auto border-b border-line">
           {tabs.map((x) => (

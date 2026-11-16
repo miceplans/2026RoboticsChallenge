@@ -1,12 +1,31 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { areaOf, areaRoles } from '@/lib/hosts';
-import { SESSION_COOKIE, verifySessionToken } from '@/lib/session';
+import { createSessionToken, needsRefresh, SESSION_COOKIE, SESSION_MAX_AGE, verifySessionToken } from '@/lib/session';
 
 // 로그인/로그아웃은 모든 호스트에서 공통으로 사용
 const shared = ['/login', '/signup', '/judge/login', '/admin/login', '/password'];
 const isShared = (path: string) => shared.some((p) => path === p || path.startsWith(`${p}/`));
 
+// 활동 중인 사용자의 세션 만료를 늘린다. 서명·만료만 확인하므로, DB 에서 폐기된 세션(tv 불일치)은
+// 쿠키만 연장될 뿐 getSession() 의 서버 대조에서 계속 거부된다.
 export async function proxy(request: NextRequest) {
+  const response = await route(request);
+  const session = await verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value);
+  if (session && needsRefresh(session)) {
+    const { id, name, role, teamId, tv } = session;
+    response.cookies.set(SESSION_COOKIE, await createSessionToken({ id, name, role, teamId, tv }), {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: request.headers.get('x-forwarded-proto') === 'https',
+      path: '/',
+      maxAge: SESSION_MAX_AGE,
+      domain: process.env.COOKIE_DOMAIN || undefined,
+    });
+  }
+  return response;
+}
+
+async function route(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const host = request.headers.get('host') ?? '';
   const area = areaOf(host);

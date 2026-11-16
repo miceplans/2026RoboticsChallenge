@@ -51,6 +51,10 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
   const [mode, setMode] = useState<Mode>('score');
   const [step, setStep] = useState<0 | 1>(0);
 
+  // 담당 테이블 부문의 진행 단계 (1차 → 2차 → 토너먼트). 서버가 잠그고 화면은 그대로 보여준다.
+  const tableCat = matchesOfTable(matches, table)[0]?.cat;
+  const progress = config?.progress;
+  const catProgress = tableCat ? progress?.[tableCat] : undefined;
   const match = matches.find((m) => m.id === openId) ?? null;
   const sheet = match ? (sheets[match.id] ?? newSheet()) : null;
 
@@ -62,6 +66,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
   };
 
   const open = (m: Match) => {
+    if (m.round === 2 && progress && !progress[m.cat].round2Open) return; // 서버도 막지만 화면에서도 열지 않는다
     const s = sheets[m.id];
     setOpenId(m.id);
     setStep(0);
@@ -115,8 +120,30 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
           )}
         </div>
 
+        {catProgress && tableCat && (
+          <Card title={`${CATEGORY_NAMES[tableCat]} 진행 단계`}>
+            <ol className="flex flex-wrap gap-2 p-4 text-sm">
+              {[
+                { label: '1차', state: catProgress.round2Open ? 'done' : 'now', note: `${catProgress.r1.submitted}/${catProgress.r1.total}경기 제출` },
+                { label: '2차', state: !catProgress.round2Open ? 'wait' : catProgress.tournamentOpen ? 'done' : 'now', note: catProgress.round2Open ? `${catProgress.r2.confirmed}/${catProgress.r2.total}경기 확정` : '1차 종료 후 시작' },
+                { label: '8강~결승', state: catProgress.tournamentOpen ? 'now' : 'wait', note: catProgress.tournamentOpen ? '배정 가능' : '2차 확정 후 시작' },
+              ].map((st) => (
+                <li key={st.label} className={`flex-1 rounded-xl border px-3 py-2 ${st.state === 'now' ? 'border-accent bg-[#eaf5ff]' : st.state === 'done' ? 'border-line bg-surface' : 'border-line opacity-50'}`}>
+                  <b className="block">{st.label}{st.state === 'done' ? ' ✓' : st.state === 'now' ? ' · 진행 중' : ''}</b>
+                  <small className="text-gray-500">{st.note}</small>
+                </li>
+              ))}
+            </ol>
+          </Card>
+        )}
+
         {([1, 2] as const).map((round) => (
           <Card key={round} title={`${round}차 조별 라운드`}>
+            {round === 2 && catProgress && !catProgress.round2Open ? (
+              <p className="p-6 text-center text-sm text-gray-500">
+                🔒 1차가 모두 끝나면 열립니다. ({CATEGORY_NAMES[tableCat!]} 1차 {catProgress.r1.submitted}/{catProgress.r1.total}경기 제출)
+              </p>
+            ) : (
             <div className="space-y-1 p-3">
               {matchesOfTable(matches, table)
                 .filter((m) => m.round === round)
@@ -143,6 +170,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
                   );
                 })}
             </div>
+            )}
           </Card>
         ))}
 
