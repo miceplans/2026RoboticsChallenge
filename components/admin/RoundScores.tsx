@@ -37,7 +37,7 @@ export default function RoundScores() {
     setDirty(true);
   };
 
-  const num = (v?: string) => (v === undefined || v.trim() === '' || isNaN(Number(v)) ? null : Number(v));
+  const num = (v?: string | number) => (v === undefined || String(v).trim() === '' || isNaN(Number(v)) ? null : Number(v));
   const rows = teams.filter((t) => t.cat === cat).map((t) => {
     const r1 = num(scores[t.id]?.r1);
     const r2 = num(scores[t.id]?.r2);

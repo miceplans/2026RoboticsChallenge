@@ -14,6 +14,11 @@ rt.                ─▶ caddy ─▶ realtime:4000 ─ SQLite (/data/realtime,
    ```bash
    aws ssm put-parameter --region ap-northeast-2 --name /robotics/auth-secret \
      --type SecureString --value "$(openssl rand -hex 32)"
+   # 운영 필수 신규 시크릿 (없으면 realtime 서버가 기동 거부)
+   aws ssm put-parameter --region ap-northeast-2 --name /robotics/internal-api-secret \
+     --type SecureString --value "$(openssl rand -hex 32)"   # Next↔서버 /auth/* 공유 비밀
+   aws ssm put-parameter --region ap-northeast-2 --name /robotics/default-password \
+     --type SecureString --value "<계정 비밀번호 초기화용 강한 값>"
    ```
    스택 생성 (계정에 **기본 VPC 필요** — 없으면 `aws ec2 create-default-vpc`):
    ```bash
@@ -30,6 +35,7 @@ rt.                ─▶ caddy ─▶ realtime:4000 ─ SQLite (/data/realtime,
 
 - `AUTH_SECRET` 은 Parameter Store `/robotics/auth-secret` 에만 있고 배포 때마다 읽는다. 바꾸려면 `put-parameter --overwrite` 후 재배포 — 모든 세션이 로그아웃된다.
 - **최초 관리자 계정**: realtime 서버 최초 기동(관리자 계정 0개) 시 `ADMIN_INITIAL_PASSWORD` 로 `admin` 계정이 만들어진다. `/opt/app/.env` 에 `ADMIN_INITIAL_PASSWORD=...` 를 넣으면 compose 가 그대로 전달한다 (미설정이면 기동은 되지만 경고만 남기고 로그인할 계정이 없으니, 배포 직후 확인). 이후 심판·관리자 계정은 관리자 화면(팀 · 계정 탭)의 '계정 발급 (CSV)' 으로 일괄 발급하고, 비밀번호는 '비밀번호 일괄 재발급' 으로 갱신한다. `JUDGE_INITIAL_PASSWORD` 를 두면 `REF01`~`REF08` 심판 계정도 함께 만들어진다.
+- `AUTH_SECRET`(32자+)·`INTERNAL_API_SECRET`·`DEFAULT_PASSWORD` 는 **운영에서 미설정 시 realtime 서버가 기동을 거부**한다. `internal-api-secret`·`default-password` 는 SSM Parameter Store 에서 읽고, `deploy.sh` 가 배포 때마다 주입한다.
 - 배포 성공 = web `/api/health` + realtime `/health` 가 응답. 실패하면 직전 태그로 롤백하고 Actions 가 실패 처리한다.
 - Compose(v5.7.0), Caddy(2.11.9) 는 버전 고정. GitHub Actions 는 메이저 태그(`@v4`) 사용 — 필요하면 커밋 SHA 로 고정.
 - `NEXT_PUBLIC_REALTIME_URL` 은 빌드 시 `https://rt.$DOMAIN` 으로 고정된다.

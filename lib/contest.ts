@@ -26,6 +26,9 @@ export type TournamentGame = {
   updatedAt?: number;
 };
 
+// 심판이 제출한 토너먼트 경기 점수 (관리자가 칸별로 확정하기 전까지는 결과가 아니다)
+export type TournamentSubmission = { cat: Category; round: TournamentRound; gameNo: number; scoreA: number; scoreB: number; judgeId: string; ts: number };
+
 // 끝난 경기에서 패했지만 이후 라운드에 배정된 경기가 없는 팀만 탈락으로 본다.
 // 준결승 패자는 3·4위전에 배정되므로, 그 경기가 끝날 때까지는 탈락 처리하지 않는다.
 const TOURNAMENT_STAGE: Record<TournamentRound, number> = { QF: 1, SF: 2, F: 3, '3P': 3 };
@@ -60,7 +63,7 @@ export type ContestConfig = {
   judgeTables: Record<string, number>; // 심판 ID → 담당 테이블 (REF 외 추가 심판 배정)
   teams: Team[];
   matches: Match[];
-  tournament: { slots: { cat: Category; slotNo: number; teamId: string | null }[]; games: TournamentGame[] };
+  tournament: { slots: { cat: Category; slotNo: number; teamId: string | null }[]; games: TournamentGame[]; submissions?: TournamentSubmission[] };
   progress?: Record<Category, CatProgress>; // 구버전 서버 응답에는 없음 — 없으면 잠그지 않는다
 };
 

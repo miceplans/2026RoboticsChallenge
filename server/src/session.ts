@@ -5,15 +5,24 @@ import { assertSessionFresh } from './db.ts';
 export type Role = 'user' | 'judge' | 'admin';
 // teamId: 본선 명단 기반 회원가입으로 팀에 연결된 참가자만 가진다 (lib/session.ts 와 동일 포맷)
 // tv: token_version. 비밀번호 재발급·권한 변경 시 DB 값이 올라가고, 대조가 실패하면 세션이 무효화된다.
-export type Session = { id: string; name: string; role: Role; teamId?: string; tv?: number; exp: number; v: 2 };
+// mc: must_change — 관리자가 재발급하거나 기본 비밀번호 계정이면 1. 쓰기 요청을 막는다.
+export type Session = { id: string; name: string; role: Role; teamId?: string; tv?: number; mc?: 0 | 1; exp: number; v: 2 };
 
 const SESSION_COOKIE = 'session';
 const DEV_SECRET = 'dev-only-secret-change-me';
+const MIN_SECRET_LEN = 32;
 const secret = process.env.AUTH_SECRET ?? DEV_SECRET;
-// 운영에서는 빈 문자열이나 개발용 기본값 키로 서명되면 안 된다 (Next 쪽과 동일 규칙)
-if (process.env.NODE_ENV === 'production' && (!process.env.AUTH_SECRET || secret === DEV_SECRET)) {
-  throw new Error('운영 환경에서는 AUTH_SECRET 을 반드시 설정해야 합니다 (기본값·빈 값 금지).');
+
+// AUTH_SECRET 검사 규칙은 lib/session.ts (Next) 와 동일하게 유지한다 — 한쪽만 바꾸면 서명이 어긋난다.
+export function assertAuthSecret(): void {
+  const s = process.env.AUTH_SECRET;
+  if (s && s !== DEV_SECRET && s.length >= MIN_SECRET_LEN) return;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(`운영 환경에서는 AUTH_SECRET 을 ${MIN_SECRET_LEN}자 이상으로 반드시 설정해야 합니다 (기본값·빈 값·짧은 값 금지).`);
+  }
+  if (s && s.length < MIN_SECRET_LEN) console.warn(`AUTH_SECRET 이 ${MIN_SECRET_LEN}자 미만입니다. 개발용으로만 쓰세요.`);
 }
+assertAuthSecret();
 
 export function sessionFromCookie(cookieHeader: string | undefined): Session | null {
   const token = cookieHeader

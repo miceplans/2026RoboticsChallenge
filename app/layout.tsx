@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import SessionRefresher from '@/components/SessionRefresher';
 import { ToastProvider } from '@/components/Toast';
 import './globals.css';
 
@@ -16,7 +17,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="font-sans antialiased text-gray-900 bg-white">
-        <ToastProvider>{children}</ToastProvider>
+        <ToastProvider>
+          <SessionRefresher />
+          {children}
+        </ToastProvider>
       </body>
     </html>
   );

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import ReviewView from '@/components/judge/ReviewView';
 import ScoreView from '@/components/judge/ScoreView';
 import SignView from '@/components/judge/SignView';
+import TournamentScores from '@/components/judge/TournamentScores';
 import { useToast } from '@/components/Toast';
 import { btnPrimary, Card, Chip, inputCls, type Tone } from '@/components/judge/ui';
 import { StatusBadge } from '@/components/LiveLeaderboard';
@@ -173,6 +174,8 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
             )}
           </Card>
         ))}
+
+        {tableCat && catProgress?.tournamentOpen && <TournamentScores cat={tableCat} />}
 
         <Card title="서버 동기화">
           <div className="space-y-2 px-5 py-4 text-sm">

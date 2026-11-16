@@ -9,14 +9,14 @@ importers:
   .:
     dependencies:
       socket.io:
-        specifier: ^4.8.1
+        specifier: 4.8.4
         version: 4.8.4
     devDependencies:
       '@types/node':
-        specifier: ^26.6.5
+        specifier: 26.6.5
         version: 26.6.5
       typescript:
-        specifier: ^7.0.2
+        specifier: 7.0.2
         version: 7.0.2
 
 packages:

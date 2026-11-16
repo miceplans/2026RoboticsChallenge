@@ -4,7 +4,7 @@ import type { Role } from './session';
 // REALTIME_URL: 서버 측 호출용 (없으면 브라우저용 NEXT_PUBLIC_REALTIME_URL 을 쓴다).
 const base = () => process.env.REALTIME_URL ?? process.env.NEXT_PUBLIC_REALTIME_URL ?? 'http://localhost:4000';
 
-export type VerifiedUser = { id: string; name: string; role: Role; teamId?: string; tv: number };
+export type VerifiedUser = { id: string; name: string; role: Role; teamId?: string; tv: number; mustChange: boolean };
 export type LoginResult =
   | { ok: true; user: VerifiedUser }
   | { ok: false; error: 'invalid' | 'throttled' | 'unavailable'; retryAfterSec?: number };
@@ -15,7 +15,12 @@ async function call(path: string, init: RequestInit & { cookie?: string } = {}) 
     ...rest,
     cache: 'no-store',
     signal: AbortSignal.timeout(8000),
-    headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}) },
+    headers: {
+      'content-type': 'application/json',
+      // /auth/* 는 웹 서버만 부르는 경로 — 난수 공유 비밀로 외부 직접 호출을 막는다.
+      ...(process.env.INTERNAL_API_SECRET ? { 'x-internal-secret': process.env.INTERNAL_API_SECRET } : {}),
+      ...(cookie ? { cookie } : {}),
+    },
   });
 }
 

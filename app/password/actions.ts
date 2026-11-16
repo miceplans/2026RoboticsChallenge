@@ -2,6 +2,7 @@
 
 import { cookies, headers } from 'next/headers';
 import { getSession } from '@/lib/auth';
+import { secureCookie } from '@/lib/cookie';
 import { apiChangePassword } from '@/lib/auth-api';
 import { createSessionToken, SESSION_COOKIE, SESSION_MAX_AGE } from '@/lib/session';
 
@@ -26,10 +27,11 @@ export async function changeMyPassword(_: string | null, formData: FormData): Pr
     return '현재 비밀번호가 올바르지 않습니다.';
   }
   const tv = result.tv;
+  // 변경 성공 — 새 토큰은 mc 없이 발급해 잠금이 풀리게 한다.
   (await cookies()).set(SESSION_COOKIE, await createSessionToken({ id: session.id, name: session.name, role: session.role, teamId: session.teamId, tv }), {
     httpOnly: true,
     sameSite: 'lax',
-    secure: h.get('x-forwarded-proto') === 'https',
+    secure: secureCookie(h.get('x-forwarded-proto')),
     path: '/',
     maxAge: SESSION_MAX_AGE,
     domain: process.env.COOKIE_DOMAIN || undefined,

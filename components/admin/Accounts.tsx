@@ -20,7 +20,7 @@ const T_ROUNDS = [
   { id: '3P', label: '3·4위전' },
 ] as const;
 
-type RoundScores = Record<string, { r1: string; r2: string }>;
+type RoundScores = Record<string, { r1?: string | number; r2?: string | number }>;
 
 export default function Accounts() {
   const toast = useToast();
@@ -37,7 +37,7 @@ export default function Accounts() {
 
   const teams = config?.teams ?? [];
   const games = config?.tournament.games ?? [];
-  const score = (v?: string) => (v === undefined || v.trim() === '' ? '-' : v);
+  const score = (v?: string | number | null) => (v === undefined || v === null || String(v).trim() === '' ? '-' : String(v));
   // 팀이 해당 라운드에서 낸 점수. 경기가 끝나지 않았으면 '-'.
   const gameScore = (teamId: string, round: string) => {
     const g = games.find((x) => x.round === round && x.status === 'done' && (x.teamA === teamId || x.teamB === teamId));

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { fireConfetti } from './Confetti';
 import ConnectionToast from './ConnectionToast';
 import { useRealtime } from '@/lib/realtime/useRealtime';
 import { compareStandings, eliminatedTeamIds, SEED_ORDER, teamName, useContest, type Team, type TournamentGame } from '@/lib/contest';
@@ -96,10 +97,21 @@ const pos = (b: Box) => ({
   height: `${(BH / H) * 100}%`,
 });
 
+// 8강 경기 점수를 입력하는 중(저장 전)에 4강 자리에 미리 보여주는 승자
+export type QfPreview = { winner: string; loser: string; scoreA: number; scoreB: number };
+
 const BOX = 'absolute flex flex-col items-center justify-center gap-0.5 overflow-hidden rounded border bg-white px-2';
 
 // 박스 한 칸. 저장된 경기 결과가 있으면 승리 팀과 점수를 보여준다.
-function Slot({ box, game, teams }: { box: Box; game?: TournamentGame; teams: Team[] }) {
+function Slot({ box, game, teams, preview }: { box: Box; game?: TournamentGame; teams: Team[]; preview?: QfPreview }) {
+  if (preview) {
+    return (
+      <div style={pos(box)} className={`${BOX} border-accent bg-[#f4faff]`}>
+        <span className="w-full truncate text-center text-[1.4cqw] font-bold leading-tight text-heading">{teamName(teams, preview.winner)}</span>
+        <span className="tabular-nums text-[1.2cqw] text-gray-500">{preview.scoreA} : {preview.scoreB}</span>
+      </div>
+    );
+  }
   return (
     <div style={pos(box)} className={`${BOX} border-gray-500`}>
       {game?.status === 'done' && game.winner && (
@@ -113,7 +125,7 @@ function Slot({ box, game, teams }: { box: Box; game?: TournamentGame; teams: Te
 }
 
 // 1열 팀 박스 (보기 모드)
-function TeamBox({ box, team, teams, eliminated }: { box: Box; team?: string; teams: Team[]; eliminated: boolean }) {
+function TeamBox({ box, team, teams, eliminated, score }: { box: Box; team?: string; teams: Team[]; eliminated: boolean; score?: number }) {
   return (
     <div style={pos(box)} className={`${BOX} overflow-visible border-gray-500 ${eliminated ? 'bracket-eliminated' : ''}`}>
       {eliminated && (
@@ -122,12 +134,13 @@ function TeamBox({ box, team, teams, eliminated }: { box: Box; team?: string; te
         </span>
       )}
       {team && <span className="line-clamp-2 text-center text-[1.4cqw] font-semibold leading-tight text-heading [word-break:keep-all]">{teamName(teams, team)}</span>}
+      {team && score !== undefined && <span className="tabular-nums text-[1.2cqw] text-gray-500">{score}점</span>}
     </div>
   );
 }
 
 // 점선 슬롯 한 칸: 팀을 놓는 곳. 놓인 팀은 다시 끌어 옮기거나 누르면 비워진다.
-function DropSlot({ i, box, team, teams, seeding }: { i: number; box: Box; team?: string; teams: Team[]; seeding: Seeding }) {
+function DropSlot({ i, box, team, teams, seeding, score }: { i: number; box: Box; team?: string; teams: Team[]; seeding: Seeding; score?: number }) {
   const [over, setOver] = useState(false);
   return (
     <div
@@ -146,21 +159,31 @@ function DropSlot({ i, box, team, teams, seeding }: { i: number; box: Box; team?
       draggable={Boolean(team)}
       onDragStart={(e) => e.dataTransfer.setData('text/plain', `slot:${i}`)}
       title={team ? '누르면 비웁니다' : undefined}
-      className={`absolute flex items-center justify-center rounded border-2 border-dashed px-2 text-center text-[1.4cqw] font-semibold leading-tight ${
+      className={`absolute flex flex-col items-center justify-center gap-0.5 rounded border-2 border-dashed px-2 text-center text-[1.4cqw] font-semibold leading-tight ${
         over ? 'border-accent bg-[#e5f3ff]' : team ? 'cursor-grab border-gray-500 bg-white text-heading' : 'border-gray-300 text-gray-300'
       }`}
     >
       <span className="line-clamp-2 [word-break:keep-all]">{team ? teamName(teams, team) : '팀'}</span>
+      {team && score !== undefined && <span className="tabular-nums text-[1.2cqw] font-normal text-gray-500">{score}점</span>}
     </div>
   );
 }
 
-export function BracketCanvas({ slots, cat, seeding }: { slots: (string | undefined)[]; cat: Category; seeding?: Seeding }) {
+export function BracketCanvas({ slots, cat, seeding, preview, actions }: { slots: (string | undefined)[]; cat: Category; seeding?: Seeding; preview?: (QfPreview | undefined)[]; actions?: React.ReactNode[] }) {
   const { config } = useContest();
+  const { standings } = useRealtime();
   const teams = config?.teams ?? [];
   const games = config?.tournament.games ?? [];
+  // 1·2차 점수가 모두 나온 팀만 팀 이름 아래에 점수를 보여준다
+  const scoreOf = (id?: string) => {
+    const st = id ? standings.find((x) => x.teamId === id) : undefined;
+    return st && st.r1 !== null && st.r2 !== null ? st.total : undefined;
+  };
   const gameOf = (round: TournamentGame['round'], gameNo: number) => games.find((x) => x.cat === cat && x.round === round && x.gameNo === gameNo);
   const eliminated = eliminatedTeamIds(cat, games);
+  // 미리보기에서 진 팀도 탈락 연출
+  // (1열의 8강 탈락 연출은 8강 칸 미리보기만 사용)
+  for (const pv of (preview ?? []).slice(0, 4)) if (pv) { eliminated.delete(pv.winner); eliminated.add(pv.loser); }
   const label = (b: Box) => ({ left: `${(b.x / W) * 100}%`, top: `${((b.y - 30) / H) * 100}%` });
   return (
     <div className="relative min-w-[900px] [container-type:inline-size]" style={{ aspectRatio: `${W} / ${H}` }}>
@@ -170,16 +193,24 @@ export function BracketCanvas({ slots, cat, seeding }: { slots: (string | undefi
       </svg>
 
       {T.map((b, i) =>
-        seeding ? <DropSlot key={i} i={i} box={b} team={slots[i]} teams={teams} seeding={seeding} /> : <TeamBox key={i} box={b} team={slots[i]} teams={teams} eliminated={Boolean(slots[i] && eliminated.has(slots[i]!))} />,
+        seeding ? <DropSlot key={i} i={i} box={b} team={slots[i]} teams={teams} seeding={seeding} score={scoreOf(slots[i])} /> : <TeamBox key={i} box={b} team={slots[i]} teams={teams} eliminated={Boolean(slots[i] && eliminated.has(slots[i]!))} score={scoreOf(slots[i])} />,
       )}
       {QF.map((b, i) => (
-        <Slot key={`q${i}`} box={b} teams={teams} game={gameOf('QF', i + 1)} />
+        <Slot key={`q${i}`} box={b} teams={teams} game={gameOf('QF', i + 1)} preview={preview?.[i]} />
       ))}
       {SF.map((b, i) => (
-        <Slot key={`s${i}`} box={b} teams={teams} game={gameOf('SF', i + 1)} />
+        <Slot key={`s${i}`} box={b} teams={teams} game={gameOf('SF', i + 1)} preview={preview?.[4 + i]} />
       ))}
-      <Slot box={FINAL} teams={teams} game={gameOf('F', 1)} />
-      <Slot box={THIRD} teams={teams} game={gameOf('3P', 1)} />
+      <Slot box={FINAL} teams={teams} game={gameOf('F', 1)} preview={preview?.[6]} />
+      <Slot box={THIRD} teams={teams} game={gameOf('3P', 1)} preview={preview?.[7]} />
+      {actions?.map((node, i) => {
+        const b = [...QF, ...SF, FINAL, THIRD][i];
+        return node ? (
+          <div key={`act${i}`} style={{ left: `${(b.x / W) * 100}%`, top: `${((b.y + BH + 8) / H) * 100}%` }} className="absolute z-10 flex items-center gap-[0.5cqw]">
+            {node}
+          </div>
+        ) : null;
+      })}
       <p style={label(FINAL)} className="absolute text-[1.4cqw] font-bold text-accent">
         결승
       </p>
@@ -194,6 +225,20 @@ export default function TournamentBracket({ switcher }: { switcher?: React.React
   const { status } = useRealtime();
   const { config } = useContest();
   const [cat, setCat] = useState<Category>('S');
+  // 관리자가 8강 팀을 확정하는 순간(저장된 8칸이 모두 찬 시점)을 보고 있으면 축하 스프링클을 뿌린다.
+  // 처음 열 때 이미 확정돼 있던 부문은 뿌리지 않는다.
+  const prevDone = useRef<Record<string, boolean> | null>(null);
+  useEffect(() => {
+    if (!config) return;
+    const done: Record<string, boolean> = {};
+    for (const c of CATEGORIES) {
+      const sl = config.tournament.slots.filter((x) => x.cat === c);
+      done[c] = sl.length === 8 && sl.every((x) => x.teamId);
+    }
+    const prev = prevDone.current;
+    prevDone.current = done;
+    if (prev && CATEGORIES.some((c) => done[c] && !prev[c])) fireConfetti();
+  }, [config]);
   const ranked = useRanking(cat).slice(0, 8).map((s) => s.teamId);
   // 관리자가 저장한 배정이 있으면 그것을 보여주고, 없으면 예선 순위 기반 시드 배치를 보여준다
   const saved = config?.tournament.slots.filter((s) => s.cat === cat).sort((a, b) => a.slotNo - b.slotNo) ?? [];

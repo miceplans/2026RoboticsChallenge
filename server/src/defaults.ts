@@ -11,9 +11,7 @@ export const DEFAULT_TEAMS: DefaultTeam[] = [
     "region": "경기",
     "org": "고양서정초등학교",
     "coach": "강윤심",
-    "members": [
-      "석담희"
-    ]
+    "members": []
   },
   {
     "id": "J02",

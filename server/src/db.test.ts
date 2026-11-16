@@ -1,0 +1,138 @@
+import { test, before } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+// DB 경로를 임시 파일로 정한 뒤 db 모듈을 불러온다 (모듈이 열 때 파일을 연다).
+const dir = mkdtempSync(join(tmpdir(), 'contest-db-test-'));
+process.env.DB_PATH = join(dir, 'test.db');
+process.env.DEFAULT_PASSWORD = 'test-default-pw';
+const db = await import('./db.ts');
+
+before(() => {
+  db.seedIfEmpty();
+  db.seedDefaultAccounts();
+});
+
+test('기본 계정은 DEFAULT_PASSWORD 로 만들어지고 mustChange 상태다', async () => {
+  const admin = await db.verifyUser('admin', process.env.DEFAULT_PASSWORD!);
+  assert.ok(admin);
+  assert.equal(admin.role, 'admin');
+  assert.equal(admin.mustChange, true);
+
+  const team = await db.verifyUser('team-J01', process.env.DEFAULT_PASSWORD!);
+  assert.ok(team);
+  assert.equal(team.teamId, 'J01');
+  assert.equal(team.mustChange, true);
+
+  // 심판 16명도 같은 기본 비밀번호로 만들어진다
+  const ref16 = await db.verifyUser('REF16', process.env.DEFAULT_PASSWORD!);
+  assert.ok(ref16);
+  assert.equal(ref16.role, 'judge');
+});
+
+test('틀린 비밀번호는 null 이고, 비밀번호 변경은 세션(tv)을 끊는다', async () => {
+  assert.equal(await db.verifyUser('admin', 'wrong-password'), null);
+
+  const before = await db.verifyUser('admin2', process.env.DEFAULT_PASSWORD!);
+  assert.ok(before);
+  const tv = await db.changeOwnPassword('admin2', 'brand-new-pw-1');
+  assert.equal(tv, before.tv + 1);
+
+  assert.equal(await db.verifyUser('admin2', process.env.DEFAULT_PASSWORD!), null);
+  const after = await db.verifyUser('admin2', 'brand-new-pw-1');
+  assert.ok(after);
+  assert.equal(after.mustChange, false); // 직접 바꾼 비밀번호는 더 이상 변경 강제가 아니다
+});
+
+test('비밀번호 재발급은 DEFAULT_PASSWORD 로 되돌리고 다시 변경을 강제한다', async () => {
+  const [reset] = db.resetPasswords({ ids: ['REF01'] });
+  assert.ok(reset);
+  assert.equal(reset.password, process.env.DEFAULT_PASSWORD);
+
+  const u = await db.verifyUser('REF01', process.env.DEFAULT_PASSWORD!);
+  assert.ok(u);
+  assert.equal(u.mustChange, true);
+});
+
+test('점수 제출은 ts 가 오래된 걸 무시하고, 확정 후엔 덮지 못한다', () => {
+  const ts = Date.now();
+  const first = db.saveScore({ matchId: 'R1-J01', teamId: 'J01', judgeId: 'REF05', points: 100, ts, sheet: null });
+  assert.equal(first.written, true);
+  assert.equal(first.status, 'pending');
+
+  const older = db.saveScore({ matchId: 'R1-J01', teamId: 'J01', judgeId: 'REF05', points: 50, ts: ts - 1000, sheet: null });
+  assert.equal(older.written, false);
+  assert.equal(older.status, 'pending');
+
+  assert.equal(db.confirmScore('R1-J01', 'J01', 'REF05', 'admin'), true);
+
+  const resubmit = db.saveScore({ matchId: 'R1-J01', teamId: 'J01', judgeId: 'REF05', points: 999, ts: ts + 1000, sheet: null });
+  assert.equal(resubmit.written, false);
+  assert.equal(resubmit.status, 'confirmed');
+
+  const scores = db.getTeamScores('J01');
+  const row = scores.find((s) => s.judgeId === 'REF05');
+  assert.equal(row?.points, 100);
+  assert.equal(row?.status, 'confirmed');
+});
+
+test('순위는 확정 점수 기준으로 높은 점수 → 조별 합계 → 감점 적은 순이다', () => {
+  const ts = Date.now();
+  db.saveScore({ matchId: 'R1-J02', teamId: 'J02', judgeId: 'REF05', points: 200, ts, sheet: null });
+  db.saveScore({ matchId: 'R1-J03', teamId: 'J03', judgeId: 'REF06', points: 200, ts, sheet: null, penCnt: 3 });
+  db.saveScore({ matchId: 'R1-J04', teamId: 'J04', judgeId: 'REF06', points: 200, ts, sheet: null, penCnt: 1 });
+  db.confirmScore('R1-J02', 'J02', 'REF05', 'admin');
+  db.confirmScore('R1-J03', 'J03', 'REF06', 'admin');
+  db.confirmScore('R1-J04', 'J04', 'REF06', 'admin');
+
+  const standings = db.getStandings().filter((s) => s.cat === 'J');
+  const idxOf = (id: string) => standings.findIndex((s) => s.teamId === id);
+  // J01(100) < J02=J03=J04(200). 동점이면 감점 적은 순: J02(0) → J04(1) → J03(3).
+  assert.ok(idxOf('J02') < idxOf('J04'));
+  assert.ok(idxOf('J04') < idxOf('J03'));
+  assert.ok(idxOf('J03') < idxOf('J01'));
+  const j01 = standings.find((s) => s.teamId === 'J01');
+  assert.equal(j01?.total, 100);
+  assert.equal(j01?.r1, 100);
+});
+
+test('토너먼트: 슬롯 배정 → 8강 결과가 준결승에 진출자를 채운다', () => {
+  const teams = ['J01', 'J02', 'J03', 'J04', 'J05', 'J06', 'J07', 'J08'];
+  db.saveTournamentSlots('J', teams);
+  const t = db.getTournament();
+  const qf1 = t.games.find((g) => g.round === 'QF' && g.gameNo === 1);
+  assert.equal(qf1?.teamA, 'J01');
+  assert.equal(qf1?.teamB, 'J02');
+  assert.equal(qf1?.status, 'scheduled');
+
+  db.saveTournamentResult('J', 'QF', 1, 10, 5);
+  const after = db.getTournament();
+  const sf1 = after.games.find((g) => g.round === 'SF' && g.gameNo === 1);
+  assert.equal(sf1?.teamA, 'J01');
+  assert.equal(after.games.find((g) => g.round === 'QF' && g.gameNo === 1)?.status, 'done');
+});
+
+test('토너먼트: 동점은 승자 지정(tb)이 있어야 승부가 갈리고, 준결승 패자는 3·4위전으로 간다', () => {
+  db.saveTournamentResult('J', 'QF', 2, 7, 7); // tb 없음 — 예정 상태로 남는다
+  let g = db.getTournament().games.find((x) => x.round === 'QF' && x.gameNo === 2);
+  assert.equal(g?.status, 'scheduled');
+  assert.equal(db.getTournament().games.find((x) => x.round === 'SF' && x.gameNo === 1)?.teamB, null);
+
+  db.saveTournamentResult('J', 'QF', 2, 7, 7, 'A'); // J03 승
+  const sf1 = db.getTournament().games.find((x) => x.round === 'SF' && x.gameNo === 1);
+  assert.equal(sf1?.teamB, 'J03');
+
+  db.saveTournamentResult('J', 'QF', 3, 2, 8); // J06 승
+  db.saveTournamentResult('J', 'QF', 4, 6, 1); // J07 승
+  db.saveTournamentResult('J', 'SF', 1, 3, 1); // J01 승, J03 패 → 3·4위전 A
+  const t = db.getTournament();
+  assert.equal(t.games.find((x) => x.round === 'F' && x.gameNo === 1)?.teamA, 'J01');
+  assert.equal(t.games.find((x) => x.round === '3P' && x.gameNo === 1)?.teamA, 'J03');
+});
+
+test('토너먼트: 이미 확정된 경기의 점수 재입력은 막는다', () => {
+  db.saveTournamentResult('J', 'SF', 1, 5, 2);
+  assert.throws(() => db.submitTournamentScore('J', 'SF', 1, 1, 1, 'REF01'), /확정된 경기/);
+});

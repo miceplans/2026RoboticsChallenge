@@ -3,6 +3,7 @@
 import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { areaOf, homeAreaOf } from '@/lib/hosts';
+import { secureCookie } from '@/lib/cookie';
 import { apiLogin } from '@/lib/auth-api';
 import { createSessionToken, SESSION_COOKIE, SESSION_MAX_AGE } from '@/lib/session';
 
@@ -34,14 +35,18 @@ export async function login(_: string | null, formData: FormData): Promise<strin
   }
 
   // tv(token_version)를 함께 서명한다 — 비밀번호 재발급·강등 시 기존 세션이 무효화된다.
-  (await cookies()).set(SESSION_COOKIE, await createSessionToken({ id: user.id, name: user.name, role: user.role, teamId: user.teamId, tv: user.tv }), {
+  // mc(must_change)는 재발급·기본 비밀번호 계정에 1 — 프록시가 /password 외 경로를 막는다.
+  (await cookies()).set(SESSION_COOKIE, await createSessionToken({ id: user.id, name: user.name, role: user.role, teamId: user.teamId, tv: user.tv, ...(user.mustChange ? { mc: 1 as const } : {}) }), {
     httpOnly: true,
     sameSite: 'lax',
-    secure: h.get('x-forwarded-proto') === 'https',
+    secure: secureCookie(h.get('x-forwarded-proto')),
     path: '/',
     maxAge: SESSION_MAX_AGE,
     domain: process.env.COOKIE_DOMAIN || undefined,
   });
+
+  // 관리자가 재발급한(또는 기본) 비밀번호로 처음 로그인하면 비밀번호 변경을 강제한다.
+  if (user.mustChange) redirect('/password');
 
   const host = h.get('host') ?? '';
   const target = requestedArea || homeAreaOf(user.role);

@@ -9,6 +9,13 @@ set -a; source .env; set +a
 export ECR="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 # 시크릿은 디스크에 두지 않고 Parameter Store 에서 읽는다
 export AUTH_SECRET="$(aws ssm get-parameter --region "$AWS_REGION" --name /robotics/auth-secret --with-decryption --query Parameter.Value --output text)"
+# 운영 필수 신규 시크릿 — 없으면 realtime 이 기동을 거부하므로 여기서 명확하게 실패시킨다
+for PARAM in internal-api-secret default-password; do
+  aws ssm get-parameter --region "$AWS_REGION" --name "/robotics/$PARAM" --with-decryption --query Parameter.Value --output text > /dev/null \
+    || { echo "SSM 파라미터 /robotics/$PARAM 가 없습니다. 생성: aws ssm put-parameter --name /robotics/$PARAM --type SecureString --value <32자+ 임의 값>" >&2; exit 1; }
+done
+export INTERNAL_API_SECRET="$(aws ssm get-parameter --region "$AWS_REGION" --name /robotics/internal-api-secret --with-decryption --query Parameter.Value --output text)"
+export DEFAULT_PASSWORD="$(aws ssm get-parameter --region "$AWS_REGION" --name /robotics/default-password --with-decryption --query Parameter.Value --output text)"
 aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR"
 
 # 현재 태그 (.tags: WEB_TAG / RT_TAG). 구버전 .last_tag 도 인식

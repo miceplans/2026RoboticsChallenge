@@ -1,22 +1,23 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { areaOf, areaRoles } from '@/lib/hosts';
+import { secureCookie } from '@/lib/cookie';
 import { createSessionToken, needsRefresh, SESSION_COOKIE, SESSION_MAX_AGE, verifySessionToken } from '@/lib/session';
 
-// 로그인/로그아웃은 모든 호스트에서 공통으로 사용
+// 로그인/로그아웃/비밀번호 변경은 모든 호스트에서 공통으로 사용
 const shared = ['/login', '/signup', '/judge/login', '/admin/login', '/password'];
 const isShared = (path: string) => shared.some((p) => path === p || path.startsWith(`${p}/`));
 
-// 활동 중인 사용자의 세션 만료를 늘린다. 서명·만료만 확인하므로, DB 에서 폐기된 세션(tv 불일치)은
+// 활동 중인 사용자의 세션 만료를 늘인다. 서명·만료만 확인하므로, DB 에서 폐기된 세션(tv 불일치)은
 // 쿠키만 연장될 뿐 getSession() 의 서버 대조에서 계속 거부된다.
 export async function proxy(request: NextRequest) {
   const response = await route(request);
   const session = await verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value);
   if (session && needsRefresh(session)) {
-    const { id, name, role, teamId, tv } = session;
-    response.cookies.set(SESSION_COOKIE, await createSessionToken({ id, name, role, teamId, tv }), {
+    const { id, name, role, teamId, tv, mc } = session;
+    response.cookies.set(SESSION_COOKIE, await createSessionToken({ id, name, role, teamId, tv, mc }), {
       httpOnly: true,
       sameSite: 'lax',
-      secure: request.headers.get('x-forwarded-proto') === 'https',
+      secure: secureCookie(request.headers.get('x-forwarded-proto')),
       path: '/',
       maxAge: SESSION_MAX_AGE,
       domain: process.env.COOKIE_DOMAIN || undefined,
@@ -36,19 +37,13 @@ async function route(request: NextRequest) {
     url.pathname = path;
     return NextResponse.redirect(url);
   };
-  // 리라이트는 내부 경로만 바꾼다 (host 를 바꾸면 외부 프록시로 처리됨)
-  const rewriteTo = (path: string) => {
-    const url = request.nextUrl.clone();
-    url.pathname = path;
-    return NextResponse.rewrite(url);
-  };
   const session = await verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value);
 
+  // 관리자가 재발급한(또는 기본) 비밀번호로 처음 로그인한 계정은 비밀번호 변경 화면만 쓸 수 있다.
+  if (session?.mc && !isShared(pathname)) return redirectTo('/password');
+
   if (area === 'main') {
-    // 개발 환경과 일반 URL에서는 /judge, /admin 직접 진입을 허용한다.
-    // 이전에는 이 경로를 /404로 리라이트해서, 실제 페이지가 있어도
-    // localhost:3000/judge 접근이 항상 실패했다. 페이지의 requireRole이
-    // 로그인 및 역할 권한은 계속 검증한다.
+    // 메인 호스트에서는 /judge·/admin 직접 진입을 허용한다 — 페이지의 requireRole 이 로그인·역할을 다시 검증한다.
     if ((pathname.startsWith('/mypage') || pathname.startsWith('/password')) && !session) return redirectTo('/login');
     return NextResponse.next();
   }
@@ -57,19 +52,16 @@ async function route(request: NextRequest) {
 
   if (!session) return redirectTo('/login');
   // 권한 없는 역할은 존재 자체를 숨긴다
-  if (!areaRoles[area].includes(session.role)) return rewriteTo('/404');
+  if (!areaRoles[area].includes(session.role)) return NextResponse.rewrite(new URL('/404', request.nextUrl));
 
-  // 영역 서브도메인은 브라우저 주소에서 루트(`/`)를 쓰지만,
-  // 직접 `/judge` 또는 `/admin`으로 들어오는 경우도 같은 페이지로
-  // 처리한다. 접두사를 이미 포함한 요청에 다시 붙이면 `/judge/judge`
-  // 같은 존재하지 않는 경로로 rewrite 되어 404가 된다.
+  // 영역 서브도메인에서는 루트(/)가 영역 페이지다. 직접 /judge·/admin 접두사로 들어오는
+  // 요청도 같은 페이지로 처리하고, 접두사가 중복된 주소(/judge/judge 등)는 접두사를 벗겨 복구한다.
   const areaPrefix = `/${area}`;
   let areaPath = pathname;
-  // 이전에 생성된 `/judge/judge`·`/admin/admin` 링크도 정상 경로로
-  // 복구해, 브라우저가 잘못된 주소를 계속 재요청하지 않게 한다.
   while (areaPath === areaPrefix || areaPath.startsWith(`${areaPrefix}/`)) {
     areaPath = areaPath.slice(areaPrefix.length) || '/';
   }
+  // 리라이트는 내부 경로만 바꾼다 (host 를 바꾸면 외부 프록시로 처리됨)
   const url = request.nextUrl.clone();
   url.pathname = `${areaPrefix}${areaPath === '/' ? '' : areaPath}`;
   return NextResponse.rewrite(url);

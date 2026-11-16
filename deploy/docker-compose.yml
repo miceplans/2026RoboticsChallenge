@@ -7,6 +7,7 @@ services:
       AUTH_SECRET: ${AUTH_SECRET}
       COOKIE_DOMAIN: .${DOMAIN}
       REALTIME_URL: http://realtime:4000   # 로그인·세션 검증은 realtime 에 서버 간 호출 (DB 는 realtime 만 연다)
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}   # /auth/* 공유 비밀 — 운영 필수
   realtime:
     image: ${ECR}/robotics-realtime:${RT_TAG:-latest}
     restart: unless-stopped
@@ -14,6 +15,8 @@ services:
       AUTH_SECRET: ${AUTH_SECRET}
       CORS_ORIGINS: https://${DOMAIN},https://judge.${DOMAIN},https://admin.${DOMAIN}
       DB_PATH: /data/contest.db
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
+      DEFAULT_PASSWORD: ${DEFAULT_PASSWORD:-}
       ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-}
       JUDGE_INITIAL_PASSWORD: ${JUDGE_INITIAL_PASSWORD:-}
     volumes:

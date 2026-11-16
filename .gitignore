@@ -4,6 +4,10 @@ node_modules/
 next-env.d.ts
 *.tsbuildinfo
 
+# IDE / 로컬 패키지 스토어
+.idea/
+.pnpm-store/
+
 *.db
 *.db-*
 .env
