@@ -196,7 +196,6 @@ async function handleRequest(req: import('node:http').IncomingMessage, res: impo
 
   const session = sessionFromCookie(req.headers.cookie);
 
-  // --- 인증 필요 조회 API ---
   // --- 인증 (Next 서버 액션이 서버 간 호출로 쓴다. 웹이 다른 호스트(Vercel)여도 DB 는 이 서버만 연다) ---
 
   // 로그인: 비밀번호 검증 + 시도 제한. 세션 쿠키는 Next 가 같은 AUTH_SECRET 으로 직접 서명해 설정한다.
@@ -243,6 +242,7 @@ async function handleRequest(req: import('node:http').IncomingMessage, res: impo
     return json(res, 200, { ok: true, tv: await changeOwnPassword(session.id, body.next) });
   }
 
+  // --- 인증 필요 조회 API ---
 
   // 대회 전체 설정(공개분)·채점표 템플릿·팀·대진·토너먼트를 한 번에. 클라이언트는 updatedAt 으로 캐시를 비교한다.
   // 팀 명단은 역할별로 최소화한다 — 참가자에게 다른 팀의 지역·소속·코치·참가자 명단(미성년자 정보)을 내주지 않는다.
@@ -481,6 +481,7 @@ async function handleRequest(req: import('node:http').IncomingMessage, res: impo
       });
       return json(res, 200, { ok: true, scores: r.scores, total: r.total });
     }
+
 
     // 점수 확정 / 정정 / 반려. 심판은 서명 후 스스로 고칠 수 없고 이 경로를 거친다.
     const scoreAction = url.pathname.match(/^\/admin\/scores\/(confirm|modify|reject)$/);
