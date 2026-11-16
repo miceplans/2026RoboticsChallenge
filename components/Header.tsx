@@ -37,18 +37,19 @@ const sns = [
 
 export default async function Header() {
   const session = await getSession();
-  const linkClass = 'text-[15px] font-semibold text-gray-700 hover:text-heading';
+  const linkClass = 'whitespace-nowrap text-[15px] font-semibold text-gray-700 hover:text-heading';
   const snsClass = 'text-gray-400 hover:text-heading transition-colors';
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-line">
-      <div className="max-w-[1280px] mx-auto px-6">
+      <div className="max-w-[1280px] mx-auto px-3 sm:px-6">
         <div className="flex items-center justify-between h-[73px]">
           <Link href="/" className="flex items-center">
-            <Image src="/images/logo.png" alt="전국민 AI 경진대회" width={200} height={40} priority className="h-8 sm:h-9 w-auto" />
+            <Image src="/images/logo.svg" alt="전국민 AI 경진대회" width={200} height={74} priority className="h-7 sm:h-9 w-auto" />
           </Link>
-          <div className="flex items-center gap-4">
-            <Link href="/contest" className="text-[15px] font-semibold text-heading hover:text-accent transition-colors">대회 진행</Link>
+          <div className="flex items-center gap-2 sm:gap-4">
+            <Link href="/contest" className="whitespace-nowrap text-[15px] font-semibold text-heading hover:text-accent transition-colors">대회 진행</Link>
+            <Link href="/live" className="whitespace-nowrap text-[15px] font-semibold text-heading hover:text-accent transition-colors">경기 중계</Link>
             {session ? (
               <>
                 <Link href="/mypage" className={linkClass}>{session.name}</Link>
@@ -64,7 +65,7 @@ export default async function Header() {
               </>
             ) : (
               <>
-                <Link href="/login" className="text-[15px] font-semibold text-gray-700 hover:text-heading">로그인</Link>
+                <Link href="/login" className="whitespace-nowrap rounded-full bg-accent px-3 py-1.5 text-sm font-bold text-white transition-colors hover:bg-accent-soft sm:px-4">로그인</Link>
               </>
             )}
             {/* 모바일에서는 헤더 공간이 부족하므로 SNS 링크를 숨긴다 */}
