@@ -13,17 +13,9 @@ const CATEGORIES: Category[] = ['S', 'J'];
 const PER_CATEGORY = 16;
 const CUT = 8; // 부문 순위 상위 8팀이 8강 진출
 
-// 순위표는 이름을 가려서 보여준다: 홍길동 → 홍*동, 홍길 → 홍*
-function maskName(name: string) {
-  const n = [...name.trim()];
-  if (n.length <= 1) return name;
-  if (n.length === 2) return `${n[0]}*`;
-  return `${n[0]}${'*'.repeat(n.length - 2)}${n[n.length - 1]}`;
-}
-
 function memberLine(teams: Team[], id: string) {
   const members = teams.find((t) => t.id === id)?.members ?? [];
-  return members.filter(Boolean).map(maskName).join(', ');
+  return members.filter(Boolean).join(', ');
 }
 
 // 시상대 카드 (Figma 113:227): 시상대 그룹 507 x 295.5 기준 %, 글자는 컨테이너 너비 기준 cqw
@@ -53,7 +45,7 @@ function Podium({ teams, ranked }: { teams: Team[]; ranked: RankedStanding[] }) 
           };
           return (
             <div key={team.teamId} style={style} className="absolute overflow-hidden bg-white text-center text-black">
-              <p className="truncate font-semibold leading-[normal]" style={{ fontSize: p.name }}>
+              <p className="break-keep font-semibold leading-[normal]" style={{ fontSize: p.name }}>
                 {teamName(teams, team.teamId)}
               </p>
               <p className="break-keep leading-[normal]" style={{ fontSize: p.sub }}>
@@ -75,18 +67,18 @@ function RankList({ teams, ranked }: { teams: Team[]; ranked: RankedStanding[] }
       {rows.map((s, i) => (
         <li key={s.teamId} className="contents">
           {/* 8위와 9위 사이 8강 진출 컷 */}
-          {s.rank > CUT && rows[i - 1] && rows[i - 1].rank <= CUT && (
+          {i + 4 === CUT + 1 && (
             <div aria-hidden className="flex items-center">
               <span className="h-px flex-1 bg-line" />
               <span className="px-3 text-xs font-semibold text-gray-400">8강 진출</span>
               <span className="h-px flex-1 bg-line" />
             </div>
           )}
-          <div className="relative h-[72px] shrink-0 overflow-hidden rounded-xl bg-white/80 shadow-[4px_4px_20px_0_rgba(0,0,0,0.25)]">
-            <span className="absolute -top-[32px] -left-[18px] whitespace-nowrap text-[113.895px] font-bold leading-[normal] text-[#ebebf1]">{s.rank}</span>
-            <div className="absolute top-[13px] left-[80px] right-4 text-black">
-              <p className="truncate text-xl font-semibold leading-[normal]">{teamName(teams, s.teamId)}</p>
-              <p className="truncate text-base leading-[normal]">{memberLine(teams, s.teamId)}</p>
+          <div className="relative min-h-[72px] shrink-0 overflow-hidden rounded-xl bg-white/80 shadow-[4px_4px_20px_0_rgba(0,0,0,0.25)]">
+            <span className="absolute -top-[32px] -left-[18px] whitespace-nowrap text-[113.895px] font-bold leading-[normal] text-[#ebebf1]">{i + 4}</span>
+            <div className="relative py-[13px] pr-4 pl-[80px] text-black">
+              <p className="break-keep text-xl font-semibold leading-[normal]">{teamName(teams, s.teamId)}</p>
+              <p className="break-keep text-base leading-[normal]">{memberLine(teams, s.teamId)}</p>
             </div>
           </div>
         </li>
