@@ -76,7 +76,7 @@ export default function Draw() {
     if (!sc) return;
     setSaving(k);
     try {
-      await adminFetch('/admin/tournament/result', { method: 'POST', body: { cat, round: GAME_KEYS[k].round, gameNo: GAME_KEYS[k].no, scoreA: sc.a, scoreB: sc.b, winner: sc.a === sc.b ? tieWinner[`${cat}-${k}`] : undefined } });
+      await adminFetch('/admin/tournament/result', { method: 'POST', body: { cat, round: GAME_KEYS[k].round, gameNo: GAME_KEYS[k].no, winner: sc.a === sc.b ? tieWinner[`${cat}-${k}`] : undefined } });
       toast(`${ROUND_LABEL[GAME_KEYS[k].round]} ${GAME_KEYS[k].no}경기 승자를 확정했습니다.`);
       setTieWinner((prev) => { const n = { ...prev }; delete n[`${cat}-${k}`]; return n; });
       refreshContest();

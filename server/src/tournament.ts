@@ -31,6 +31,11 @@ export function getTournament(): Tournament {
   return { slots, games, submissions };
 }
 
+export function getTournamentSubmission(cat: 'J' | 'S', round: TournamentRound, gameNo: number): Tournament['submissions'][number] | undefined {
+  return db.prepare(`SELECT cat, round, game_no AS gameNo, score_a AS scoreA, score_b AS scoreB, judge_id AS judgeId, ts
+    FROM tournament_submissions WHERE cat = ? AND round = ? AND game_no = ?`).get(cat, round, gameNo) as Tournament['submissions'][number] | undefined;
+}
+
 // 토너먼트 8슬롯 배정 저장 (전체 교체). 빈 칸은 null 로 저장한다.
 // 배정이 바뀌면 기존 경기 결과는 무효 — 다시 입력해야 한다.
 export function saveTournamentSlots(cat: 'J' | 'S', teamIds: (string | null)[]): void {

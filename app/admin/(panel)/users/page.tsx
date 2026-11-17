@@ -1,10 +1,5 @@
-import type { Metadata } from 'next';
-import RoundScores from '@/components/admin/RoundScores';
-
-export const metadata: Metadata = {
-  title: '심사 점수 | 관리자',
-};
+import { redirect } from 'next/navigation';
 
 export default function AdminUsersPage() {
-  return <RoundScores />;
+  redirect('/admin/scores');
 }

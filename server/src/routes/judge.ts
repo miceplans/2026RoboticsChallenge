@@ -5,10 +5,10 @@ import { num, obj, oneOf } from '../validate.ts';
 
 // --- 심판 API ---
 
-// 심판+관리자만 통과. 비밀번호를 바꾸지 않은 재발급 계정은 쓰기를 못 한다.
+// 심판만 통과. 관리자는 점수를 입력할 수 없다.
 const judgeOnly: Guard = (ctx) => {
   const s = ctx.session;
-  if (!s || (s.role !== 'judge' && s.role !== 'admin')) return void json(ctx.res, 403, { ok: false, error: 'forbidden' }), false;
+  if (!s || s.role !== 'judge') return void json(ctx.res, 403, { ok: false, error: 'forbidden' }), false;
   if (s.mc) return void json(ctx.res, 403, { ok: false, error: 'password_change_required' }), false;
   return true;
 };

@@ -5,7 +5,7 @@ import { logout } from '@/app/login/actions';
 import { requireRole } from '@/lib/auth';
 
 export default async function JudgePage() {
-  const session = await requireRole(['judge', 'admin']);
+  const session = await requireRole(['judge']);
   return (
     <main className="min-h-screen bg-surface">
       <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-line bg-white px-4 py-3">

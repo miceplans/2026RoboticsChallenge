@@ -16,9 +16,9 @@ export function hostFor(area: Area, host: string) {
   return area === 'main' ? rootHost(host) : `${area}.${rootHost(host)}`;
 }
 
-// 영역별 접근 가능 역할 (admin 은 심판 영역도 접근 가능)
+// 영역별 접근 가능 역할. 점수 입력은 심판 계정만 가능하다.
 export const areaRoles: Record<Exclude<Area, 'main'>, Role[]> = {
-  judge: ['judge', 'admin'],
+  judge: ['judge'],
   admin: ['admin'],
 };
 

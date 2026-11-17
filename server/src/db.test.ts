@@ -9,10 +9,19 @@ const dir = mkdtempSync(join(tmpdir(), 'contest-db-test-'));
 process.env.DB_PATH = join(dir, 'test.db');
 process.env.DEFAULT_PASSWORD = 'test-default-pw';
 const db = await import('./db.ts');
+const { submitScore } = await import('./routes/score.ts');
 
 before(() => {
   db.seedIfEmpty();
   db.seedDefaultAccounts();
+});
+
+test('관리자는 예선 점수를 제출할 수 없다', () => {
+  const result = submitScore(
+    { id: 'admin', name: '관리자', role: 'admin', exp: Date.now() + 60_000, v: 2 },
+    { matchId: 'R1-J-YYE-197', teamId: 'J-YYE-197', points: 100, ts: Date.now() },
+  );
+  assert.deepEqual(result, { ok: false, error: 'forbidden' });
 });
 
 test('기본 계정은 DEFAULT_PASSWORD 로 만들어지고 mustChange 상태다', async () => {

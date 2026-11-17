@@ -27,7 +27,7 @@ export async function login(_: string | null, formData: FormData): Promise<strin
   }
   const user = result.user;
 
-  if (requestedArea === 'judge' && user.role !== 'judge' && user.role !== 'admin') {
+  if (requestedArea === 'judge' && user.role !== 'judge') {
     return '심판 계정으로 로그인해 주세요.';
   }
   if (requestedArea === 'admin' && user.role !== 'admin') {

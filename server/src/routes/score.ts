@@ -28,9 +28,9 @@ type SubmitBody = ReturnType<typeof submitBody>;
 // ts 는 미래로 5분 이상 틀어진 것을 거부한다 — 심판 기기 시계가 미래로 가면 이후 정상 제출이 전부 무시되는 것을 막는다.
 // p 는 미검증 값(WebSocket score:submit 도 여기로 온다) — 아래 검증을 반드시 통과해야 한다.
 export function submitScore(session: Session, p: unknown): Result {
-  if (session.role !== 'judge' && session.role !== 'admin') return { ok: false, error: 'forbidden' };
+  if (session.role !== 'judge') return { ok: false, error: 'forbidden' };
 
-  // 관리자가 재발급한 비밀번호로 첫 로그인한 계정은 비밀번호를 바꾸기 전까지 점수를 제출할 수 없다.
+  // 재발급한 비밀번호로 첫 로그인한 심판은 비밀번호를 바꾸기 전까지 점수를 제출할 수 없다.
   if (session.mc) return { ok: false, error: 'password_change_required' };
   const { matchId, teamId, points, ts, sheet, penCnt } = (p ?? {}) as {
     matchId?: unknown; teamId?: unknown; points?: unknown; ts?: unknown; sheet?: unknown; penCnt?: unknown;
@@ -54,12 +54,10 @@ export function submitScore(session: Session, p: unknown): Result {
   const match = getMatch(matchId);
   if (!match) return { ok: false, error: 'unknown_match' };
   if (match.team !== teamId) return { ok: false, error: 'team_mismatch' };
-  // 1차가 끝나기 전에는 2차 점수를 받지 않는다 (관리자는 불참팀 0점 처리 등 예외 입력 가능)
-  if (match.round === 2 && session.role !== 'admin' && !getProgress()[match.cat].round2Open) return { ok: false, error: 'round_locked' };
-  if (session.role === 'judge') {
-    const table = judgeTableOf(session.id);
-    if (table !== null && match.table !== table) return { ok: false, error: 'not_your_table' };
-  }
+  // 1차가 끝나기 전에는 2차 점수를 받지 않는다.
+  if (match.round === 2 && !getProgress()[match.cat].round2Open) return { ok: false, error: 'round_locked' };
+  const table = judgeTableOf(session.id);
+  if (table !== null && match.table !== table) return { ok: false, error: 'not_your_table' };
 
   // judgeId 는 클라이언트가 보낸 값이 아니라 세션에서만 가져온다
   saveScore({ matchId, teamId, judgeId: session.id, points, ts, sheet: sheetJson, penCnt });

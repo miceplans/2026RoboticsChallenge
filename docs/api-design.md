@@ -196,7 +196,7 @@ CREATE TABLE tournament_games (
 | GET | `/admin/activity?limit=` | score_audit 최근 내역 (대시보드 활동 로그) |
 | GET | `/admin/pending` | 확정 대기 목록 (팀·경기·심판·서명 시각) |
 | POST | `/admin/scores/confirm` | `{matchId, teamId, judgeId}` |
-| POST | `/admin/scores/modify` | `{matchId, teamId, judgeId, points, reason?}` → 상태 `modified` |
+| POST | `/admin/scores/modify` | 금지 (`403 score_input_forbidden`). 관리자는 점수를 입력·정정할 수 없음 |
 | POST | `/admin/scores/reject` | `{matchId, teamId, judgeId, reason}` |
 | GET | `/admin/scores?status&round&cat&judgeId&format=csv` | 채점 목록 조회·필터·CSV 낳볃내기 |
 | GET | `/admin/users?role&q` | 계정 목록 (마지막 로그인 포함) |
@@ -207,7 +207,7 @@ CREATE TABLE tournament_games (
 | GET/PUT | `/admin/settings` | `auto_confirm`, `board_public`, `notice` |
 | GET/PUT | `/admin/template` · POST `/admin/template/reset` | 채점표 템플릿 CRUD, "복원"=rules.ts 기본값 |
 | PUT | `/admin/tournament/slots` | `{cat, teamIds[8]}` 배정 저장 → 결과 초기화, `/contest` 즉시 반영 |
-| POST | `/admin/tournament/result` | `{cat, round, gameNo, scoreA, scoreB}` → 승자 진출·3·4위전 배정. 무승부 불가. 수정 시 하위 라운드 결과 무효 |
+| POST | `/admin/tournament/result` | `{cat, round, gameNo, winner?}` → 서버에 저장된 심판 제출 점수만 확정. 동점일 때만 `winner` 선택 |
 
 모든 관리자 변경은 `score_audit` 기록 + 관련 소켓 브로드캐스트.
 

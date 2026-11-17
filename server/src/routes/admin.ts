@@ -11,7 +11,7 @@ import {
   getPending,
   getProgress,
   getRankOrder,
-  getRoundScores,
+  getTournamentSubmission,
   getTableOrder,
   getTemplate,
   hideScores,
@@ -20,7 +20,6 @@ import {
   listSheets,
   listUsers,
   logAudit,
-  modifyScore,
   rejectScore,
   replaceMatches,
   replaceTeams,
@@ -94,8 +93,6 @@ const tournamentResultBody = obj({
   cat,
   round: tournamentRound,
   gameNo: num({ int: true }),
-  scoreA: num(),
-  scoreB: num(),
   winner: opt(oneOf('A', 'B')),
 });
 
@@ -116,6 +113,7 @@ const settingsBody = obj({
   boardPublic: opt(bool),
   hideScores: opt(bool),
   notice: opt(obj({ message: str(), updatedAt: opt(num()) })),
+  // 구버전 클라이언트가 수동 점수를 보내더라도 묵시하지 않고 명시적으로 거부한다.
   roundScores: opt(rec(obj({ r1: opt(strOrNum), r2: opt(strOrNum) }))),
   tableOrder: opt(arr(tableNo, { min: 8, max: 8 })),
   rankOrder: opt(obj({ S: opt(arr(str({ max: 16 }))), J: opt(arr(str({ max: 16 }))) })),
@@ -163,7 +161,7 @@ export function createAdminRoutes(hooks: AdminHooks): Router {
     json(ctx.res, 200, { ok: true, overview: getOverview() });
   });
 
-  // 설정 조회 (관리자 전용 값 포함: 점수 가리기, 1·2라운드 심사 점수, 테이블 진행 순서, 순위 조정)
+  // 설정 조회 (관리자 전용 값 포함: 점수 가리기, 테이블 진행 순서, 순위 조정)
   r.get('/settings', (ctx) => {
     json(ctx.res, 200, {
       ok: true,
@@ -172,7 +170,6 @@ export function createAdminRoutes(hooks: AdminHooks): Router {
         boardPublic: boardPublic(),
         hideScores: hideScores(),
         notice: getNotice(),
-        roundScores: getRoundScores(),
         tableOrder: getTableOrder(),
         rankOrder: getRankOrder(),
       },
@@ -213,7 +210,10 @@ export function createAdminRoutes(hooks: AdminHooks): Router {
   // 토너먼트 경기 결과 저장. 승자가 다음 라운드로 진출하고, 준결승 패자는 3·4위전으로 간다.
   // 동점이면 winner(A|B) 가 있어야 한다. 같은 경기를 다시 저장하면 하위 라운드까지 다시 계산된다.
   r.post('/tournament/result', body(tournamentResultBody, MAX_ADMIN_BODY_BYTES), (ctx) => {
-    const { cat: c, round, gameNo, scoreA, scoreB, winner } = ctx.body as ReturnType<typeof tournamentResultBody>;
+    const { cat: c, round, gameNo, winner } = ctx.body as ReturnType<typeof tournamentResultBody>;
+    const submission = getTournamentSubmission(c, round as TournamentRound, gameNo);
+    if (!submission) return void json(ctx.res, 409, { ok: false, error: '심판이 제출한 점수가 없습니다.' });
+    const { scoreA, scoreB } = submission;
     // 동점은 관리자가 승자를 골라야 확정된다 (승자 없이는 저장해도 경기가 정해지지 않으므로 성공으로 응답하지 않는다)
     if (scoreA === scoreB && !winner) return void json(ctx.res, 409, { ok: false, error: '동점입니다. 올라갈 팀(승자)을 선택해야 확정할 수 있습니다.' });
     try {
@@ -320,9 +320,13 @@ export function createAdminRoutes(hooks: AdminHooks): Router {
     json(ctx.res, 200, { ok: true, sheets });
   });
 
-  // 점수 확정 / 정정 / 반려. 심판은 서명 후 스스로 고칠 수 없고 이 경로를 거친다.
+  // 점수 확정 / 반려. 관리자는 점수를 정정(입력)할 수 없다.
   const scoreActionGuard: Guard = (ctx) => {
-    if (ctx.params.action !== 'confirm' && ctx.params.action !== 'modify' && ctx.params.action !== 'reject') {
+    if (ctx.params.action === 'modify') {
+      json(ctx.res, 403, { ok: false, error: 'score_input_forbidden' });
+      return false;
+    }
+    if (ctx.params.action !== 'confirm' && ctx.params.action !== 'reject') {
       json(ctx.res, 404, { ok: false, error: 'not_found' });
       return false;
     }
@@ -350,29 +354,20 @@ export function createAdminRoutes(hooks: AdminHooks): Router {
       let changed: boolean;
       if (ctx.params.action === 'confirm') {
         changed = confirmScore(matchId, teamId, judgeId, s.id);
-      } else if (ctx.params.action === 'reject') {
-        changed = rejectScore(matchId, teamId, judgeId, s.id, b.reason ?? '');
-      } else {
-        changed = modifyScore(matchId, teamId, judgeId, s.id, {
-          points: b.points,
-          sheet: b.sheet === undefined ? undefined : b.sheet === null ? null : JSON.stringify(b.sheet),
-          penCnt: b.penCnt,
-          reason: b.reason,
-        });
-      }
+      } else changed = rejectScore(matchId, teamId, judgeId, s.id, b.reason ?? '');
       if (!changed) return void json(ctx.res, 409, { ok: false, error: 'not_found_or_bad_status' });
       hooks.onScoresChanged();
       json(ctx.res, 200, { ok: true });
     },
   );
 
-  // 설정 변경: 자동 확정, 순위판 공개, 점수 가리기, 공지, 1·2라운드 심사 점수, 테이블 진행 순서, 순위 조정. 공지·보드 설정은 접속 중인 클라이언트에 즉시 반영한다.
+  // 설정 변경: 자동 확정, 순위판 공개, 점수 가리기, 공지, 테이블 진행 순서, 순위 조정. 공지·보드 설정은 접속 중인 클라이언트에 즉시 반영한다.
   r.put('/settings', body(settingsBody, MAX_ADMIN_BODY_BYTES), (ctx) => {
     const b = ctx.body as ReturnType<typeof settingsBody>;
+    if (b.roundScores !== undefined) return void json(ctx.res, 403, { ok: false, error: 'score_input_forbidden' });
     if (b.autoConfirm !== undefined) setSetting('auto_confirm', b.autoConfirm ? '1' : '0');
     if (b.boardPublic !== undefined) setSetting('board_public', b.boardPublic ? '1' : '0');
     if (b.hideScores !== undefined) setSetting('hide_scores', b.hideScores ? '1' : '0');
-    if (b.roundScores !== undefined) setSetting('round_scores', JSON.stringify(b.roundScores));
     // 당일 진행 순서: 테이블 1~8 의 실행 순서 (순열)
     if (b.tableOrder !== undefined) {
       if (new Set(b.tableOrder).size !== 8) return void json(ctx.res, 400, { ok: false, error: 'table_order_must_be_permutation' });
