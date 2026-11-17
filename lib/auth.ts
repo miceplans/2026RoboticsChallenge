@@ -13,7 +13,6 @@ export async function getSession() {
   return session;
 }
 
-// proxy 에서 1차 차단하지만, 페이지에서도 한 번 더 검증한다.
 export async function requireRole(roles: Role[]) {
   const session = await getSession();
   if (!session) redirect('/login');

@@ -39,9 +39,6 @@ async function route(request: NextRequest) {
   };
   const session = await verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value);
 
-  // 관리자가 재발급한(또는 기본) 비밀번호로 처음 로그인한 계정은 비밀번호 변경 화면만 쓸 수 있다.
-  if (session?.mc && !isShared(pathname)) return redirectTo('/password');
-
   if (area === 'main') {
     // 메인 호스트에서는 /judge·/admin 직접 진입을 허용한다 — 페이지의 requireRole 이 로그인·역할을 다시 검증한다.
     if ((pathname.startsWith('/mypage') || pathname.startsWith('/password')) && !session) return redirectTo('/login');
