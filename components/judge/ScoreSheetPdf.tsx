@@ -123,6 +123,8 @@ export async function downloadScoreSheetPdf(node: HTMLDivElement, match: Match, 
   const width = Math.min(pageWidth, pageHeight / ratio);
   pdf.addImage(png, 'PNG', margin, margin, width, width * ratio);
   const safe = (value: string) => value.replace(/[\\/:*?"<>|]/g, '-');
-  const gameLabel = match.label ?? `${match.round}차 경기`;
+  const tournament = /^T:[JS]:(QF|SF|F|3P):(\d+):[AB]$/.exec(match.id);
+  const roundLabel: Record<string, string> = { QF: '8강', SF: '4강', F: '결승', '3P': '3·4위전' };
+  const gameLabel = tournament ? `${roundLabel[tournament[1]]} ${tournament[2]}경기` : `${match.round}차 경기`;
   pdf.save(`${safe(team.name)}-${safe(gameLabel).replace(/\s+/g, '-')}.pdf`);
 }

@@ -41,6 +41,14 @@ type SheetRow = {
   sheet: SheetPayload | null;
 };
 
+const TOURNAMENT_ROUND_LABEL: Record<string, string> = { QF: '8강', SF: '4강', F: '결승', '3P': '3·4위전' };
+
+function pdfGameLabel(matchId: string, round: number | null) {
+  const tournament = /^T:[JS]:(QF|SF|F|3P):(\d+):[AB]$/.exec(matchId);
+  if (tournament) return `${TOURNAMENT_ROUND_LABEL[tournament[1]]}-${tournament[2]}경기`;
+  return round ? `${round}차-경기` : matchId;
+}
+
 function ScoreSheetPage({ row, items }: { row: SheetRow; items: Item[] }) {
   const cat: Category = row.cat ?? 'J';
   const sheet = row.sheet ?? {};
@@ -173,7 +181,9 @@ function ScoreSheetModal({ score, items, onClose }: { score: ScoreRow; items: It
       const ratio = node.offsetHeight / node.offsetWidth;
       const w = Math.min(pageW, pageH / ratio);
       pdf.addImage(png, 'PNG', margin, margin, w, w * ratio);
-      pdf.save(`채점확인서-${row.matchId}-${row.teamId}-${row.judgeId}.pdf`);
+      const safe = (value: string) => value.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, '-');
+      const gameLabel = pdfGameLabel(row.matchId, row.round);
+      pdf.save(`${safe(row.teamName ?? row.teamId)}-${safe(gameLabel)}.pdf`);
     } catch (e) {
       toast(`PDF 생성 실패: ${(e as Error).message}`);
     } finally {
@@ -228,6 +238,7 @@ export default function ScoreList() {
   const [pdfBusy, setPdfBusy] = useState(false);
   const [printRows, setPrintRows] = useState<SheetRow[] | null>(null);
   const [selected, setSelected] = useState<ScoreRow | null>(null);
+  const previousTitle = useRef<string | null>(null);
   const items = parseTemplate(config?.template) ?? ITEMS;
 
   useEffect(() => {
@@ -247,7 +258,11 @@ export default function ScoreList() {
   // 인쇄 대화상자가 닫히면 인쇄 영역을 비운다
   useEffect(() => {
     if (!printRows) return;
-    const done = () => setPrintRows(null);
+    const done = () => {
+      if (previousTitle.current !== null) document.title = previousTitle.current;
+      previousTitle.current = null;
+      setPrintRows(null);
+    };
     window.addEventListener('afterprint', done, { once: true });
     return () => window.removeEventListener('afterprint', done);
   }, [printRows]);
@@ -261,6 +276,10 @@ export default function ScoreList() {
       if (pdfRound) q.set('round', pdfRound);
       const d = await adminFetch<{ sheets: SheetRow[] }>(`/admin/scores/sheets?${q.toString()}`);
       if (d.sheets.length === 0) return toast('선택한 게임에 서명된 채점지가 없습니다.');
+      previousTitle.current = document.title;
+      const categoryLabel = pdfCat === 'J' ? '주니어' : pdfCat === 'S' ? '시니어' : '전체부문';
+      const roundLabel = pdfRound ? `${pdfRound}차` : '전체경기';
+      document.title = `점수표-${categoryLabel}-${roundLabel}`;
       setPrintRows(d.sheets);
       setTimeout(() => window.print(), 100);
     } catch (e) {
