@@ -169,7 +169,12 @@ if (userVersion() < 3) {
       AND EXISTS (SELECT 1 FROM users x WHERE x.id = u.team_id)`).all() as { id: string }[];
     if (conflicts.length > 0) throw new Error(`팀 로그인 아이디 충돌: ${conflicts.map((x) => x.id).join(', ')}`);
     db.exec('BEGIN');
-    db.exec("UPDATE users SET id = team_id WHERE role = 'user' AND team_id IS NOT NULL AND id <> team_id");
+    // 한 팀에 참가자 계정이 여러 개면 팀코드 아이디는 하나만 가질 수 있다: team-… 팀 계정(없으면 가장 먼저 만든 계정)만 바꾸고 나머지는 그대로 둔다.
+    db.exec(`UPDATE users SET id = team_id WHERE rowid IN (
+      SELECT (SELECT u.rowid FROM users u WHERE u.role = 'user' AND u.team_id = t.team_id
+              ORDER BY (u.id LIKE 'team-%') DESC, u.created_at, u.rowid LIMIT 1)
+      FROM (SELECT DISTINCT team_id FROM users WHERE role = 'user' AND team_id IS NOT NULL) t
+      WHERE NOT EXISTS (SELECT 1 FROM users x WHERE x.id = t.team_id))`);
     db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('password_reset_v3', 'true', ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(Date.now());
     const bad = db.prepare('PRAGMA foreign_key_check').all() as { table: string; rowid: number; parent: string }[];
