@@ -310,15 +310,22 @@ export function createAdminRoutes(hooks: AdminHooks): Router {
     },
   );
 
-  // 채점지 원본(서명 이미지 포함) — 관리자 점수표 PDF 출력용. ?cat=J&round=1 필터.
-  r.get('/scores/sheets', query({ cat: qOpt(oneOf('J', 'S')), round: qOpt(oneOf('1', '2')) }), (ctx) => {
-    const { cat: c, round } = ctx.query as { cat?: 'J' | 'S'; round?: '1' | '2' };
+  // 채점지 원본(서명 이미지 포함) — 관리자 점수표 PDF 출력용. ?cat=J&round=1 필터, matchId·teamId·judgeId 로 한 건만 조회.
+  r.get(
+    '/scores/sheets',
+    query({ cat: qOpt(oneOf('J', 'S')), round: qOpt(oneOf('1', '2')), matchId: qOpt(str()), teamId: qOpt(str()), judgeId: qOpt(str()) }),
+    (ctx) => {
+    const { cat: c, round, matchId, teamId, judgeId } = ctx.query as { cat?: 'J' | 'S'; round?: '1' | '2'; matchId?: string; teamId?: string; judgeId?: string };
     const sheets = listSheets({
       cat: c,
       round: round ? (Number(round) as 1 | 2) : undefined,
+      matchId,
+      teamId,
+      judgeId,
     });
     json(ctx.res, 200, { ok: true, sheets });
-  });
+    },
+  );
 
   // 점수 확정 / 반려. 관리자는 점수를 정정(입력)할 수 없다.
   const scoreActionGuard: Guard = (ctx) => {

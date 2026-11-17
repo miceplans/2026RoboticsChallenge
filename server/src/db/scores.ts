@@ -198,9 +198,12 @@ export type ScoreSheetRow = {
   sheet: Record<string, unknown>;
 };
 
-export function listSheets(filter: { cat?: 'J' | 'S'; round?: 1 | 2 }): ScoreSheetRow[] {
+export function listSheets(filter: { cat?: 'J' | 'S'; round?: 1 | 2; matchId?: string; teamId?: string; judgeId?: string }): ScoreSheetRow[] {
   const where = ['s.sheet IS NOT NULL'];
   const args: (string | number)[] = [];
+  if (filter.matchId) { where.push('s.match_id = ?'); args.push(filter.matchId); }
+  if (filter.teamId) { where.push('s.team_id = ?'); args.push(filter.teamId); }
+  if (filter.judgeId) { where.push('s.judge_id = ?'); args.push(filter.judgeId); }
   if (filter.cat) { where.push('t.cat = ?'); args.push(filter.cat); }
   if (filter.round) { where.push('m.round = ?'); args.push(filter.round); }
   const rows = db.prepare(`

@@ -1,10 +1,10 @@
 'use client';
 
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { useToast } from '@/components/Toast';
 import { teamName, useContest } from '@/lib/contest';
 import { calc, CATEGORY_NAMES, ITEMS, MISSION_NAMES, parseTemplate, PRE_CHECKS, type Category, type Item, type Mission, type Values } from '@/lib/judge/rules';
-import { adminFetch, btn, card, downloadCsv, fmtDate, Icon, STATUS_LABEL, timeAgo } from './shared';
+import { adminFetch, btn, btnPrimary, card, downloadCsv, fmtDate, Icon, STATUS_LABEL, timeAgo } from './shared';
 
 type ScoreRow = { matchId: string; teamId: string; judgeId: string; points: number; ts: number; status: string; cat: 'J' | 'S' | null };
 
@@ -131,6 +131,83 @@ function ScoreSheetPage({ row, items }: { row: SheetRow; items: Item[] }) {
   );
 }
 
+// 채점 한 건의 확인서를 보여주고 그대로 PDF 파일로 내려받는 모달
+function ScoreSheetModal({ score, items, onClose }: { score: ScoreRow; items: Item[]; onClose: () => void }) {
+  const toast = useToast();
+  const [row, setRow] = useState<SheetRow | null | undefined>(undefined); // undefined = 불러오는 중, null = 채점지 없음
+  const [busy, setBusy] = useState(false);
+  const sheetRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const q = new URLSearchParams({ matchId: score.matchId, teamId: score.teamId, judgeId: score.judgeId });
+    adminFetch<{ sheets: SheetRow[] }>(`/admin/scores/sheets?${q.toString()}`)
+      .then((d) => alive && setRow(d.sheets[0] ?? null))
+      .catch((e: Error) => {
+        if (!alive) return;
+        toast(e.message);
+        setRow(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [score, toast]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const download = async () => {
+    if (!sheetRef.current || !row) return;
+    setBusy(true);
+    try {
+      const [{ toPng }, { jsPDF }] = await Promise.all([import('html-to-image'), import('jspdf')]);
+      const node = sheetRef.current;
+      const png = await toPng(node, { pixelRatio: 2, backgroundColor: '#ffffff' });
+      const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
+      const margin = 12;
+      const pageW = pdf.internal.pageSize.getWidth() - margin * 2;
+      const pageH = pdf.internal.pageSize.getHeight() - margin * 2;
+      const ratio = node.offsetHeight / node.offsetWidth;
+      const w = Math.min(pageW, pageH / ratio);
+      pdf.addImage(png, 'PNG', margin, margin, w, w * ratio);
+      pdf.save(`채점확인서-${row.matchId}-${row.teamId}-${row.judgeId}.pdf`);
+    } catch (e) {
+      toast(`PDF 생성 실패: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-label="채점 확인서" className={`${card} flex max-h-[90vh] w-full max-w-[860px] flex-col p-5`} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-xl font-extrabold text-heading">채점 확인서 <span className="ml-1 text-sm font-normal text-gray-400">{score.matchId} · {score.teamId} · {score.judgeId}</span></h2>
+          <button className="rounded-full p-1 text-gray-500 hover:bg-gray-100" onClick={onClose} aria-label="닫기"><Icon name="close" /></button>
+        </div>
+        <div className="mt-4 min-h-0 flex-1 overflow-auto rounded-xl border border-line bg-gray-50 p-3">
+          {row === undefined && <p className="py-10 text-center text-gray-400">불러오는 중…</p>}
+          {row === null && <p className="py-10 text-center text-gray-400">서명된 채점지가 없어 PDF를 만들 수 없습니다.</p>}
+          {row && (
+            <div ref={sheetRef} className="mx-auto w-[760px] bg-white p-6">
+              <ScoreSheetPage row={row} items={items} />
+            </div>
+          )}
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <button className={btn} onClick={onClose}>닫기</button>
+          <button className={`${btnPrimary} disabled:opacity-50`} onClick={download} disabled={!row || busy}>
+            <span className="inline-flex items-center gap-1"><Icon name="download" />{busy ? '만드는 중…' : 'PDF 다운로드'}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const SCORE_FILTERS = [
   { id: '', label: '전체' },
   { id: 'pending', label: '확정 대기' },
@@ -150,6 +227,8 @@ export default function ScoreList() {
   const [pdfRound, setPdfRound] = useState('');
   const [pdfBusy, setPdfBusy] = useState(false);
   const [printRows, setPrintRows] = useState<SheetRow[] | null>(null);
+  const [selected, setSelected] = useState<ScoreRow | null>(null);
+  const items = parseTemplate(config?.template) ?? ITEMS;
 
   useEffect(() => {
     let alive = true;
@@ -225,7 +304,7 @@ export default function ScoreList() {
           <button className={btn} onClick={exportPdf} disabled={pdfBusy} title="브라우저 인쇄 대화상자에서 'PDF로 저장'을 선택하세요">
             <span className="inline-flex items-center gap-1"><Icon name="picture_as_pdf" />{pdfBusy ? '준비 중…' : '점수표 PDF'}</span>
           </button>
-          <button className={btn} onClick={exportCsv}><span className="inline-flex items-center gap-1"><Icon name="download" />CSV 내돔내기</span></button>
+          <button className={btn} onClick={exportCsv}><span className="inline-flex items-center gap-1"><Icon name="download" />CSV 내보내기</span></button>
         </div>
       </div>
       <div className="mt-5 flex flex-wrap items-center gap-2">
@@ -254,7 +333,9 @@ export default function ScoreList() {
                 <td className="px-4 py-3 font-medium">{r.teamId} · {teamName(teams, r.teamId)}</td>
                 <td className="px-4 py-3">{r.cat === 'J' ? '주니어' : r.cat === 'S' ? '시니어' : '-'}</td>
                 <td className="px-4 py-3">{r.judgeId}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{r.points}</td>
+                <td className="px-4 py-3 text-right tabular-nums">
+                  <button className="font-semibold text-accent underline-offset-2 hover:underline" onClick={() => setSelected(r)} title="채점 확인서 보기 · PDF 다운로드">{r.points}</button>
+                </td>
                 <td className="px-4 py-3 text-gray-600">{STATUS_LABEL[r.status] ?? r.status}</td>
                 <td className="px-4 py-3 text-xs text-gray-400">{timeAgo(r.ts)}</td>
               </tr>
@@ -268,10 +349,11 @@ export default function ScoreList() {
       {printRows && (
         <div className="print-area">
           {printRows.map((row) => (
-            <ScoreSheetPage key={`${row.matchId}/${row.teamId}/${row.judgeId}`} row={row} items={parseTemplate(config?.template) ?? ITEMS} />
+            <ScoreSheetPage key={`${row.matchId}/${row.teamId}/${row.judgeId}`} row={row} items={items} />
           ))}
         </div>
       )}
+      {selected && <ScoreSheetModal score={selected} items={items} onClose={() => setSelected(null)} />}
     </section>
   );
 }
