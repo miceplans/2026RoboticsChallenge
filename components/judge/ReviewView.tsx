@@ -11,7 +11,7 @@ export default function ReviewView({ match, team, sheet, onEdit, onSign, ruleIte
   return (
     <main className="mx-auto max-w-3xl rounded-2xl border border-line bg-white p-6">
       <p className="font-bold text-accent">심판과 참가팀 대표가 함께 확인해 주세요</p>
-      <h1 className="mt-2 text-2xl font-extrabold">{team.id} {team.name} · {match.round}차 조별 라운드</h1>
+      <h1 className="mt-2 text-2xl font-extrabold">{team.id} {team.name} · {match.label ?? `${match.round}차 조별 라운드`}</h1>
 
       <div className="mt-6 grid gap-5 sm:grid-cols-2">
         <div className="self-start overflow-hidden rounded-xl border border-line">

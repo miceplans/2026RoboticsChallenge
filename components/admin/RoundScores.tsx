@@ -41,9 +41,9 @@ export default function RoundScores() {
   const rows = teams.filter((t) => t.cat === cat).map((t) => {
     const r1 = num(scores[t.id]?.r1);
     const r2 = num(scores[t.id]?.r2);
-    return { team: t, r1, r2, total: r1 === null && r2 === null ? null : (r1 ?? 0) + (r2 ?? 0) };
+    return { team: t, r1, r2, total: r1 === null && r2 === null ? null : Math.max(r1 ?? -Infinity, r2 ?? -Infinity) }; // 합산이 아니라 1·2라운드 중 높은 점수
   });
-  // 동점이면 같은 순위(1, 1, 3 …). 점수가 하나도 없는 팀은 순위 없음. 소수점 합산 오차를 무시하기 위해 근사 비교한다.
+  // 동점이면 같은 순위(1, 1, 3 …). 점수가 하나도 없는 팀은 순위 없음. 근사 비교로 소수점 오차를 무시한다.
   const ranked = rows.filter((r) => r.total !== null).map((r) => r.total as number).sort((a, b) => b - a);
   const rankOf = (total: number | null) => {
     if (total === null) return null;
@@ -60,7 +60,7 @@ export default function RoundScores() {
           <button className={`${btnPrimary} disabled:opacity-40`} disabled={!dirty} onClick={save}>{dirty ? '저장' : '저장됨'}</button>
         </div>
       </div>
-      <p className="mt-2 text-sm text-gray-500">1·2라운드 심사 점수를 입력하면 합계와 순위가 자동으로 계산됩니다. (서버에 저장됩니다)</p>
+      <p className="mt-2 text-sm text-gray-500">1·2라운드 심사 점수를 입력하면 두 라운드 중 높은 점수와 순위가 자동으로 계산됩니다. (서버에 저장됩니다)</p>
       <nav className="mt-4 flex gap-2 border-b border-line">
         {(['S', 'J'] as Category[]).map((c) => (
           <button key={c} onClick={() => setCat(c)} className={`px-4 py-2 text-sm font-bold ${cat === c ? 'border-b-2 border-accent text-accent' : 'text-gray-500'}`}>{CATEGORY_NAMES[c]}</button>
@@ -74,7 +74,7 @@ export default function RoundScores() {
               <th className="px-4 py-3 font-semibold">소속</th>
               <th className="px-4 py-3 text-right font-semibold">1라운드</th>
               <th className="px-4 py-3 text-right font-semibold">2라운드</th>
-              <th className="px-4 py-3 text-right font-semibold">합계</th>
+              <th className="px-4 py-3 text-right font-semibold">최종(높은 점수)</th>
               <th className="px-4 py-3 text-right font-semibold">순위(자동집계)</th>
             </tr>
           </thead>

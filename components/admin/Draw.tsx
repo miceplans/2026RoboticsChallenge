@@ -5,7 +5,7 @@ import { useToast } from '@/components/Toast';
 import { teamName, useContest, refreshContest, type Team, type TournamentRound } from '@/lib/contest';
 import { CATEGORY_NAMES, type Category } from '@/lib/judge/rules';
 import { fireConfetti } from '@/components/Confetti';
-import { BracketCanvas, SEED_ORDER, useRanking, type QfPreview } from '@/components/TournamentBracket';
+import { BracketCanvas, GAME_KEYS, SEED_ORDER, useRanking, type QfPreview } from '@/components/TournamentBracket';
 import { adminFetch, btn, btnPrimary, card } from './shared';
 import { TableOrderEditor } from './Ops';
 
@@ -331,11 +331,6 @@ export default function Draw() {
 // 점수는 심판 화면에서 입력·제출된다. 여기서는 제출된 점수와 확정 상태를 보여주고, 준결승 이후 팀을 직접 지정할 수 있다.
 
 const ROUND_LABEL: Record<string, string> = { QF: '8강', SF: '준결승', F: '결승', '3P': '3·4위전' };
-const GAME_KEYS: { round: TournamentRound; no: number }[] = [
-  { round: 'QF', no: 1 }, { round: 'QF', no: 2 }, { round: 'QF', no: 3 }, { round: 'QF', no: 4 },
-  { round: 'SF', no: 1 }, { round: 'SF', no: 2 }, { round: 'F', no: 1 }, { round: '3P', no: 1 },
-];
-
 function GameResults({ cat }: { cat: Category }) {
   const { config } = useContest();
   const toast = useToast();

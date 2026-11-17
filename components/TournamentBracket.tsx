@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { fireConfetti } from './Confetti';
 import ConnectionToast from './ConnectionToast';
 import { useRealtime } from '@/lib/realtime/useRealtime';
-import { compareStandings, eliminatedTeamIds, SEED_ORDER, teamName, useContest, type Team, type TournamentGame } from '@/lib/contest';
+import { compareStandings, eliminatedTeamIds, SEED_ORDER, teamName, useContest, type Team, type TournamentGame, type TournamentRound } from '@/lib/contest';
 import { CATEGORY_NAMES, type Category } from '@/lib/judge/rules';
 
 // 8강 토너먼트 대진표 (Figma 92:316): 캔버스 1600 x 1118
@@ -99,6 +99,22 @@ const pos = (b: Box) => ({
 
 // 8강 경기 점수를 입력하는 중(저장 전)에 4강 자리에 미리 보여주는 승자
 export type QfPreview = { winner: string; loser: string; scoreA: number; scoreB: number };
+
+// BracketCanvas 박스 순서(8강 4칸 → 준결승 2칸 → 결승 → 3·4위전)와 같은 경기 키. 관리자 화면과 공개 대진표가 함께 쓴다.
+export const GAME_KEYS: { round: TournamentRound; no: number }[] = [
+  { round: 'QF', no: 1 }, { round: 'QF', no: 2 }, { round: 'QF', no: 3 }, { round: 'QF', no: 4 },
+  { round: 'SF', no: 1 }, { round: 'SF', no: 2 }, { round: 'F', no: 1 }, { round: '3P', no: 1 },
+];
+
+// 확정된(done) 경기 결과만으로 만든 승자 표시. 공개 대진표와 관리자 화면이 같은 서버 경기 데이터를 쓰도록 한 곳에서 계산한다.
+export function confirmedPreview(games: TournamentGame[], cat: Category): (QfPreview | undefined)[] {
+  return GAME_KEYS.map(({ round, no }) => {
+    const g = games.find((x) => x.cat === cat && x.round === round && x.gameNo === no);
+    if (!g || g.status !== 'done' || !g.teamA || !g.teamB || g.scoreA == null || g.scoreB == null || !g.winner) return undefined;
+    const aWon = g.winner === g.teamA;
+    return { winner: g.winner, loser: aWon ? g.teamB : g.teamA, scoreA: g.scoreA, scoreB: g.scoreB };
+  });
+}
 
 const BOX = 'absolute flex flex-col items-center justify-center gap-0.5 overflow-hidden rounded border bg-white px-2';
 
@@ -262,7 +278,7 @@ export default function TournamentBracket({ switcher }: { switcher?: React.React
         ))}
       </nav>
       <div className="mt-8 overflow-x-auto">
-        <BracketCanvas slots={slots} cat={cat} />
+        <BracketCanvas slots={slots} cat={cat} preview={confirmedPreview(config?.tournament.games ?? [], cat)} />
       </div>
       <ConnectionToast status={status} />
     </section>

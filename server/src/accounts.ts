@@ -1,7 +1,8 @@
 // 계정 (심판·관리자 발급/재발급, 로그인 검증, 세션 폐기, 기본 계정 시드).
 import { randomBytes, scrypt as scryptCb, scryptSync, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import { db, listTeams } from './db.ts';
+import { db } from './db/connection.ts';
+import { listTeams } from './db/teams.ts';
 
 // --- 계정 (심판·관리자 발급/재발급, 접속 현황 집계) ---
 

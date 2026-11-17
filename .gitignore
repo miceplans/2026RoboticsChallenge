@@ -11,3 +11,6 @@ next-env.d.ts
 *.db
 *.db-*
 .env
+
+# DB 마이그레이션 전 자동 백업 (계정 해시 포함)
+*.bak

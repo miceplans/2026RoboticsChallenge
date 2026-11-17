@@ -60,7 +60,7 @@ export default function SignView({ match, team, sheet, judgeName, step, onRefSig
 
       <div className="mt-6 grid gap-6 md:grid-cols-[300px_1fr]">
         <div>
-          <p className="text-sm text-gray-500">{team.id} {team.name} · {match.round}차</p>
+          <p className="text-sm text-gray-500">{team.id} {team.name} · {match.label ?? `${match.round}차`}</p>
           <p className="my-3 text-6xl font-extrabold">{total}<span className="text-xl">점</span></p>
           <p className="text-sm text-gray-500">
             {step === 0 ? `${judgeName} 님, 점수를 확인했으면 오른쪽에 서명해 주세요.` : '참가팀 대표 이름을 고르고 서명해 주세요.'}

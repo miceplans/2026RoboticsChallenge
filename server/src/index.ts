@@ -2,11 +2,11 @@ import { createServer } from 'node:http';
 import { Server } from 'socket.io';
 import { boardPublic, bootstrapStaffIfNone, getProgress, getStandings, seedDefaultAccounts, seedIfEmpty } from './db.ts';
 import { assertAuthSecret, sessionFromCookie, type Session } from './session.ts';
-import { handleAuth } from './routes/auth.ts';
-import { handlePublic } from './routes/public.ts';
-import { handleJudge } from './routes/judge.ts';
-import { handleAdmin } from './routes/admin.ts';
-import { handleScore, submitScore, type Result, type SubmitPayload } from './routes/score.ts';
+import { createAuthRoutes } from './routes/auth.ts';
+import { createPublicRoutes } from './routes/public.ts';
+import { createJudgeRoutes } from './routes/judge.ts';
+import { createAdminRoutes } from './routes/admin.ts';
+import { createScoreRoutes, submitScore, type Result } from './routes/score.ts';
 import { json } from './http.ts';
 
 assertAuthSecret(); // 운영: AUTH_SECRET 필수·32자 이상·개발 기본값 금지 (lib/session.ts 와 동일 규칙)
@@ -18,7 +18,7 @@ const origins = (process.env.CORS_ORIGINS ?? 'http://localhost:3000,http://judge
 if (process.env.NODE_ENV === 'production' && !process.env.CORS_ORIGINS) {
   throw new Error('운영 환경에서는 CORS_ORIGINS 를 반드시 설정해야 합니다 (개발용 localhost 목록은 개발 전용).');
 }
-// Next 서버(배포 웹 컨테이너)만 /auth/* 를 호출하게 막는 공유 비밀. 운영 필수. (검사 본문은 routes/auth.ts)
+// Next 서버(배포 웹 컨테이너)만 /auth/* 를 호출하게 막는 공유 비밀. 운영 필수. (검사 가드는 router.ts 의 internalOnly)
 if (process.env.NODE_ENV === 'production' && !process.env.INTERNAL_API_SECRET) {
   throw new Error('운영 환경에서는 INTERNAL_API_SECRET 를 반드시 설정해야 합니다 (Next↔서버 서버 간 호출용 공유 비밀).');
 }
@@ -66,34 +66,19 @@ async function handleRequest(req: import('node:http').IncomingMessage, res: impo
     return json(res, 403, { ok: false, error: 'forbidden_origin' });
   }
 
-  // --- 인증·조회·심판 라우트 ---
-  if (await handleAuth(req, res, url, method, session)) return;
-  if (handlePublic(req, res, url, method, session)) return;
-  if (await handleJudge(req, res, url, method, session, { broadcastConfig })) return;
-
-  // --- 관리자 API (role=admin 전용) ---
+  // --- 라우터 장착 (인증·검증 가드는 각 라우트 등록부에 선언돼 있다) ---
+  if (await authRoutes.dispatch(req, res, url, method, session)) return;
+  if (await publicRoutes.dispatch(req, res, url, method, session)) return;
+  if (await judgeRoutes.dispatch(req, res, url, method, session)) return;
+  if (await scoreRoutes.dispatch(req, res, url, method, session)) return;
   if (url.pathname.startsWith('/admin/')) {
-    if (!session) return json(res, 401, { ok: false, error: 'unauthorized' });
-    if (session.role !== 'admin') return json(res, 403, { ok: false, error: 'forbidden' });
-    // 비밀번호를 바꾸지 않은 재발급 계정은 관리 작업을 못 한다 (조회는 허용 — /password 유도에 필요).
-    const readOnly = url.pathname === '/admin/settings' && method === 'GET';
-    if (session.mc && !readOnly) return json(res, 403, { ok: false, error: 'password_change_required' });
-    await handleAdmin(req, res, url, method, session, {
-      broadcastConfig,
-      emitLeaderboard,
-      emitNotice: (notice) => io.emit('notice', notice),
-      onScoresChanged: scheduleBroadcast,
-    });
+    if (!(await adminRoutes.dispatch(req, res, url, method, session))) json(res, 404, { ok: false, error: 'not_found' });
     return;
   }
+  // /score 는 POST 만 — 다른 메서드는 405 (라우터에 POST 라우트만 있어 평번이 아닌 요청이 여기 떨어진다)
+  if (url.pathname === '/score') return void json(res, 405, { ok: false, error: 'method_not_allowed' });
 
-  // --- 점수 제출 (WebSocket 평번) ---
-  if (url.pathname === '/score') {
-    await handleScore(req, res, method, session, { onSaved: scheduleBroadcast });
-    return;
-  }
-
-  return void res.writeHead(404).end();
+  res.writeHead(404).end();
 }
 
 const io = new Server(httpServer, {
@@ -143,11 +128,23 @@ function broadcastConfig() {
   io.emit('config', { updatedAt: Date.now() });
 }
 
+// --- 라우터 (훅은 위 io 함수들을 주입한다) ---
+const authRoutes = createAuthRoutes();
+const publicRoutes = createPublicRoutes();
+const judgeRoutes = createJudgeRoutes({ broadcastConfig });
+const adminRoutes = createAdminRoutes({
+  broadcastConfig,
+  emitLeaderboard,
+  emitNotice: (notice) => io.emit('notice', notice),
+  onScoresChanged: scheduleBroadcast,
+});
+const scoreRoutes = createScoreRoutes({ onSaved: scheduleBroadcast });
+
 io.on('connection', (socket) => {
   const session = socket.data.session as Session | undefined;
   socket.emit('leaderboard', boardPublic() || session?.role === 'admin' ? getStandings() : []);
 
-  socket.on('score:submit', (p: SubmitPayload, ack?: (res: Result) => void) => {
+  socket.on('score:submit', (p: unknown, ack?: (res: Result) => void) => {
     if (!session) return ack?.({ ok: false, error: 'unauthorized' });
     try {
       const result = submitScore(session, p);

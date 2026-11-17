@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useToast } from '@/components/Toast';
 import { useContest } from '@/lib/contest';
+import { useRealtime } from '@/lib/realtime/useRealtime';
 import { adminFetch, btn, card, timeAgo } from './shared';
 import { resetPasswordOne, type AccountRow } from './Teams';
 
@@ -20,19 +21,16 @@ const T_ROUNDS = [
   { id: '3P', label: '3·4위전' },
 ] as const;
 
-type RoundScores = Record<string, { r1?: string | number; r2?: string | number }>;
-
 export default function Accounts() {
   const toast = useToast();
   const { config } = useContest();
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
-  const [roundScores, setRoundScores] = useState<RoundScores>({});
+  const { standings } = useRealtime(); // 순위표·대진표와 같은 심판 확정 점수 (팀별 라운드 최고점)
   const [role, setRole] = useState('');
   const [q, setQ] = useState('');
 
   useEffect(() => {
     adminFetch<{ users: AccountRow[] }>('/admin/users').then((d) => setAccounts(d.users)).catch((e: Error) => toast(e.message));
-    adminFetch<{ settings: { roundScores: RoundScores } }>('/admin/settings').then((d) => setRoundScores(d.settings.roundScores ?? {})).catch((e: Error) => toast(e.message));
   }, [toast]);
 
   const teams = config?.teams ?? [];
@@ -83,8 +81,8 @@ export default function Accounts() {
                   <td className="px-3 py-2 font-medium">{a.id}</td>
                   <td className="px-3 py-2">{ROLE_LABEL[a.role]}</td>
                   <td className="px-3 py-2">{isTeam ? `${a.teamId} · ${team?.name ?? a.name}` : a.name}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{isTeam ? score(roundScores[a.teamId!]?.r1) : '-'}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{isTeam ? score(roundScores[a.teamId!]?.r2) : '-'}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{isTeam ? score(standings.find((x) => x.teamId === a.teamId)?.r1) : '-'}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{isTeam ? score(standings.find((x) => x.teamId === a.teamId)?.r2) : '-'}</td>
                   {T_ROUNDS.map((r) => <td key={r.id} className="px-3 py-2 text-right tabular-nums">{isTeam ? gameScore(a.teamId!, r.id) : '-'}</td>)}
                   <td className="px-3 py-2 text-gray-500">{a.lastLoginAt ? timeAgo(a.lastLoginAt) : '미접속'}</td>
                   <td className="px-3 py-2 text-right"><button className={btn} onClick={() => resetPasswordOne(toast, a)}>비밀번호 초기화</button></td>

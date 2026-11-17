@@ -1,25 +1,40 @@
-import type { IncomingMessage, ServerResponse } from 'node:http';
 import { getMatch, getProgress, judgeTableOf, saveScore } from '../db.ts';
 import type { Session } from '../session.ts';
-import { json, readJson } from '../http.ts';
+import { Router, body, requireSession } from '../router.ts';
+import { json } from '../http.ts';
+import { jsonObj, num, obj, opt, str } from '../validate.ts';
 
 // --- 점수 제출 (심판 채점) ---
 
-export type SubmitPayload = { matchId: unknown; teamId: unknown; points: unknown; ts: unknown; sheet?: unknown; penCnt?: unknown };
 export type Result = { ok: true } | { ok: false; error: string };
 
 // 채점지(서명 이미지 포함) 상한. 초과분은 거부한다.
 export const MAX_SHEET_BYTES = 400 * 1024;
 export const MAX_BODY_BYTES = MAX_SHEET_BYTES + 4096;
 
+// HTTP 평번 본문 스키마. WebSocket score:submit 은 여기를 거치지 않으므로
+// submitScore 안에도 동일 조건의 검증을 둔다 (한 곳만 바꾸면 어긋난다).
+const submitBody = obj({
+  matchId: str({ min: 1, max: 64 }),
+  teamId: str({ min: 1, max: 64 }),
+  points: num({ min: -1000, max: 10000 }),
+  ts: num(),
+  sheet: opt(jsonObj),
+  penCnt: opt(num({ int: true, min: 0, max: 999 })),
+});
+type SubmitBody = ReturnType<typeof submitBody>;
+
 // 제출은 실제 대진과 대조해 검증한다: 존재하는 경기인지, 팀이 그 경기 팀인지, 심판 담당 테이블이 맞는지.
 // ts 는 미래로 5분 이상 틀어진 것을 거부한다 — 심판 기기 시계가 미래로 가면 이후 정상 제출이 전부 무시되는 것을 막는다.
-export function submitScore(session: Session, p: SubmitPayload | undefined): Result {
+// p 는 미검증 값(WebSocket score:submit 도 여기로 온다) — 아래 검증을 반드시 통과해야 한다.
+export function submitScore(session: Session, p: unknown): Result {
   if (session.role !== 'judge' && session.role !== 'admin') return { ok: false, error: 'forbidden' };
+
   // 관리자가 재발급한 비밀번호로 첫 로그인한 계정은 비밀번호를 바꾸기 전까지 점수를 제출할 수 없다.
   if (session.mc) return { ok: false, error: 'password_change_required' };
-
-  const { matchId, teamId, points, ts, sheet, penCnt } = p ?? {};
+  const { matchId, teamId, points, ts, sheet, penCnt } = (p ?? {}) as {
+    matchId?: unknown; teamId?: unknown; points?: unknown; ts?: unknown; sheet?: unknown; penCnt?: unknown;
+  };
   if (
     typeof matchId !== 'string' || !matchId || matchId.length > 64 ||
     typeof teamId !== 'string' || !teamId || teamId.length > 64 ||
@@ -52,19 +67,16 @@ export function submitScore(session: Session, p: SubmitPayload | undefined): Res
 }
 
 // WebSocket 이 막히거나 불안정할 때 클라이언트가 쓰는 평번: POST /score
-export async function handleScore(
-  req: IncomingMessage,
-  res: ServerResponse,
-  method: string,
-  session: Session | null,
-  hooks: { onSaved: () => void },
-): Promise<boolean> {
-  if (method !== 'POST') return json(res, 405, { ok: false, error: 'method_not_allowed' }), true;
-  if (!session) return json(res, 401, { ok: false, error: 'unauthorized' }), true;
-  const body = await readJson(req, MAX_BODY_BYTES);
-  if (body === null) return json(res, 413, { ok: false, error: 'too_large' }), true;
-  const result = submitScore(session, body as SubmitPayload | undefined);
-  if (result.ok) hooks.onSaved();
-  json(res, result.ok ? 200 : result.error === 'forbidden' || result.error === 'password_change_required' ? 403 : result.error === 'internal' ? 500 : 400, result);
-  return true;
+export function createScoreRoutes(hooks: { onSaved: () => void }): Router {
+  const r = new Router();
+  r.post('/score', requireSession, body(submitBody, MAX_BODY_BYTES, { nullStatus: 413 }), (ctx) => {
+    const result = submitScore(ctx.session!, ctx.body as SubmitBody | undefined);
+    if (result.ok) hooks.onSaved();
+    json(
+      ctx.res,
+      result.ok ? 200 : result.error === 'forbidden' || result.error === 'password_change_required' ? 403 : result.error === 'internal' ? 500 : 400,
+      result,
+    );
+  });
+  return r;
 }

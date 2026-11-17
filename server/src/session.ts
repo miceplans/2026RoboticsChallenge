@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { assertSessionFresh } from './db.ts';
+import { assertSessionFresh } from './accounts.ts';
 
 // lib/session.ts (Next) 와 동일한 토큰 포맷: base64url(payload).base64url(HMAC-SHA256)
 export type Role = 'user' | 'judge' | 'admin';

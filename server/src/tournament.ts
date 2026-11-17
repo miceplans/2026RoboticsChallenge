@@ -1,6 +1,6 @@
 // 토너먼트 대진·결과 (8강 QF → 준결승 SF → 결승 F · 3·4위전 3P).
 // rebuildTournament 가 슬롯 배정 + 입력된 결과로 경기 테이블 전체를 일관되게 다시 계산한다.
-import { db } from './db.ts';
+import { db } from './db/connection.ts';
 
 // 토너먼트는 예선(1·2차) 순위 상위 8팀으로 8강(QF)부터 시작한다 — 16강은 없다.
 export type TournamentRound = 'QF' | 'SF' | 'F' | '3P';

@@ -7,7 +7,8 @@ import { io, type Socket } from 'socket.io-client';
 import type { Category } from './judge/rules';
 
 export type Team = { id: string; cat: Category; code: string; name: string; region: string; org: string; coach: string; members: string[] };
-export type Match = { id: string; round: 1 | 2; cat: Category; wave: 'A' | 'B'; table: number; field: '좌' | '우'; team: string };
+// label 은 토너먼트 경기를 같은 채점 화면으로 채점할 때 쓰는 이름 (예: '8강 1경기'). 조별 라운드는 비어 있다.
+export type Match = { id: string; round: 1 | 2; cat: Category; wave: 'A' | 'B'; table: number; field: '좌' | '우'; team: string; label?: string };
 export type Notice = { message: string; updatedAt: number };
 // 순위(서버 /standings, /leaderboard). 부문(cat) 안에서 최고점 → 합계 → 감점 → 팀 ID 순.
 // r1/r2 는 각 라운드 확정 최고점 (1R→2R 흐름 표시용, 없으면 null).

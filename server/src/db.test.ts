@@ -136,3 +136,22 @@ test('토너먼트: 이미 확정된 경기의 점수 재입력은 막는다', (
   db.saveTournamentResult('J', 'SF', 1, 5, 2);
   assert.throws(() => db.submitTournamentScore('J', 'SF', 1, 1, 1, 'REF01'), /확정된 경기/);
 });
+
+test('FK: 없는 심판·다른 팀 점수·없는 팀 슬롯은 DB 가 거부한다', () => {
+  const conn = (db as unknown as { db: import('node:sqlite').DatabaseSync }).db;
+  const ins = (m: string, t: string, j: string) => conn.prepare('INSERT INTO scores (match_id, team_id, judge_id, points, ts) VALUES (?, ?, ?, 1, 1)').run(m, t, j);
+  assert.throws(() => ins('R1-J01', 'J01', 'NO-SUCH-JUDGE'), /FOREIGN KEY/);
+  assert.throws(() => ins('R1-J01', 'J02', 'REF01'), /FOREIGN KEY/); // 그 대진의 팀이 아님
+  assert.throws(() => conn.prepare("INSERT OR REPLACE INTO tournament_slots (cat, slot_no, team_id) VALUES ('S', 8, 'NO-TEAM')").run(), /FOREIGN KEY/);
+});
+
+test('대진 교체: 점수가 걸린 대진은 지우거나 바꿀 수 없고, 점수 없는 대진은 바뀐다', () => {
+  const conn = (db as unknown as { db: import('node:sqlite').DatabaseSync }).db;
+  conn.prepare("INSERT INTO scores (match_id, team_id, judge_id, points, ts) VALUES ('R1-J01', 'J01', 'REF01', 10, 1)").run();
+  const all = db.listMatches();
+  assert.throws(() => db.replaceMatches(all.filter((m) => m.id !== 'R1-J01')), /matches_in_use/);
+  assert.equal(db.listMatches().length, all.length); // 롤백됨
+  db.replaceMatches(all.map((m) => (m.id === 'R1-J02' ? { ...m, table: 7 } : m)));
+  assert.equal(db.listMatches().find((m) => m.id === 'R1-J02')?.table, 7);
+  conn.prepare("DELETE FROM scores WHERE match_id = 'R1-J01'").run();
+});
