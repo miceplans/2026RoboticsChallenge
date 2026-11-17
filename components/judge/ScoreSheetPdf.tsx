@@ -123,5 +123,6 @@ export async function downloadScoreSheetPdf(node: HTMLDivElement, match: Match, 
   const width = Math.min(pageWidth, pageHeight / ratio);
   pdf.addImage(png, 'PNG', margin, margin, width, width * ratio);
   const safe = (value: string) => value.replace(/[\\/:*?"<>|]/g, '-');
-  pdf.save(`점수표-${safe(match.id)}-${safe(team.id)}.pdf`);
+  const gameLabel = match.label ?? `${match.round}차 경기`;
+  pdf.save(`${safe(team.name)}-${safe(gameLabel).replace(/\s+/g, '-')}.pdf`);
 }
