@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import NavButton from '@/components/NavButton';
 import { useToast } from '@/components/Toast';
 import { adminFetch, btn, card, timeAgo } from './shared';
 
@@ -146,7 +147,7 @@ export default function Dashboard() {
                   <p className="truncate text-sm font-medium">{p.teamName ?? p.teamId}</p>
                 </div>
                 <span className="hidden text-xs text-gray-400 sm:block">{timeAgo(p.ts)}</span>
-                <Link href="/admin/scores" className={btn}>검토</Link>
+                <NavButton href="/admin/scores" className={`${btn} cursor-pointer`}>검토</NavButton>
               </div>
             ))}
           </div>

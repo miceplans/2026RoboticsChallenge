@@ -199,14 +199,13 @@ export default function TrackTabs() {
         >
           <h2 className="text-3xl font-extrabold text-heading mb-3 [word-break:keep-all]">{t.title}</h2>
           {t.lead && <p className="mb-4 text-[15px] lg:text-base">{t.lead}</p>}
-          <a
-            href={t.apply.href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex h-10 items-center rounded-2xl bg-accent px-4 text-sm font-semibold text-white hover:bg-accent-soft transition-colors"
+          <button
+            type="button"
+            onClick={() => window.open(t.apply.href, '_blank', 'noopener,noreferrer')}
+            className="inline-flex h-10 cursor-pointer items-center rounded-2xl bg-accent px-4 text-sm font-semibold text-white hover:bg-accent-soft transition-colors"
           >
             {t.apply.label}
-          </a>
+          </button>
           <p className="mt-3 mb-4 text-sm text-gray-500">{t.note}</p>
           <dl className="space-y-3 text-sm lg:text-base leading-relaxed">
             {t.rows.map((r) => (
@@ -217,14 +216,13 @@ export default function TrackTabs() {
             ))}
           </dl>
           <h3 className="mt-8 mb-3 text-base font-bold text-gray-900">첨부파일</h3>
-          <a
-            href={t.file.href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex h-10 items-center rounded-2xl border border-line bg-white px-4 text-sm font-medium text-heading hover:border-line-hover transition-colors"
+          <button
+            type="button"
+            onClick={() => window.open(t.file.href, '_blank', 'noopener,noreferrer')}
+            className="inline-flex h-10 cursor-pointer items-center rounded-2xl border border-line bg-white px-4 text-sm font-medium text-heading hover:border-line-hover transition-colors"
           >
             {t.file.label}
-          </a>
+          </button>
         </article>
       ))}
     </section>

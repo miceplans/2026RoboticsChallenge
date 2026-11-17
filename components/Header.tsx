@@ -1,5 +1,6 @@
 import Image from 'next/image';
 import Link from 'next/link';
+import NavButton from '@/components/NavButton';
 import { logout } from '@/app/login/actions';
 import { getSession } from '@/lib/auth';
 
@@ -65,7 +66,7 @@ export default async function Header() {
               </>
             ) : (
               <>
-                <Link href="/login" className="whitespace-nowrap rounded-full bg-accent px-3 py-1.5 text-sm font-bold text-white transition-colors hover:bg-accent-soft sm:px-4">로그인</Link>
+                <NavButton href="/login" className="cursor-pointer whitespace-nowrap rounded-full bg-accent px-3 py-1.5 text-sm font-bold text-white transition-colors hover:bg-accent-soft sm:px-4">로그인</NavButton>
               </>
             )}
             {/* 모바일에서는 헤더 공간이 부족하므로 SNS 링크를 숨긴다 */}

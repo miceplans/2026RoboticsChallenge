@@ -5,7 +5,7 @@ import ReviewView from '@/components/judge/ReviewView';
 import ScoreView from '@/components/judge/ScoreView';
 import SignView from '@/components/judge/SignView';
 import { useToast } from '@/components/Toast';
-import { btnPrimary, Card, Chip, inputCls, type Tone } from '@/components/judge/ui';
+import { btnGhost, btnPrimary, Card, Chip, inputCls, type Tone } from '@/components/judge/ui';
 import { StatusBadge } from '@/components/LiveLeaderboard';
 import { matchesOfTable, tablesOf, teamOf, useContest, type Match, type TournamentGame, type TournamentRound } from '@/lib/contest';
 import { calc, CATEGORY_NAMES, ITEMS, parseTemplate, type Item } from '@/lib/judge/rules';
@@ -278,7 +278,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
             {/* 서버 데이터를 복구한 뒤, 이 기기에 남은 기록을 모두 다시 보낸다 */}
             <button
               type="button"
-              className="text-gray-600 underline"
+              className={btnGhost}
               onClick={() => confirm('이 기기에 저장된 모든 점수를 서버로 다시 보냅니다. 서버 데이터를 복구한 뒤에 사용하세요.') && resendAll()}
             >
               저장된 점수 전체 재전송

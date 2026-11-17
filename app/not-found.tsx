@@ -1,6 +1,6 @@
 import Image from 'next/image';
-import Link from 'next/link';
 import Header from '@/components/Header';
+import NavButton from '@/components/NavButton';
 
 export const metadata = {
   title: '페이지를 찾을 수 없습니다 | 로보틱스 챌린지',
@@ -27,18 +27,18 @@ export default function NotFound() {
             주소를 다시 확인하거나 홈으로 돌아가 주세요.
           </p>
           <div className="mt-8 flex items-center justify-center gap-3">
-            <Link
+            <NavButton
               href="/"
-              className="rounded-2xl bg-accent px-6 py-2.5 text-sm font-semibold text-white hover:bg-accent-soft transition-colors"
+              className="cursor-pointer rounded-2xl bg-accent px-6 py-2.5 text-sm font-semibold text-white hover:bg-accent-soft transition-colors"
             >
               홈으로 돌아가기
-            </Link>
-            <Link
+            </NavButton>
+            <NavButton
               href="/contest"
-              className="rounded-2xl border border-line bg-white px-6 py-2.5 text-sm font-semibold text-gray-700 hover:border-line-hover hover:text-heading transition-colors"
+              className="cursor-pointer rounded-2xl border border-line bg-white px-6 py-2.5 text-sm font-semibold text-gray-700 hover:border-line-hover hover:text-heading transition-colors"
             >
               대회 진행 보기
-            </Link>
+            </NavButton>
           </div>
         </div>
       </main>
