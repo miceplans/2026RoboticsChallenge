@@ -9,7 +9,6 @@ import { GAME_KEYS, SEED_ORDER, useRanking, type QfPreview } from '@/components/
 import Score from '@/components/team/Score';
 import TeamName from '@/components/team/TeamName';
 import { adminFetch, btn, btnPrimary, card } from './shared';
-import { TableOrderEditor } from './Ops';
 
 export default function Draw() {
   const toast = useToast();
@@ -298,7 +297,6 @@ export default function Draw() {
               <button onClick={resetRankOrder} className={btn}>자동 순위로 되돌리기</button>
             </div>
           )}
-          <div className="mt-5 border-t border-[#b9d9f6] pt-4"><TableOrderEditor /></div>
         </div>
         <div className="min-w-0">
           <div className="overflow-x-auto">

@@ -5,18 +5,17 @@ import { useState } from 'react';
 import LiveBroadcast from './LiveBroadcast';
 import NoticeBanner from './NoticeBanner';
 import RankingBoard from './RankingBoard';
-import { computeSchedule, tablesOf, useContest, withRanks, type Team } from '@/lib/contest';
+import { computeSchedule, slotLabel, useContest, withRanks, type Team } from '@/lib/contest';
 import { useRealtime, useTeamScores } from '@/lib/realtime/useRealtime';
 
-// 관리자 화면과 같은 규칙(저장된 테이블 순서, 없으면 테이블 번호 순)으로 이 팀의 1R·2R 경기를 구한다
+// 관리자 화면과 같은 규칙(주니어 1조 → 시니어 1조 → … 시니어 8조)으로 이 팀의 1R·2R 경기를 구한다
 function useMySchedule(team?: Team) {
   const { config } = useContest();
   if (!team || !config) return [];
-  const order = config.settings.tableOrder?.length ? config.settings.tableOrder : tablesOf(config.matches);
-  return computeSchedule(config.matches, order).filter((m) => m.team === team.id);
+  return computeSchedule(config.matches).filter((m) => m.team === team.id);
 }
 
-// 로그인한 팀에게 지금 1R·2R 어느 부스(테이블)에서 몇 번째로 하는지 항상 보여준다
+// 로그인한 팀에게 1R·2R 에서 몇 조 어느 테이블(A/B)로 몇 번째 경기인지 항상 보여준다
 function MyMatchBanner({ team }: { team?: Team }) {
   const mine = useMySchedule(team);
   if (!team || !mine.length) return null;
@@ -26,10 +25,10 @@ function MyMatchBanner({ team }: { team?: Team }) {
         <div key={m.id} className="flex items-center gap-4 rounded-2xl border border-accent bg-white px-5 py-4">
           <b className="text-2xl font-extrabold text-accent">{m.round}R</b>
           <div className="min-w-0 flex-1">
-            <b className="block text-lg">테이블 {m.table} · {m.field}</b>
-            <span className="text-sm text-gray-500">{m.wave}조</span>
+            <b className="block text-lg">{m.table}조 · {m.wave} 테이블</b>
+            <span className="text-sm text-gray-500">{m.cat === 'S' ? '시니어' : '주니어'} 부문</span>
           </div>
-          <span className="shrink-0 rounded-full bg-accent px-3 py-1 text-sm font-bold text-white">{m.seq}번째</span>
+          <span className="shrink-0 rounded-full bg-accent px-3 py-1 text-sm font-bold text-white">{m.game}번째 경기</span>
         </div>
       ))}
     </div>
@@ -172,7 +171,7 @@ function Score({ team }: { team?: Team }) {
                 return (
                   <tr key={m.id}>
                     <td className="px-4 py-3 font-semibold">{m.round}차</td>
-                    <td className="px-4 py-3">{m.wave}조 · 테이블 {m.table} {m.field}</td>
+                    <td className="px-4 py-3">{slotLabel(m, false)}</td>
                     <td className="px-4 py-3 tabular-nums">{pts.length ? pts.join(' · ') : '미제출'}</td>
                     <td className="px-4 py-3 text-right font-bold tabular-nums">{pts[0] ?? '—'}</td>
                   </tr>
@@ -199,10 +198,10 @@ function Schedule({ team }: { team?: Team }) {
         <article key={m.id} className="mt-4 flex items-center gap-5 rounded-2xl border border-line bg-white p-5">
           <b className="w-12 shrink-0 text-accent">{m.round}R</b>
           <div>
-            <b>{m.wave}조 · 테이블 {m.table} {m.field}</b>
+            <b>{m.table}조 · {m.wave} 테이블</b>
             <p className="mt-1 text-sm text-gray-500">{m.cat === 'S' ? '시니어' : '주니어'} 부문</p>
           </div>
-          <span className="ml-auto shrink-0 rounded-full bg-accent-tint px-3 py-1 text-sm font-bold text-accent">{m.seq}번째</span>
+          <span className="ml-auto shrink-0 rounded-full bg-accent-tint px-3 py-1 text-sm font-bold text-accent">{m.game}번째 경기</span>
         </article>
       ))}
     </section>

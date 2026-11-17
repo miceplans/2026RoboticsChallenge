@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { Server } from 'socket.io';
-import { boardPublic, bootstrapStaffIfNone, getProgress, getStandings, seedDefaultAccounts, seedIfEmpty } from './db.ts';
+import { boardPublic, bootstrapStaffIfNone, getProgress, getStandings, normalizeMatchSlots, seedDefaultAccounts, seedIfEmpty } from './db.ts';
 import { assertAuthSecret, sessionFromCookie, type Session } from './session.ts';
 import { createAuthRoutes } from './routes/auth.ts';
 import { createPublicRoutes } from './routes/public.ts';
@@ -24,6 +24,7 @@ if (process.env.NODE_ENV === 'production' && !process.env.INTERNAL_API_SECRET) {
 }
 
 seedIfEmpty();
+normalizeMatchSlots();
 seedDefaultAccounts(); // 없는 기본 계정만 만든다 (팀별·관리자 2·심판 16)
 bootstrapStaffIfNone();
 

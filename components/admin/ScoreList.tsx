@@ -56,7 +56,7 @@ function ScoreSheetPage({ row, items }: { row: SheetRow; items: Item[] }) {
         <div>
           <h1 className="text-xl font-extrabold">2026 로보틱스 챌린지 · 채점 확인서</h1>
           <p className="mt-1 text-[13px]">
-            {CATEGORY_NAMES[cat]} · {row.round ?? '-'}차 경기{row.wave ? ` · 웨이브 ${row.wave}` : ''}{row.table ? ` · 테이블 ${row.table}` : ''}{row.field ? ` · ${row.field}필드` : ''}
+            {CATEGORY_NAMES[cat]} · {row.round ?? '-'}차 경기{row.table ? ` · ${row.table}조` : ''}{row.wave ? ` · ${row.wave} 테이블` : ''}
             <span className="ml-2 text-gray-500">{row.matchId}</span>
           </p>
         </div>

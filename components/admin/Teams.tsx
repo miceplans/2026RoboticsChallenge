@@ -71,7 +71,7 @@ export default function Teams() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toast]);
 
-  // 계정 발급용 CSV: 아이디,이름,역할(judge/admin),테이블(선택). 헤더 줄과 # 주석은 건다른다.
+  // 계정 발급용 CSV: 아이디,이름,역할(judge/admin),담당 조(선택, 1~8). 헤더 줄과 # 주석은 건다른다.
   const issueCsv = async (file: File) => {
     const text = await file.text();
     const accounts: { id: string; name: string; role: 'judge' | 'admin'; table?: number }[] = [];
@@ -80,10 +80,10 @@ export default function Teams() {
       const [id, name, role, table] = cols;
       if (!id || id.startsWith('#') || id.toLowerCase() === 'id') continue;
       if (role !== 'judge' && role !== 'admin') return toast(`역할은 judge/admin 이어야 합니다 — ${line}`);
-      if (table && (!/^[1-8]$/.test(table))) return toast(`테이블은 1~8 입니다 — ${line}`);
+      if (table && (!/^[1-8]$/.test(table))) return toast(`담당 조는 1~8 입니다 — ${line}`);
       accounts.push({ id, name: name || id, role, table: table ? Number(table) : undefined });
     }
-    if (accounts.length === 0) return toast('발급할 계정이 없습니다. 형식: 아이디,이름,역할,테이블(선택)');
+    if (accounts.length === 0) return toast('발급할 계정이 없습니다. 형식: 아이디,이름,역할,담당조(선택)');
     try {
       const d = await adminFetch<{ issued: { id: string; name: string; role: string; password: string }[] }>('/admin/accounts/issue', { method: 'POST', body: { accounts } });
       downloadCsv(`issued-accounts-${new Date().toISOString().slice(0, 10)}.csv`, [
@@ -101,7 +101,7 @@ export default function Teams() {
     try {
       await adminFetch('/admin/accounts/assign', { method: 'POST', body: { id, table } });
       setAccounts((prev) => prev.map((a) => (a.id === id ? { ...a, judgeTable: table } : a)));
-      toast(`${id} 담당 테이블을 ${table ?? '미지정'}으로 저장했습니다.`);
+      toast(`${id} 담당 조를 ${table ? `${table}조` : '미지정'}로 저장했습니다.`);
       refreshContest();
     } catch (e) {
       toast((e as Error).message);
@@ -148,7 +148,7 @@ export default function Teams() {
   };
 
   const exportAccounts = () => {
-    const header = ['아이디', '이름', '역할', '담당테이블', '마지막 로그인'];
+    const header = ['아이디', '이름', '역할', '담당조', '마지막 로그인'];
     const body = staff.map((a) => [a.id, a.name, a.role === 'admin' ? '관리자' : '심판', a.judgeTable ?? '', a.lastLoginAt ? new Date(a.lastLoginAt).toLocaleString('ko-KR') : '']);
     downloadCsv(`accounts-${new Date().toISOString().slice(0, 10)}.csv`, [header, ...body]);
   };
@@ -224,7 +224,7 @@ export default function Teams() {
               <th className="px-4 py-3">아이디</th>
               <th className="px-4 py-3">이름</th>
               <th className="px-4 py-3">역할</th>
-              <th className="px-4 py-3">담당 테이블</th>
+              <th className="px-4 py-3">담당 조</th>
               <th className="px-4 py-3">마지막 로그인</th>
               <th className="px-4 py-3">임시 비밀번호</th>
               <th className="px-4 py-3">관리</th>
@@ -242,10 +242,10 @@ export default function Teams() {
                       value={a.judgeTable ?? ''}
                       onChange={(e) => assignTable(a.id, e.target.value === '' ? null : Number(e.target.value))}
                       className="rounded-lg border border-line bg-white px-1.5 py-1 text-sm"
-                      aria-label={`${a.name} 담당 테이블`}
+                      aria-label={`${a.name} 담당 조`}
                     >
                       <option value="">미지정</option>
-                      {tablesOf(config?.matches ?? []).map((t) => <option key={t} value={t}>{t}번</option>)}
+                      {tablesOf(config?.matches ?? []).map((t) => <option key={t} value={t}>{t}조</option>)}
                     </select>
                   ) : (
                     '-'

@@ -160,7 +160,11 @@ test('대진 교체: 점수가 걸린 대진은 지우거나 바꿀 수 없고, 
   const all = db.listMatches();
   assert.throws(() => db.replaceMatches(all.filter((m) => m.id !== 'R1-J-YYE-197')), /matches_in_use/);
   assert.equal(db.listMatches().length, all.length); // 롤백됨
-  db.replaceMatches(all.map((m) => (m.id === 'R1-J-VOL-863' ? { ...m, table: 7 } : m)));
-  assert.equal(db.listMatches().find((m) => m.id === 'R1-J-VOL-863')?.table, 7);
+  // 같은 칸(라운드·부문·조·A/B)에 두 팀을 넣으면 거부하고, 두 팀의 자리를 맞바꾸면 저장된다
+  const a = all.find((m) => m.id === 'R1-J-VOL-863')!;
+  const b = all.find((m) => m.round === a.round && m.cat === a.cat && m.id !== a.id && m.id !== 'R1-J-YYE-197')!;
+  assert.throws(() => db.replaceMatches(all.map((m) => (m.id === a.id ? { ...m, table: b.table, wave: b.wave } : m))), /slot_taken/);
+  db.replaceMatches(all.map((m) => (m.id === a.id ? { ...m, table: b.table, wave: b.wave } : m.id === b.id ? { ...m, table: a.table, wave: a.wave } : m)));
+  assert.equal(db.listMatches().find((m) => m.id === a.id)?.table, b.table);
   conn.prepare("DELETE FROM scores WHERE match_id = 'R1-J-YYE-197'").run();
 });

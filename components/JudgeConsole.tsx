@@ -7,7 +7,7 @@ import SignView from '@/components/judge/SignView';
 import { useToast } from '@/components/Toast';
 import { btnGhost, btnPrimary, Card, Chip, inputCls, type Tone } from '@/components/judge/ui';
 import { StatusBadge } from '@/components/LiveLeaderboard';
-import { matchesOfTable, tablesOf, teamOf, useContest, type Match, type TournamentGame, type TournamentRound } from '@/lib/contest';
+import { gameNoOf, matchesOfTable, tablesOf, teamOf, useContest, type Match, type TournamentGame, type TournamentRound } from '@/lib/contest';
 import { calc, CATEGORY_NAMES, ITEMS, parseTemplate, type Item } from '@/lib/judge/rules';
 import { newSheet, sheetPayload, useSheets, type Sheet } from '@/lib/judge/sheets';
 import { scoreKey } from '@/lib/realtime/outbox';
@@ -23,7 +23,7 @@ const serverUrl = () => process.env.NEXT_PUBLIC_REALTIME_URL ?? `${location.prot
 const isT = (m: Match) => m.id.startsWith('T:');
 const parseT = (id: string) => { const [, cat, round, no, side] = id.split(':'); return { cat, round: round as TournamentRound, gameNo: Number(no), side: side as 'A' | 'B' }; };
 
-// REF03 같은 계정은 해당 테이블에 고정, 그 외(데모/관리자)는 직접 고른다
+// REF03 같은 계정은 3조에 고정(주니어·시니어 3조 경기를 모두 채점), 그 외(데모/관리자)는 직접 고른다
 const fixedTable = (judgeId: string) => {
   const t = /^REF0?([1-8])$/i.exec(judgeId)?.[1];
   return t ? Number(t) : null;
@@ -60,16 +60,16 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
   const [mode, setMode] = useState<Mode>('score');
   const [step, setStep] = useState<0 | 1>(0);
 
-  // 담당 테이블 부문의 진행 단계 (1차 → 2차 → 토너먼트). 서버가 잠그고 화면은 그대로 보여준다.
-  const tableCat = matchesOfTable(matches, table)[0]?.cat;
+  // 담당 조에 걸린 부문들의 진행 단계 (1차 → 2차 → 토너먼트). 서버가 잠그고 화면은 그대로 보여준다.
+  const myMatches = matchesOfTable(matches, table);
+  const tableCats = (['J', 'S'] as const).filter((c) => myMatches.some((m) => m.cat === c));
   const progress = config?.progress;
-  const catProgress = tableCat ? progress?.[tableCat] : undefined;
+  const r2Open = (c: 'J' | 'S') => !progress || progress[c].round2Open;
   // 토너먼트 경기: 두 팀을 각각 1·2차와 같은 채점표로 채점한다. 팀마다 가상 경기(T:부문:라운드:경기번호:A|B)로 만들어 같은 화면·서명 흐름을 쓴다.
-  const tGames: TournamentGame[] = tableCat
-    ? (config?.tournament.games ?? [])
-        .filter((g) => g.cat === tableCat && g.teamA && g.teamB && g.status !== 'done')
-        .sort((a, b) => T_ORDER.indexOf(a.round) - T_ORDER.indexOf(b.round) || a.gameNo - b.gameNo)
-    : [];
+  const tCats = tableCats.filter((c) => progress?.[c].tournamentOpen);
+  const tGames: TournamentGame[] = (config?.tournament.games ?? [])
+    .filter((g) => tCats.includes(g.cat) && g.teamA && g.teamB && g.status !== 'done')
+    .sort((a, b) => a.cat.localeCompare(b.cat) || T_ORDER.indexOf(a.round) - T_ORDER.indexOf(b.round) || a.gameNo - b.gameNo);
   const tMatch = (g: TournamentGame, side: 'A' | 'B'): Match => ({ id: `T:${g.cat}:${g.round}:${g.gameNo}:${side}`, round: 2, cat: g.cat, wave: 'A', table, field: side === 'A' ? '좌' : '우', team: (side === 'A' ? g.teamA : g.teamB)!, label: `${T_LABEL[g.round]} ${g.gameNo}경기` });
   const match = [...matches, ...tGames.flatMap((g) => [tMatch(g, 'A'), tMatch(g, 'B')])].find((m) => m.id === openId) ?? null;
   const tSubs = config?.tournament.submissions ?? [];
@@ -145,13 +145,13 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
       <main className="mx-auto max-w-4xl">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex-1">
-            <p className="text-sm font-bold text-accent">테이블 {table}</p>
+            <p className="text-sm font-bold text-accent">{table}조 담당</p>
             <h1 className="mt-1 text-3xl font-extrabold">담당 경기</h1>
             <p className="mt-2 text-sm text-gray-500">채점을 시작할 경기를 선택하세요.</p>
           </div>
           {fixed === null && (
             <label className="text-sm text-gray-500">
-              담당 테이블
+              담당 조
               <select
                 className={`${inputCls} ml-2`}
                 value={table}
@@ -162,14 +162,14 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
                   } catch {}
                 }}
               >
-                {tables.map((t) => <option key={t} value={t}>{t}번</option>)}
+                {tables.map((t) => <option key={t} value={t}>{t}조</option>)}
               </select>
             </label>
           )}
         </div>
 
-        {catProgress && tableCat && (
-          <Card title={`${CATEGORY_NAMES[tableCat]} 진행 단계`}>
+        {progress && tableCats.map((c) => { const catProgress = progress[c]; return (
+          <Card key={c} title={`${CATEGORY_NAMES[c]} 진행 단계`}>
             <ol className="flex flex-wrap gap-2 p-4 text-sm">
               {[
                 { label: '1차', state: catProgress.round2Open ? 'done' : 'now', note: `${catProgress.r1.submitted}/${catProgress.r1.total}경기 제출` },
@@ -183,19 +183,19 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
               ))}
             </ol>
           </Card>
-        )}
+        ); })}
 
         {([1, 2] as const).map((round) => (
           <Card key={round} title={`${round}차 조별 라운드`}>
-            {round === 2 && catProgress && !catProgress.round2Open ? (
-              <p className="p-6 text-center text-sm text-gray-500">
-                🔒 1차가 모두 끝나면 열립니다. ({CATEGORY_NAMES[tableCat!]} 1차 {catProgress.r1.submitted}/{catProgress.r1.total}경기 제출)
-              </p>
-            ) : (
             <div className="space-y-1 p-3">
-              {matchesOfTable(matches, table)
-                .filter((m) => m.round === round)
-                .sort((a, b) => a.wave.localeCompare(b.wave) || (a.field === b.field ? 0 : a.field === '좌' ? -1 : 1))
+              {round === 2 && progress && tableCats.filter((c) => !r2Open(c)).map((c) => (
+                <p key={c} className="px-3 py-2 text-sm text-gray-500">
+                  🔒 {CATEGORY_NAMES[c]} 2차는 1차가 모두 끝나면 열립니다. (1차 {progress[c].r1.submitted}/{progress[c].r1.total}경기 제출)
+                </p>
+              ))}
+              {myMatches
+                .filter((m) => m.round === round && (round === 1 || r2Open(m.cat)))
+                .sort((a, b) => gameNoOf(a) - gameNoOf(b) || a.wave.localeCompare(b.wave))
                 .map((m) => {
                   const t = teamOf(teams, m.team);
                   const s = sheets[m.id];
@@ -210,7 +210,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
                     <button key={m.id} type="button" onClick={() => open(m)} className="flex w-full items-center gap-3 rounded-xl px-3 py-3.5 text-left transition-colors hover:bg-surface">
                       <Chip tone={m.cat === 'S' ? 'info' : 'neutral'}>{CATEGORY_NAMES[m.cat]}</Chip>
                       <span className="flex-1">
-                        <b className="block">{m.wave}조 · {m.field}</b>
+                        <b className="block">{gameNoOf(m)}번째 경기 · {m.table}조 · {m.wave} 테이블</b>
                         <small className="text-gray-500">{t ? `${t.id} ${t.name} · ${t.org}` : m.team}</small>
                       </span>
                       {s?.status === 'signed' ? <b><Score value={calc(s.values, m.cat, ruleItems).total} /></b> : !s && serverPts != null ? <b><Score value={serverPts} /></b> : null}
@@ -220,12 +220,11 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
                   );
                 })}
             </div>
-            )}
           </Card>
         ))}
 
-        {tableCat && catProgress?.tournamentOpen && (
-          <Card title={`${CATEGORY_NAMES[tableCat]} 토너먼트`}>
+        {tCats.length > 0 && (
+          <Card title={`${tCats.map((c) => CATEGORY_NAMES[c]).join('·')} 토너먼트`}>
             {tGames.length === 0 ? (
               <p className="p-6 text-center text-sm text-gray-500">채점할 경기가 없습니다. 8강 팀 배정과 이전 라운드 확정 뒤에 열립니다.</p>
             ) : (
@@ -235,9 +234,9 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
                   const ms = [tMatch(g, 'A'), tMatch(g, 'B')];
                   const bothSigned = ms.every((m) => sheets[m.id]?.status === 'signed');
                   return (
-                    <div key={`${g.round}-${g.gameNo}`} className="space-y-1 p-3">
+                    <div key={`${g.cat}-${g.round}-${g.gameNo}`} className="space-y-1 p-3">
                       <div className="flex items-center gap-2 px-3 pt-1">
-                        <b>{T_LABEL[g.round]} {g.gameNo}경기</b>
+                        <b>{tCats.length > 1 ? `${CATEGORY_NAMES[g.cat]} ` : ''}{T_LABEL[g.round]} {g.gameNo}경기</b>
                         {sub && <Chip tone="info">제출됨 · 확정 대기</Chip>}
                       </div>
                       {ms.map((m) => {

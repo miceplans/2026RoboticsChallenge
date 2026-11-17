@@ -119,7 +119,7 @@ export default function Dashboard() {
             {(ov?.judges ?? []).map((j) => (
               <div key={j.id}>
                 <div className="flex justify-between text-sm">
-                  <span>{j.name} <span className="text-gray-400">{j.table ? `테이블 ${j.table}` : j.id}</span></span>
+                  <span>{j.name} <span className="text-gray-400">{j.table ? `${j.table}조` : j.id}</span></span>
                   <span className="tabular-nums">{j.submitted} / {j.total}</span>
                 </div>
                 <div className="mt-2 h-1.5 bg-surface-secondary">

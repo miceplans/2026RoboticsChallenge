@@ -63,6 +63,13 @@ export function getMatch(id: string): Match | null {
 
 // 대진 전체 교체. 점수가 걸린 대진은 지우거나 팀·부문을 바꿀 수 없다 (scores FK) — 그런 변경이면 'matches_in_use' 로 거절한다.
 export function replaceMatches(matches: Match[]): void {
+  // 한 칸(라운드·부문·조·A/B)에는 한 팀만 — 겹치면 저장하지 않는다
+  const seen = new Set<string>();
+  for (const m of matches) {
+    const k = `${m.round}|${m.cat}|${m.table}|${m.wave}`;
+    if (seen.has(k)) throw new Error(`slot_taken:${m.cat}-${m.round}R-${m.table}조-${m.wave}`);
+    seen.add(k);
+  }
   db.exec('BEGIN');
   try {
     const teamExists = db.prepare('SELECT COUNT(*) AS c FROM teams WHERE id = ?');
@@ -82,4 +89,38 @@ export function replaceMatches(matches: Match[]): void {
     if (/FOREIGN KEY/i.test((e as Error).message)) throw new Error('matches_in_use');
     throw e;
   }
+}
+
+// 예전 배정 방식(테이블 1~8 × 웨이브 A/B × 좌/우)으로 저장된 대진은 한 칸(조·A/B)에 여러 팀이 겹친다.
+// 겹침이 있는 라운드·부문만 예전 순서(테이블 → 웨이브 → 좌/우) 그대로 1조 A, 1조 B, 2조 A … 로 다시 앉힌다.
+// 경기 ID 는 바꾸지 않으므로 이미 들어온 점수는 그대로 이어진다. 기동할 때마다 불러도 겹침이 없으면 아무것도 하지 않는다.
+export function normalizeMatchSlots(): number {
+  const rows = db.prepare('SELECT id, round, cat, wave, table_no AS "table", field FROM matches').all() as Omit<Match, 'team'>[];
+  const groups = new Map<string, typeof rows>();
+  for (const r of rows) {
+    const k = `${r.round}|${r.cat}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k)!.push(r);
+  }
+  const upd = db.prepare('UPDATE matches SET table_no = ?, wave = ?, field = ? WHERE id = ?');
+  let fixed = 0;
+  db.exec('BEGIN');
+  try {
+    for (const list of groups.values()) {
+      const slots = new Set(list.map((r) => `${r.table}|${r.wave}`));
+      if (slots.size === list.length && list.every((r) => r.table >= 1 && r.table <= 8)) continue;
+      list.sort((a, b) => a.table - b.table || a.wave.localeCompare(b.wave) || (a.field === b.field ? 0 : a.field === '좌' ? -1 : 1) || a.id.localeCompare(b.id));
+      list.forEach((r, i) => {
+        const side = i % 2 ? 'B' : 'A';
+        upd.run(Math.floor(i / 2) % 8 + 1, side, side === 'A' ? '좌' : '우', r.id);
+      });
+      fixed++;
+    }
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  if (fixed) console.log(`[migrate] 예전 테이블 배정을 조·A/B 배정으로 정리 (${fixed}개 라운드·부문)`);
+  return fixed;
 }

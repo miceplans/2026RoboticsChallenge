@@ -8,6 +8,7 @@ import type { Category } from './judge/rules';
 
 export type Team = { id: string; cat: Category; code: string; name: string; region: string; org: string; coach: string; members: string[] };
 // label 은 토너먼트 경기를 같은 채점 화면으로 채점할 때 쓰는 이름 (예: '8강 1경기'). 조별 라운드는 비어 있다.
+// table = 조 번호(1~8), wave = A/B 테이블. 컬럼 이름은 예전 스키마 그대로다.
 export type Match = { id: string; round: 1 | 2; cat: Category; wave: 'A' | 'B'; table: number; field: '좌' | '우'; team: string; label?: string };
 export type Notice = { message: string; updatedAt: number };
 // 순위(서버 /standings, /leaderboard). 부문(cat) 안에서 최고점 → 합계 → 감점 → 팀 ID 순.
@@ -57,11 +58,11 @@ export type ContestConfig = {
     autoConfirm: boolean;
     boardPublic: boolean;
     notice: Notice;
-    tableOrder: number[]; // 당일 테이블 진행 순서 (1~8 순열)
+    tableOrder?: number[]; // 구버전 설정 (더 이상 쓰지 않음 — 진행 순서는 조 번호로 고정)
     rankOrder: Partial<Record<Category, string[]>>; // 관리자 순위 조정 (없으면 계산 순위)
   };
   template: unknown; // null 이면 lib/judge/rules.ts 기본 항목 사용
-  judgeTables: Record<string, number>; // 심판 ID → 담당 테이블 (REF 외 추가 심판 배정)
+  judgeTables: Record<string, number>; // 심판 ID → 담당 조 (REF 외 추가 심판 배정). 담당 조의 주니어·시니어 경기를 채점한다
   teams: Team[];
   matches: Match[];
   tournament: { slots: { cat: Category; slotNo: number; teamId: string | null }[]; games: TournamentGame[]; submissions?: TournamentSubmission[] };
@@ -71,17 +72,24 @@ export type ContestConfig = {
 // 토너먼트는 예선 순위 상위 8팀이 8강부터 시작한다.
 export const SEED_ORDER = [1, 8, 4, 5, 2, 7, 3, 6]; // 8팀 표준 시드: 1v8, 4v5 / 2v7, 3v6
 
-// 당일 진행 순서표: 라운드 → 웨이브 → 테이블 진행 순서 → 필드(좌→우) → 팀 순으로 전체 순번을 매긴다.
-export type ScheduledMatch = Match & { seq: number };
-export function computeSchedule(matches: Match[], tableOrder: number[]): ScheduledMatch[] {
-  const orderOf = (table: number) => {
-    const i = tableOrder.indexOf(table);
-    return i < 0 ? tableOrder.length + table : i;
-  };
-  const fieldOf = (f: '좌' | '우') => (f === '좌' ? 0 : 1);
+// 조별 라운드 배정: DB 의 matches 한 줄 = (라운드, 부문, 조 1~8, A/B 테이블, 팀).
+// 기존 컬럼을 그대로 쓴다 — table = 조 번호, wave = A/B 테이블, field 는 A→좌·B→우 (하위 호환용).
+export const GROUPS = [1, 2, 3, 4, 5, 6, 7, 8];
+export const SIDES = ['A', 'B'] as const;
+export type Side = (typeof SIDES)[number];
+export const fieldOfSide = (side: Side): '좌' | '우' => (side === 'A' ? '좌' : '우');
+// "주니어 3조 · A" (부문을 빼면 "3조 · A")
+export const slotLabel = (m: Pick<Match, 'cat' | 'table' | 'wave'>, withCat = true) =>
+  `${withCat ? `${m.cat === 'J' ? '주니어' : '시니어'} ` : ''}${m.table}조 · ${m.wave}`;
+
+// 당일 진행 순서: 라운드마다 주니어 1조 → 시니어 1조 → 주니어 2조 → … → 시니어 8조 (16경기).
+// 한 경기 = 한 조의 A·B 두 팀이 동시에 치르는 것. game 은 라운드 안의 경기 순서(1~16), seq 는 전체 줄 순번.
+export type ScheduledMatch = Match & { seq: number; game: number };
+export const gameNoOf = (m: Pick<Match, 'cat' | 'table'>) => (m.table - 1) * 2 + (m.cat === 'J' ? 1 : 2);
+export function computeSchedule(matches: Match[]): ScheduledMatch[] {
   return [...matches]
-    .sort((a, b) => a.round - b.round || (a.wave < b.wave ? -1 : a.wave > b.wave ? 1 : 0) || orderOf(a.table) - orderOf(b.table) || fieldOf(a.field) - fieldOf(b.field) || (a.team < b.team ? -1 : 1))
-    .map((m, i) => ({ ...m, seq: i + 1 }));
+    .sort((a, b) => a.round - b.round || gameNoOf(a) - gameNoOf(b) || a.wave.localeCompare(b.wave) || (a.team < b.team ? -1 : 1))
+    .map((m, i) => ({ ...m, seq: i + 1, game: gameNoOf(m) }));
 }
 
 // 부문 순위에 경쟁 순위(동점 표기)를 붙인다. 동점 = 최고점·합계·감점이 모두 같음 (말단 정렬키 팀 ID 는 제외).
@@ -202,10 +210,8 @@ export function useContest() {
 // 관리자가 저장한 뒤 즉시 반영하고 싶을 때 (설정 탭 저장 등) 캐시를 무효화한다.
 export const refreshContest = () => fetchConfig();
 
-// 서버가 허용하는 테이블 번호 범위와 같은 기본값
-export const TABLES = [1, 2, 3, 4, 5, 6, 7, 8];
-
-// 대진에 실제 쓰이는 테이블 번호. 대진이 아직 없으면 기본값(TABLES)을 쓴다.
+// 심판 담당 단위 = 조 (1~8). 대진이 아직 없으면 1~8 전체.
+export const TABLES = GROUPS;
 export const tablesOf = (matches: Match[]) => {
   const used = [...new Set(matches.map((m) => m.table))].sort((a, b) => a - b);
   return used.length > 0 ? used : TABLES;

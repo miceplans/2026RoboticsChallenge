@@ -33,7 +33,8 @@ export const USERS_DDL = (n = 'users') => `
   );`;
 export const USERS_INDEX = 'CREATE UNIQUE INDEX IF NOT EXISTS users_team_member ON users (team_id, name) WHERE role = \'user\';';
 
-// 이름과 달리 "경기" 가 아니라 팀 한 곳의 (라운드, 조, 테이블, 좌/우) 배정 한 줄이다. id = R{round}-{teamId}.
+// 이름과 달리 "경기" 가 아니라 팀 한 곳의 배정 한 줄이다. id = R{round}-{teamId}.
+// table_no = 조 번호(1~8), wave = A/B 테이블 (한 조의 A·B 두 팀이 동시에 경기). field 는 A→좌·B→우 로 맞춰 둔다.
 // cat 은 teams.cat 과 같은 값이어야 한다 — 복합 FK 가 어긋남을 막는다.
 export const MATCHES_DDL = (n = 'matches') => `
   CREATE TABLE ${n} (

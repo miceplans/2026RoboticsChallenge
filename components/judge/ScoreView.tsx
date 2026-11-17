@@ -88,7 +88,7 @@ export default function ScoreView({ match, team, sheet, edit, onBack, onReview, 
         <Chip tone={match.cat === 'S' ? 'info' : 'neutral'}>{CATEGORY_NAMES[match.cat]}</Chip>
         <b className="text-xl">{team.id} {team.name}</b>
         <span className="text-sm text-gray-500">
-          {team.org} · {match.label ?? `${match.round}차 조별`} · 테이블 {match.table} {match.field}{match.label ? '' : ` · ${match.wave}조`}
+          {team.org} · {match.label ? `${match.label} · ${match.field === '좌' ? 'A' : 'B'} 테이블` : `${match.round}차 조별 · ${match.table}조 · ${match.wave} 테이블`}
         </span>
       </header>
 
