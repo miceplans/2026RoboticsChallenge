@@ -88,27 +88,6 @@ export function submitTournamentScore(cat: 'J' | 'S', round: TournamentRound, ga
     ON CONFLICT (cat, round, game_no) DO UPDATE SET score_a = excluded.score_a, score_b = excluded.score_b, judge_id = excluded.judge_id, ts = excluded.ts`).run(cat, round, gameNo, scoreA, scoreB, judgeId, Date.now());
 }
 
-// 확정된 경기를 다시 열어 심판이 점수를 다시 입력하게 한다. 이 경기와 하위 라운드의 결과·제출은 지워진다.
-export function reopenTournamentGame(cat: 'J' | 'S', round: TournamentRound, gameNo: number): void {
-  db.exec('BEGIN');
-  try {
-    const keepIdx = ROUND_ORDER.indexOf(round);
-    const results = new Map<string, GameResult>();
-    for (const [key, r] of savedResults(cat)) {
-      const [rd, no] = key.split('-');
-      if (ROUND_ORDER.indexOf(rd as TournamentRound) > keepIdx || (rd === round && Number(no) === gameNo)) continue;
-      results.set(key, r);
-    }
-    rebuildTournament(cat, results);
-    db.prepare('DELETE FROM tournament_submissions WHERE cat = ? AND round = ? AND game_no = ?').run(cat, round, gameNo);
-    for (const r of ROUND_ORDER.slice(keepIdx + 1)) db.prepare('DELETE FROM tournament_submissions WHERE cat = ? AND round = ?').run(cat, r);
-    db.exec('COMMIT');
-  } catch (e) {
-    db.exec('ROLLBACK');
-    throw e;
-  }
-}
-
 // 슬롯 배정 + 입력된 결과들로 경기 테이블 전체를 재구축한다.
 // 8강(QF 4경기) → 준결승(2) → 결승, 준결승 패자는 3·4위전. 팀이 채워지지 않거나 결과가 없는 경기는 예정 상태로 둔다.
 // 슬롯 2j-1 vs 2j 가 j번째 8강 경기 (홀수 승자는 A, 짝수 승자는 B).

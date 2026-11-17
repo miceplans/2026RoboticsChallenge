@@ -4,8 +4,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useToast } from '@/components/Toast';
 import { teamName, useContest, refreshContest, type Team, type TournamentRound } from '@/lib/contest';
 import { CATEGORY_NAMES, type Category } from '@/lib/judge/rules';
-import { fireConfetti } from '@/components/Confetti';
-import { BracketCanvas, GAME_KEYS, SEED_ORDER, useRanking, type QfPreview } from '@/components/TournamentBracket';
+import { BracketCanvas } from '@/components/TournamentBracket';
+import { GAME_KEYS, SEED_ORDER, useRanking, type QfPreview } from '@/components/bracket/logic';
+import Score from '@/components/team/Score';
+import TeamName from '@/components/team/TeamName';
 import { adminFetch, btn, btnPrimary, card } from './shared';
 import { TableOrderEditor } from './Ops';
 
@@ -66,26 +68,17 @@ export default function Draw() {
     if (!side) return undefined;
     return { winner: side === 'A' ? g.teamA : g.teamB, loser: side === 'A' ? g.teamB : g.teamA, scoreA: sc.a, scoreB: sc.b };
   });
+  // 확정: 심판이 낸 점수(이미 확정된 경기는 저장된 점수)로 결과를 저장한다. 동점이면 고른 승자를 함께 보낸다.
   const confirmGame = async (k: number) => {
+    const g = gameAt(k);
     const sub = subAt(k);
-    if (!sub) return;
+    const sc = g?.status === 'done' && g.scoreA != null && g.scoreB != null ? { a: g.scoreA, b: g.scoreB } : sub ? { a: sub.scoreA, b: sub.scoreB } : undefined;
+    if (!sc) return;
     setSaving(k);
     try {
-      await adminFetch('/admin/tournament/result', { method: 'POST', body: { cat, round: GAME_KEYS[k].round, gameNo: GAME_KEYS[k].no, scoreA: sub.scoreA, scoreB: sub.scoreB, winner: sub.scoreA === sub.scoreB ? tieWinner[`${cat}-${k}`] : undefined } });
+      await adminFetch('/admin/tournament/result', { method: 'POST', body: { cat, round: GAME_KEYS[k].round, gameNo: GAME_KEYS[k].no, scoreA: sc.a, scoreB: sc.b, winner: sc.a === sc.b ? tieWinner[`${cat}-${k}`] : undefined } });
       toast(`${ROUND_LABEL[GAME_KEYS[k].round]} ${GAME_KEYS[k].no}경기 승자를 확정했습니다.`);
-      fireConfetti();
-      refreshContest();
-    } catch (e) {
-      toast((e as Error).message);
-    } finally {
-      setSaving(null);
-    }
-  };
-  const reopenGame = async (k: number) => {
-    setSaving(k);
-    try {
-      await adminFetch('/admin/tournament/reopen', { method: 'POST', body: { cat, round: GAME_KEYS[k].round, gameNo: GAME_KEYS[k].no } });
-      toast(`${ROUND_LABEL[GAME_KEYS[k].round]} ${GAME_KEYS[k].no}경기를 다시 열었습니다. 심판이 점수를 다시 입력합니다.`);
+      setTieWinner((prev) => { const n = { ...prev }; delete n[`${cat}-${k}`]; return n; });
       refreshContest();
     } catch (e) {
       toast((e as Error).message);
@@ -95,34 +88,43 @@ export default function Draw() {
   };
   // 각 칸 밑에 붙는 확정/변경 버튼
   const pill = 'rounded-full border px-[0.9cqw] py-[0.25cqw] text-[1.25cqw] font-semibold leading-tight disabled:opacity-40';
+  // 동점이면 두 팀 이름 중 올라갈 팀을 고른다
+  const tiePicker = (k: number, g: { teamA: string | null; teamB: string | null }, chosen?: 'A' | 'B') => (
+    <>
+      <span className={`${pill} border-warning bg-white text-warning`}>동점 · 승자</span>
+      {(['A', 'B'] as const).map((side) => (
+        <button key={side} onClick={() => setTieWinner((prev) => ({ ...prev, [`${cat}-${k}`]: side }))} className={`${pill} max-w-[12cqw] truncate ${chosen === side ? 'border-accent bg-[#eaf5ff] text-[#258eed]' : 'border-line bg-white text-gray-700'}`}>
+          {teamName(teams, (side === 'A' ? g.teamA : g.teamB) ?? '')}
+        </button>
+      ))}
+    </>
+  );
   const actions = GAME_KEYS.map((_, k) => {
     const g = gameAt(k);
     if (!confirmed || !g?.teamA || !g.teamB) return undefined;
-    if (g.status === 'done')
+    const picked = tieWinner[`${cat}-${k}`];
+    if (g.status === 'done') {
+      // 확정된 경기는 심판이 다시 입력하지 않는다. 동점 경기만 어드민이 올라갈 팀을 바꿀 수 있다(변경).
+      const savedSide = g.winner === g.teamA ? 'A' : 'B';
       return (
         <>
           <span className={`${pill} border-[#bfe0ff] bg-[#eaf5ff] text-[#258eed]`}>✓ 확정됨</span>
-          <button disabled={saving === k} onClick={() => reopenGame(k)} className={`${pill} border-line bg-white text-gray-700`}>변경</button>
+          {g.scoreA === g.scoreB && (
+            <>
+              {tiePicker(k, g, picked ?? savedSide)}
+              <button disabled={saving === k || !picked || picked === savedSide} onClick={() => confirmGame(k)} className={`${pill} border-line bg-white text-gray-700`}>변경</button>
+            </>
+          )}
         </>
       );
+    }
     const sub = subAt(k);
-    const tie = Boolean(sub && sub.scoreA === sub.scoreB);
     if (!sub) return <span className={`${pill} border-line bg-white text-gray-400`}>심판 점수 대기</span>;
-    const chosen = tieWinner[`${cat}-${k}`];
+    const tie = sub.scoreA === sub.scoreB;
     return (
       <>
-        {tie && (
-          <>
-            <span className={`${pill} border-warning bg-white text-warning`}>동점 · 승자</span>
-            {(['A', 'B'] as const).map((side) => (
-              <button key={side} onClick={() => setTieWinner((prev) => ({ ...prev, [`${cat}-${k}`]: side }))} className={`${pill} max-w-[12cqw] truncate ${chosen === side ? 'border-accent bg-[#eaf5ff] text-[#258eed]' : 'border-line bg-white text-gray-700'}`}>
-                {teamName(teams, (side === 'A' ? g.teamA : g.teamB) ?? '')}
-              </button>
-            ))}
-          </>
-        )}
+        {tie && tiePicker(k, g, picked)}
         <button disabled={saving === k || !gamePreview[k]} onClick={() => confirmGame(k)} className={`${pill} border-accent bg-accent text-white`}>확정</button>
-        <button disabled={saving === k} onClick={() => reopenGame(k)} className={`${pill} border-line bg-white text-gray-700`}>변경</button>
       </>
     );
   });
@@ -201,7 +203,7 @@ export default function Draw() {
     try {
       await adminFetch('/admin/settings', { method: 'PUT', body: { rankOrder: { [cat]: rankIds } } });
       setLocalRank(null);
-      toast('합산 순위 순서를 고정했습니다.');
+      toast('순위 순서를 고정했습니다.');
       refreshContest();
     } catch (e) {
       toast((e as Error).message);
@@ -226,7 +228,6 @@ export default function Draw() {
       setApplied(true);
       setEditing(false);
       toast('8강 진출 팀을 확정했습니다. /contest 대진표에 반영됩니다.');
-      fireConfetti();
       refreshContest();
     } catch (e) {
       toast((e as Error).message);
@@ -236,7 +237,7 @@ export default function Draw() {
   return (
     <section className={`${card} p-6`}>
       <h1 className="text-3xl font-extrabold text-heading">팀 토너먼트 배정</h1>
-      <p className="mt-2 text-sm text-gray-500">1차·2차 점수를 합산한 상위 8팀입니다. 팀을 끌어서 점선 칸에 놓고 저장하면 /contest 대진표에 반영됩니다. (터치: 팀을 누른 뒤 칸을 누르세요)</p>
+      <p className="mt-2 text-sm text-gray-500">1차·2차 중 높은 점수 기준 상위 8팀입니다. 팀을 끌어서 점선 칸에 놓고 저장하면 /contest 대진표에 반영됩니다. (터치: 팀을 누른 뒤 칸을 누르세요)</p>
       <nav className="mt-4 flex gap-2 border-b border-line">
         {(['S', 'J'] as Category[]).map((c) => (
           <button key={c} onClick={() => switchCat(c)} className={`px-4 py-2 text-sm font-bold ${cat === c ? 'border-b-2 border-accent text-accent' : 'text-gray-500'}`}>{CATEGORY_NAMES[c]}</button>
@@ -259,7 +260,7 @@ export default function Draw() {
             if (kind === 'slot') onClear(Number(val));
           }}
         >
-          <div className="flex items-center justify-between"><h2 className="font-semibold">합산 순위</h2><span className="text-xs text-gray-500">{count}/8 배치</span></div>
+          <div className="flex items-center justify-between"><h2 className="font-semibold">순위</h2><span className="text-xs text-gray-500">{count}/8 배치</span></div>
           <ol className="mt-3 space-y-2">
             {rankIds.map((id, i) => {
               const r = ranking.find((x) => x.teamId === id);
@@ -279,9 +280,9 @@ export default function Draw() {
                     className={`flex w-full items-center gap-2 rounded border bg-white px-3 py-2 text-left text-sm ${overRank === id && dragRank !== id ? 'border-accent' : picked === id ? 'border-accent' : 'border-line'} ${used ? 'opacity-40' : 'cursor-grab hover:border-line-hover'}`}
                   >
                     <span className="w-6 font-bold tabular-nums text-accent">{i + 1}</span>
-                    <span className="min-w-0 flex-1 truncate font-medium">{teamName(teams, id)}</span>
+                    <span className="min-w-0 flex-1 truncate font-medium"><TeamName id={id} /></span>
                     {tieKeys.has(rankKey(r)) && <span className="text-xs font-bold text-[#b45309]">=</span>}
-                    <span className="tabular-nums text-gray-500">{r.total}</span>
+                    <Score value={r.total} unit="" className="text-gray-500" />
                   </button>
                 </li>
               );

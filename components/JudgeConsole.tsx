@@ -12,6 +12,8 @@ import { calc, CATEGORY_NAMES, ITEMS, parseTemplate, type Item } from '@/lib/jud
 import { newSheet, sheetPayload, useSheets, type Sheet } from '@/lib/judge/sheets';
 import { scoreKey } from '@/lib/realtime/outbox';
 import { useRealtime } from '@/lib/realtime/useRealtime';
+import { useTeamScores } from '@/lib/scores';
+import Score from '@/components/team/Score';
 
 type Mode = 'score' | 'review' | 'sign' | 'done';
 
@@ -28,7 +30,8 @@ const fixedTable = (judgeId: string) => {
 };
 
 export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; judgeName: string }) {
-  const { status, standings, history, pending, rejected, submitScore, resendAll } = useRealtime();
+  const { status, history, pending, rejected, submitScore, resendAll } = useRealtime();
+  const { scoreOf } = useTeamScores();
   const { config, failed } = useContest();
   const matches = config?.matches ?? [];
   const teams = config?.teams ?? [];
@@ -197,7 +200,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
                   const t = teamOf(teams, m.team);
                   const s = sheets[m.id];
                   // 이 기기에 기록이 없어도 서버에 확정된 점수가 있으면 그것을 보여준다 (순위·관리자 화면과 같은 출처)
-                  const serverPts = standings.find((x) => x.teamId === m.team)?.[m.round === 1 ? 'r1' : 'r2'];
+                  const serverPts = scoreOf(m.team)?.[m.round === 1 ? 'r1' : 'r2'];
                   const [text, tone]: [string, Tone] =
                     !s ? (serverPts != null ? ['서버 확정', 'info'] : ['미입력', 'neutral'])
                     : s.status === 'draft' ? ['작성 중', 'warn']
@@ -210,7 +213,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
                         <b className="block">{m.wave}조 · {m.field}</b>
                         <small className="text-gray-500">{t ? `${t.id} ${t.name} · ${t.org}` : m.team}</small>
                       </span>
-                      {s?.status === 'signed' ? <b>{calc(s.values, m.cat, ruleItems).total}점</b> : !s && serverPts != null ? <b>{serverPts}점</b> : null}
+                      {s?.status === 'signed' ? <b><Score value={calc(s.values, m.cat, ruleItems).total} /></b> : !s && serverPts != null ? <b><Score value={serverPts} /></b> : null}
                       <Chip tone={tone}>{text}</Chip>
                       <span>›</span>
                     </button>
@@ -247,7 +250,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
                               <b className="block">{t ? `${t.id} ${t.name}` : m.team}</b>
                               <small className="text-gray-500">{t?.org}</small>
                             </span>
-                            {s?.status === 'signed' && <b>{totalOf(m, s)}점</b>}
+                            {s?.status === 'signed' && <b><Score value={totalOf(m, s)} /></b>}
                             <Chip tone={tone}>{text}</Chip>
                             <span>›</span>
                           </button>
@@ -256,7 +259,6 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
                       {bothSigned && !sub && (
                         <div className="flex gap-2 px-3 pb-1 pt-1">
                           <button type="button" className={`${btnPrimary} !px-4 !py-2`} onClick={() => void postGame(g)}>다시 제출</button>
-                          <button type="button" className="rounded-xl border border-line px-4 py-2 text-sm text-gray-700" onClick={() => confirm('이 경기 두 팀의 채점을 지우고 처음부터 다시 채점합니다.') && ms.forEach((m) => update(m.id, () => newSheet()))}>다시 채점</button>
                         </div>
                       )}
                     </div>

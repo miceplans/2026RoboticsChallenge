@@ -1,5 +1,6 @@
 'use client';
 
+import ScoreValue from '@/components/team/Score';
 import { useState } from 'react';
 import LiveBroadcast from './LiveBroadcast';
 import NoticeBanner from './NoticeBanner';
@@ -143,10 +144,10 @@ function Score({ team }: { team?: Team }) {
               <b>현재 {mine.rank}위{mine.tied ? ' (동점)' : ''}</b>
               <p className="mt-1 text-sm text-gray-500">실시간 순위표 기준 (1·2차 최고점)</p>
               {(mine.r1 !== null || mine.r2 !== null) && (
-                <p className="mt-1 text-sm text-gray-500">1차 {mine.r1 ?? '–'}점 · 2차 {mine.r2 ?? '–'}점</p>
+                <p className="mt-1 text-sm text-gray-500">1차 <ScoreValue value={mine.r1} /> · 2차 <ScoreValue value={mine.r2} /></p>
               )}
             </div>
-            <strong className="text-3xl text-accent">{mine.total}점</strong>
+            <strong className="text-3xl text-accent"><ScoreValue value={mine.total} /></strong>
           </div>
           {standingsAt && <p className="mt-4 border-t border-line pt-3 text-xs text-gray-400">마지막 수신 {new Date(standingsAt).toLocaleTimeString('ko-KR')}</p>}
         </article>

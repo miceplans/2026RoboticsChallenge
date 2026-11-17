@@ -3,8 +3,11 @@
 import Image from 'next/image';
 import { useState, type CSSProperties } from 'react';
 import ConnectionToast from './ConnectionToast';
+import Score from '@/components/team/Score';
+import TeamName from '@/components/team/TeamName';
 import { useRealtime } from '@/lib/realtime/useRealtime';
-import { eliminatedTeamIds, teamName, useContest, withRanks, type RankedStanding, type Team } from '@/lib/contest';
+import { useTeamScores } from '@/lib/scores';
+import { eliminatedTeamIds, useContest, type RankedStanding, type Team } from '@/lib/contest';
 import { CATEGORY_NAMES, type Category } from '@/lib/judge/rules';
 
 // 부문별 순위: 시니어/주니어는 각각 16팀이라 부문마다 따로 집계해서 보여준다.
@@ -46,13 +49,13 @@ function Podium({ teams, ranked, eliminated }: { teams: Team[]; ranked: RankedSt
           return (
             <div key={team.teamId} style={style} className={`absolute overflow-hidden text-center ${eliminated.has(team.teamId) ? 'bg-gray-200 text-gray-500 grayscale' : 'bg-white text-black'}`}>
               <p className="break-keep font-semibold leading-[normal]" style={{ fontSize: p.name }}>
-                {teamName(teams, team.teamId)}
+                <TeamName id={team.teamId} />
               </p>
               <p className="break-keep leading-[normal]" style={{ fontSize: p.sub }}>
                 {memberLine(teams, team.teamId)}
               </p>
-              <p className="font-semibold tabular-nums leading-[normal]" style={{ fontSize: p.sub }}>
-                {team.total}점
+              <p className="font-semibold leading-[normal]" style={{ fontSize: p.sub }}>
+                <Score value={team.total} />
               </p>
             </div>
           );
@@ -79,9 +82,9 @@ function RankList({ teams, ranked, eliminated }: { teams: Team[]; ranked: Ranked
           )}
           <div className={`relative min-h-[72px] shrink-0 overflow-hidden rounded-xl shadow-[4px_4px_20px_0_rgba(0,0,0,0.25)] ${eliminated.has(s.teamId) ? 'bg-gray-200/90 grayscale' : 'bg-white/80'}`}>
             <span className={`absolute -top-[32px] -left-[18px] whitespace-nowrap text-[113.895px] font-bold leading-[normal] ${eliminated.has(s.teamId) ? 'text-gray-300' : 'text-[#ebebf1]'}`}>{i + 4}</span>
-            <span className={`absolute top-1/2 right-5 -translate-y-1/2 text-xl font-bold tabular-nums ${eliminated.has(s.teamId) ? 'text-gray-500' : 'text-black'}`}>{s.total}점</span>
+            <Score value={s.total} className={`absolute top-1/2 right-5 -translate-y-1/2 text-xl font-bold ${eliminated.has(s.teamId) ? 'text-gray-500' : 'text-black'}`} />
             <div className={`relative py-[13px] pr-24 pl-[80px] ${eliminated.has(s.teamId) ? 'text-gray-500' : 'text-black'}`}>
-              <p className="break-keep text-xl font-semibold leading-[normal]">{teamName(teams, s.teamId)}</p>
+              <p className="break-keep text-xl font-semibold leading-[normal]"><TeamName id={s.teamId} /></p>
               <p className="break-keep text-base leading-[normal]">{memberLine(teams, s.teamId)}</p>
             </div>
           </div>
@@ -92,12 +95,13 @@ function RankList({ teams, ranked, eliminated }: { teams: Team[]; ranked: Ranked
 }
 
 export default function RankingBoard({ switcher }: { switcher?: React.ReactNode }) {
-  const { status, standings: live } = useRealtime();
+  const { status } = useRealtime();
+  const { ranked: rankedOf } = useTeamScores();
   const { config } = useContest();
   const teams = config?.teams ?? [];
   const [cat, setCat] = useState<Category>('S');
-  const standings = live.filter((t) => t.cat === cat);
-  const ranked = withRanks(standings, cat);
+  const ranked = rankedOf(cat);
+  const standings = ranked;
   const eliminated = eliminatedTeamIds(cat, config?.tournament.games ?? []);
 
   return (

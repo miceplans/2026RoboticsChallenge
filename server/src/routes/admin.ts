@@ -26,7 +26,6 @@ import {
   replaceTeams,
   resetPasswords,
   resetTemplate,
-  reopenTournamentGame,
   revokeAllSessions,
   saveTournamentResult,
   saveTournamentSlots,
@@ -212,28 +211,17 @@ export function createAdminRoutes(hooks: AdminHooks): Router {
   });
 
   // 토너먼트 경기 결과 저장. 승자가 다음 라운드로 진출하고, 준결승 패자는 3·4위전으로 간다.
-  // 무승부는 허용하지 않는다. 같은 경기를 다시 저장하면 하위 라운드까지 다시 계산된다.
+  // 동점이면 winner(A|B) 가 있어야 한다. 같은 경기를 다시 저장하면 하위 라운드까지 다시 계산된다.
   r.post('/tournament/result', body(tournamentResultBody, MAX_ADMIN_BODY_BYTES), (ctx) => {
     const { cat: c, round, gameNo, scoreA, scoreB, winner } = ctx.body as ReturnType<typeof tournamentResultBody>;
+    // 동점은 관리자가 승자를 골라야 확정된다 (승자 없이는 저장해도 경기가 정해지지 않으므로 성공으로 응답하지 않는다)
+    if (scoreA === scoreB && !winner) return void json(ctx.res, 409, { ok: false, error: '동점입니다. 올라갈 팀(승자)을 선택해야 확정할 수 있습니다.' });
     try {
       saveTournamentResult(c, round as TournamentRound, gameNo, scoreA, scoreB, winner);
     } catch (e) {
       return void json(ctx.res, 400, { ok: false, error: (e as Error).message });
     }
     logAudit(ctx.session!.id, 'tournament', 'tournament', `${c} ${round}-${gameNo}`, { scoreA, scoreB, winner });
-    hooks.broadcastConfig();
-    json(ctx.res, 200, { ok: true });
-  });
-
-  // 확정된 경기를 다시 열어 심판이 점수를 다시 입력하게 한다 (이 경기와 하위 라운드 결과는 지워진다)
-  r.post('/tournament/reopen', body(obj({ cat, round: tournamentRound, gameNo: num({ int: true }) }), MAX_ADMIN_BODY_BYTES), (ctx) => {
-    const { cat: c, round, gameNo } = ctx.body as { cat: 'J' | 'S'; round: TournamentRound; gameNo: number };
-    try {
-      reopenTournamentGame(c, round, gameNo);
-    } catch (e) {
-      return void json(ctx.res, 400, { ok: false, error: (e as Error).message });
-    }
-    logAudit(ctx.session!.id, 'tournament', 'tournament', `${c} ${round}-${gameNo}`, { reopen: true });
     hooks.broadcastConfig();
     json(ctx.res, 200, { ok: true });
   });
