@@ -21,7 +21,7 @@ test('기본 계정은 DEFAULT_PASSWORD 로 만들어지고 mustChange 상태다
   assert.equal(admin.role, 'admin');
   assert.equal(admin.mustChange, true);
 
-  const team = await db.verifyUser('team-J-YYE-197', process.env.DEFAULT_PASSWORD!);
+  const team = await db.verifyUser('J-YYE-197', process.env.DEFAULT_PASSWORD!);
   assert.ok(team);
   assert.equal(team.teamId, 'J-YYE-197');
   assert.equal(team.mustChange, true);

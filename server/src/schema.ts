@@ -2,7 +2,7 @@
 // 각 함수는 테이블 이름을 받는다 — 마이그레이션이 `<이름>__new` 로 만들어 데이터를 옮긴 뒤 이름을 바꾸기 때문.
 // FK 정책: 팀이 지워지면 그 팀의 계정·대진은 같이 지우고(CASCADE), 토너먼트 칸/경기의 팀은 비운다(SET NULL).
 // 점수가 걸린 대진·심판은 지울 수 없다(RESTRICT) — 점수가 고아가 되는 것을 막는다.
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const TEAMS_DDL = (n = 'teams') => `
   CREATE TABLE ${n} (

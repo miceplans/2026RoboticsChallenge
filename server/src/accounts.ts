@@ -150,10 +150,9 @@ export function issueAccounts(list: { id: string; name: string; role: 'judge' | 
 // 심판 1~8 은 같은 번호 테이블, 9~16 은 (번호-8)번 테이블로 기본 배정한다 (관리자 화면에서 바꿀 수 있다).
 // overwrite=false(기동 시): 없는 계정만 만든다. overwrite=true(수동 스크립트): 이미 있는 계정도 비밀번호를 기본값으로 되돌린다.
 export function seedDefaultAccounts(overwrite = false): { created: number; reset: number } {
-  const existingTeamAccount = db.prepare("SELECT id FROM users WHERE role = 'user' AND team_id = ? ORDER BY created_at LIMIT 1");
   const wanted: { id: string; name: string; role: AccountRole; teamId?: string; judgeTable?: number }[] = [
     ...listTeams().map((t) => ({
-      id: (existingTeamAccount.get(t.id) as { id: string } | undefined)?.id ?? `team-${t.id}`,
+      id: t.id,
       name: t.name,
       role: 'user' as const,
       teamId: t.id,
@@ -183,11 +182,11 @@ export function seedDefaultAccounts(overwrite = false): { created: number; reset
     throw e;
   }
   let reset = toReset.length ? resetPasswords({ ids: toReset }).length : 0;
-  const migrationReset = db.prepare("SELECT value FROM settings WHERE key = 'password_reset_v2'").get() as { value: string } | undefined;
+  const migrationReset = db.prepare("SELECT value FROM settings WHERE key IN ('password_reset_v2','password_reset_v3') LIMIT 1").get() as { value: string } | undefined;
   if (migrationReset) {
     const ids = (db.prepare('SELECT id FROM users ORDER BY id').all() as { id: string }[]).map((u) => u.id);
     reset += resetPasswords({ ids }).length;
-    db.prepare("DELETE FROM settings WHERE key = 'password_reset_v2'").run();
+    db.prepare("DELETE FROM settings WHERE key IN ('password_reset_v2','password_reset_v3')").run();
     console.log(`[migrate] 전체 계정 비밀번호 초기화 완료 (${ids.length}개)`);
   }
   return { created, reset };

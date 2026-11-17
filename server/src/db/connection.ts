@@ -154,7 +154,35 @@ if (hadTables && userVersion() < 2) {
     db.exec('PRAGMA foreign_keys = ON');
   }
 } else if (userVersion() < SCHEMA_VERSION) {
-  db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  db.exec(`PRAGMA user_version = ${Math.min(2, SCHEMA_VERSION)}`);
+}
+
+// v3: 참가팀 로그인 아이디도 접두사 없이 팀코드 자체를 사용한다.
+if (userVersion() < 3) {
+  const backupPath = `${DB_PATH}.pre-team-login-id-${Date.now()}.bak`;
+  db.exec(`VACUUM INTO '${backupPath.replace(/'/g, "''")}'`);
+  console.log(`[migrate] DB 백업: ${backupPath}`);
+  db.exec('PRAGMA foreign_keys = OFF');
+  try {
+    const conflicts = db.prepare(`SELECT u.team_id AS id FROM users u
+      WHERE u.role = 'user' AND u.team_id IS NOT NULL AND u.id <> u.team_id
+      AND EXISTS (SELECT 1 FROM users x WHERE x.id = u.team_id)`).all() as { id: string }[];
+    if (conflicts.length > 0) throw new Error(`팀 로그인 아이디 충돌: ${conflicts.map((x) => x.id).join(', ')}`);
+    db.exec('BEGIN');
+    db.exec("UPDATE users SET id = team_id WHERE role = 'user' AND team_id IS NOT NULL AND id <> team_id");
+    db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('password_reset_v3', 'true', ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(Date.now());
+    const bad = db.prepare('PRAGMA foreign_key_check').all() as { table: string; rowid: number; parent: string }[];
+    if (bad.length > 0) throw new Error(`팀 로그인 ID 마이그레이션 FK 위반 ${bad.length}건 (백업: ${backupPath})`);
+    db.exec('PRAGMA user_version = 3');
+    db.exec('COMMIT');
+    console.log('[migrate] 참가팀 로그인 아이디를 팀코드로 변경 완료');
+  } catch (e) {
+    try { db.exec('ROLLBACK'); } catch { /* 이미 끝남 */ }
+    throw e;
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
+  }
 }
 
 // contest.db 가 없고 기존 scores.db/users.db 만 있으면 데이터를 이어 받는다 (개발/운영 경로 마이그레이션)
