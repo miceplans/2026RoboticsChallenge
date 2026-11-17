@@ -3,6 +3,7 @@
 import ScoreValue from '@/components/team/Score';
 import { useState } from 'react';
 import LiveBroadcast from './LiveBroadcast';
+import MatchOrder from './MatchOrder';
 import NoticeBanner from './NoticeBanner';
 import RankingBoard from './RankingBoard';
 import { computeSchedule, slotLabel, useContest, withRanks, type Team } from '@/lib/contest';
@@ -40,7 +41,7 @@ export default function ParticipantPortal({ name, teamId }: { name: string; team
   const { config } = useContest();
   const team = teamId ? config?.teams.find((t) => t.id === teamId) : undefined;
   const [t, setT] = useState('팀 정보');
-  const tabs = ['팀 정보', '내 점수표', '내 일정', '랭킹', '경기 중계'];
+  const tabs = ['팀 정보', '내 점수표', '내 일정', '경기 순서', '랭킹', '경기 중계'];
   return (
     <main className="mt-[73px] min-h-[calc(100vh-73px)] bg-[#f7f9fc]">
       <div className="mx-auto max-w-6xl px-5 py-7">
@@ -59,6 +60,7 @@ export default function ParticipantPortal({ name, teamId }: { name: string; team
         {t === '팀 정보' && <TeamInfo team={team} me={name} />}
         {t === '내 점수표' && <Score team={team} />}
         {t === '내 일정' && <Schedule team={team} />}
+        {t === '경기 순서' && <MatchOrder myTeam={team?.id} />}
         {t === '랭킹' && <RankingBoard />}
         {t === '경기 중계' && <Live />}
       </div>

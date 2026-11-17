@@ -12,6 +12,7 @@ export const adminNav: { href: string; label: string; icon: string }[] = [
   { href: '/admin/scores', label: '채점 목록', icon: 'fact_check' },
   { href: '/admin/template', label: '채점표 템플릿', icon: 'table_chart' },
   { href: '/admin/draw', label: '토너먼트 배정', icon: 'shuffle' },
+  { href: '/admin/order', label: '경기 순서', icon: 'format_list_numbered' },
   { href: '/admin/ops', label: '운영 순서', icon: 'order_approve' },
   { href: '/admin/teams', label: '팀 · 계정', icon: 'group' },
   { href: '/admin/accounts', label: '사용자 현황', icon: 'badge' },
