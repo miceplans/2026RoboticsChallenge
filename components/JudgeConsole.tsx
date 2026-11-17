@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import ReviewView from '@/components/judge/ReviewView';
 import ScoreView from '@/components/judge/ScoreView';
 import SignView from '@/components/judge/SignView';
@@ -14,6 +15,7 @@ import { scoreKey } from '@/lib/realtime/outbox';
 import { useRealtime } from '@/lib/realtime/useRealtime';
 import { useTeamScores } from '@/lib/scores';
 import Score from '@/components/team/Score';
+import { downloadScoreSheetPdf, ScoreSheetPdf } from '@/components/judge/ScoreSheetPdf';
 
 type Mode = 'score' | 'review' | 'sign' | 'done';
 
@@ -59,6 +61,8 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
   const [openId, setOpenId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>('score');
   const [step, setStep] = useState<0 | 1>(0);
+  const pdfRef = useRef<HTMLDivElement>(null);
+  const [pdfSheet, setPdfSheet] = useState<Sheet | null>(null);
 
   // 담당 조에 걸린 부문들의 진행 단계 (1차 → 2차 → 토너먼트). 서버가 잠그고 화면은 그대로 보여준다.
   const myMatches = matchesOfTable(matches, table);
@@ -108,6 +112,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
     if (m.round === 2 && progress && !progress[m.cat].round2Open) return; // 서버도 막지만 화면에서도 열지 않는다
     const s = sheets[m.id];
     setOpenId(m.id);
+    setPdfSheet(null);
     setStep(0);
     setMode(s?.status === 'signed' ? 'done' : 'score');
     if (!s) update(m.id, (x) => x);
@@ -122,8 +127,17 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
       return s.status === 'reviewing' ? { ...next, status: 'draft', refSig: undefined, refSignedAt: undefined, teamSig: undefined } : next;
     });
 
-  const finish = (patch: Partial<Sheet>) => {
+  const finish = async (patch: Partial<Sheet>) => {
     const signed: Sheet = { ...sheet!, ...patch, status: 'signed', signedAt: Date.now() };
+    // 서명 화면을 유지한 채 PDF 전용 영역만 최종 서명 데이터로 다시 그린다.
+    flushSync(() => setPdfSheet(signed));
+    if (pdfRef.current) {
+      try {
+        await downloadScoreSheetPdf(pdfRef.current, match!, teamOf(teams, match!.team)!);
+      } catch (error) {
+        toast(`PDF 저장 실패: ${(error as Error).message}`);
+      }
+    }
     update(match!.id, () => signed);
     if (isT(match!)) {
       // 토너먼트: 조별 점수 전송 대신, 두 팀이 모두 서명되면 경기 점수로 낸다
@@ -309,17 +323,20 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
 
   if (mode === 'sign') {
     return (
-      <SignView
-        match={match}
-        team={team}
-        sheet={sheet}
-        judgeName={judgeName}
-        step={step}
-        ruleItems={ruleItems}
-        onRefSigned={(patch) => { update(match.id, (s) => ({ ...s, ...patch })); setStep(1); }}
-        onFinish={finish}
-        onBack={() => setMode('review')}
-      />
+      <>
+        <ScoreSheetPdf ref={pdfRef} judgeId={judgeId} judgeName={judgeName} match={match} team={team} sheet={pdfSheet ?? sheet} ruleItems={ruleItems} />
+        <SignView
+          match={match}
+          team={team}
+          sheet={sheet}
+          judgeName={judgeName}
+          step={step}
+          ruleItems={ruleItems}
+          onRefSigned={(patch) => { update(match.id, (s) => ({ ...s, ...patch })); setStep(1); }}
+          onFinish={finish}
+          onBack={() => setMode('review')}
+        />
+      </>
     );
   }
 
@@ -374,14 +391,21 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
   }
 
   return (
-    <ScoreView
-      match={match}
-      team={team}
-      sheet={sheet}
-      ruleItems={ruleItems}
-      edit={edit}
-      onBack={close}
-      onReview={() => { update(match.id, (s) => ({ ...s, status: 'reviewing' })); setMode('review'); window.scrollTo(0, 0); }}
-    />
+    <>
+      <ScoreSheetPdf ref={pdfRef} judgeId={judgeId} judgeName={judgeName} match={match} team={team} sheet={sheet} ruleItems={ruleItems} />
+      <ScoreView
+        match={match}
+        team={team}
+        sheet={sheet}
+        ruleItems={ruleItems}
+        edit={edit}
+        onBack={close}
+        onReview={() => {
+          update(match.id, (s) => ({ ...s, status: 'reviewing' }));
+          setMode('review');
+          window.scrollTo(0, 0);
+        }}
+      />
+    </>
   );
 }
