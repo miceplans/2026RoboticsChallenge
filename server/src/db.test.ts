@@ -21,9 +21,9 @@ test('기본 계정은 DEFAULT_PASSWORD 로 만들어지고 mustChange 상태다
   assert.equal(admin.role, 'admin');
   assert.equal(admin.mustChange, true);
 
-  const team = await db.verifyUser('team-J01', process.env.DEFAULT_PASSWORD!);
+  const team = await db.verifyUser('team-J-YYE-197', process.env.DEFAULT_PASSWORD!);
   assert.ok(team);
-  assert.equal(team.teamId, 'J01');
+  assert.equal(team.teamId, 'J-YYE-197');
   assert.equal(team.mustChange, true);
 
   // 심판 16명도 같은 기본 비밀번호로 만들어진다
@@ -58,21 +58,21 @@ test('비밀번호 재발급은 DEFAULT_PASSWORD 로 되돌리고 다시 변경�
 
 test('점수 제출은 ts 가 오래된 걸 무시하고, 확정 후엔 덮지 못한다', () => {
   const ts = Date.now();
-  const first = db.saveScore({ matchId: 'R1-J01', teamId: 'J01', judgeId: 'REF05', points: 100, ts, sheet: null });
+  const first = db.saveScore({ matchId: 'R1-J-YYE-197', teamId: 'J-YYE-197', judgeId: 'REF05', points: 100, ts, sheet: null });
   assert.equal(first.written, true);
   assert.equal(first.status, 'pending');
 
-  const older = db.saveScore({ matchId: 'R1-J01', teamId: 'J01', judgeId: 'REF05', points: 50, ts: ts - 1000, sheet: null });
+  const older = db.saveScore({ matchId: 'R1-J-YYE-197', teamId: 'J-YYE-197', judgeId: 'REF05', points: 50, ts: ts - 1000, sheet: null });
   assert.equal(older.written, false);
   assert.equal(older.status, 'pending');
 
-  assert.equal(db.confirmScore('R1-J01', 'J01', 'REF05', 'admin'), true);
+  assert.equal(db.confirmScore('R1-J-YYE-197', 'J-YYE-197', 'REF05', 'admin'), true);
 
-  const resubmit = db.saveScore({ matchId: 'R1-J01', teamId: 'J01', judgeId: 'REF05', points: 999, ts: ts + 1000, sheet: null });
+  const resubmit = db.saveScore({ matchId: 'R1-J-YYE-197', teamId: 'J-YYE-197', judgeId: 'REF05', points: 999, ts: ts + 1000, sheet: null });
   assert.equal(resubmit.written, false);
   assert.equal(resubmit.status, 'confirmed');
 
-  const scores = db.getTeamScores('J01');
+  const scores = db.getTeamScores('J-YYE-197');
   const row = scores.find((s) => s.judgeId === 'REF05');
   assert.equal(row?.points, 100);
   assert.equal(row?.status, 'confirmed');
@@ -80,37 +80,37 @@ test('점수 제출은 ts 가 오래된 걸 무시하고, 확정 후엔 덮지 �
 
 test('순위는 확정 점수 기준으로 높은 점수 → 조별 합계 → 감점 적은 순이다', () => {
   const ts = Date.now();
-  db.saveScore({ matchId: 'R1-J02', teamId: 'J02', judgeId: 'REF05', points: 200, ts, sheet: null });
-  db.saveScore({ matchId: 'R1-J03', teamId: 'J03', judgeId: 'REF06', points: 200, ts, sheet: null, penCnt: 3 });
-  db.saveScore({ matchId: 'R1-J04', teamId: 'J04', judgeId: 'REF06', points: 200, ts, sheet: null, penCnt: 1 });
-  db.confirmScore('R1-J02', 'J02', 'REF05', 'admin');
-  db.confirmScore('R1-J03', 'J03', 'REF06', 'admin');
-  db.confirmScore('R1-J04', 'J04', 'REF06', 'admin');
+  db.saveScore({ matchId: 'R1-J-VOL-863', teamId: 'J-VOL-863', judgeId: 'REF05', points: 200, ts, sheet: null });
+  db.saveScore({ matchId: 'R1-J-GYI-674', teamId: 'J-GYI-674', judgeId: 'REF06', points: 200, ts, sheet: null, penCnt: 3 });
+  db.saveScore({ matchId: 'R1-J-ARB-743', teamId: 'J-ARB-743', judgeId: 'REF06', points: 200, ts, sheet: null, penCnt: 1 });
+  db.confirmScore('R1-J-VOL-863', 'J-VOL-863', 'REF05', 'admin');
+  db.confirmScore('R1-J-GYI-674', 'J-GYI-674', 'REF06', 'admin');
+  db.confirmScore('R1-J-ARB-743', 'J-ARB-743', 'REF06', 'admin');
 
   const standings = db.getStandings().filter((s) => s.cat === 'J');
   const idxOf = (id: string) => standings.findIndex((s) => s.teamId === id);
   // J01(100) < J02=J03=J04(200). 동점이면 감점 적은 순: J02(0) → J04(1) → J03(3).
-  assert.ok(idxOf('J02') < idxOf('J04'));
-  assert.ok(idxOf('J04') < idxOf('J03'));
-  assert.ok(idxOf('J03') < idxOf('J01'));
-  const j01 = standings.find((s) => s.teamId === 'J01');
+  assert.ok(idxOf('J-VOL-863') < idxOf('J-ARB-743'));
+  assert.ok(idxOf('J-ARB-743') < idxOf('J-GYI-674'));
+  assert.ok(idxOf('J-GYI-674') < idxOf('J-YYE-197'));
+  const j01 = standings.find((s) => s.teamId === 'J-YYE-197');
   assert.equal(j01?.total, 100);
   assert.equal(j01?.r1, 100);
 });
 
 test('토너먼트: 슬롯 배정 → 8강 결과가 준결승에 진출자를 채운다', () => {
-  const teams = ['J01', 'J02', 'J03', 'J04', 'J05', 'J06', 'J07', 'J08'];
+  const teams = ['J-YYE-197', 'J-VOL-863', 'J-GYI-674', 'J-ARB-743', 'J-XMO-695', 'J-TBW-085', 'J-DGX-223', 'J-SZM-451'];
   db.saveTournamentSlots('J', teams);
   const t = db.getTournament();
   const qf1 = t.games.find((g) => g.round === 'QF' && g.gameNo === 1);
-  assert.equal(qf1?.teamA, 'J01');
-  assert.equal(qf1?.teamB, 'J02');
+  assert.equal(qf1?.teamA, 'J-YYE-197');
+  assert.equal(qf1?.teamB, 'J-VOL-863');
   assert.equal(qf1?.status, 'scheduled');
 
   db.saveTournamentResult('J', 'QF', 1, 10, 5);
   const after = db.getTournament();
   const sf1 = after.games.find((g) => g.round === 'SF' && g.gameNo === 1);
-  assert.equal(sf1?.teamA, 'J01');
+  assert.equal(sf1?.teamA, 'J-YYE-197');
   assert.equal(after.games.find((g) => g.round === 'QF' && g.gameNo === 1)?.status, 'done');
 });
 
@@ -122,14 +122,14 @@ test('토너먼트: 동점은 승자 지정(tb)이 있어야 승부가 갈리고
 
   db.saveTournamentResult('J', 'QF', 2, 7, 7, 'A'); // J03 승
   const sf1 = db.getTournament().games.find((x) => x.round === 'SF' && x.gameNo === 1);
-  assert.equal(sf1?.teamB, 'J03');
+  assert.equal(sf1?.teamB, 'J-GYI-674');
 
   db.saveTournamentResult('J', 'QF', 3, 2, 8); // J06 승
   db.saveTournamentResult('J', 'QF', 4, 6, 1); // J07 승
   db.saveTournamentResult('J', 'SF', 1, 3, 1); // J01 승, J03 패 → 3·4위전 A
   const t = db.getTournament();
-  assert.equal(t.games.find((x) => x.round === 'F' && x.gameNo === 1)?.teamA, 'J01');
-  assert.equal(t.games.find((x) => x.round === '3P' && x.gameNo === 1)?.teamA, 'J03');
+  assert.equal(t.games.find((x) => x.round === 'F' && x.gameNo === 1)?.teamA, 'J-YYE-197');
+  assert.equal(t.games.find((x) => x.round === '3P' && x.gameNo === 1)?.teamA, 'J-GYI-674');
 });
 
 test('토너먼트: 이미 확정된 경기의 점수 재입력은 막는다', () => {
@@ -140,18 +140,18 @@ test('토너먼트: 이미 확정된 경기의 점수 재입력은 막는다', (
 test('FK: 없는 심판·다른 팀 점수·없는 팀 슬롯은 DB 가 거부한다', () => {
   const conn = (db as unknown as { db: import('node:sqlite').DatabaseSync }).db;
   const ins = (m: string, t: string, j: string) => conn.prepare('INSERT INTO scores (match_id, team_id, judge_id, points, ts) VALUES (?, ?, ?, 1, 1)').run(m, t, j);
-  assert.throws(() => ins('R1-J01', 'J01', 'NO-SUCH-JUDGE'), /FOREIGN KEY/);
-  assert.throws(() => ins('R1-J01', 'J02', 'REF01'), /FOREIGN KEY/); // 그 대진의 팀이 아님
+  assert.throws(() => ins('R1-J-YYE-197', 'J-YYE-197', 'NO-SUCH-JUDGE'), /FOREIGN KEY/);
+  assert.throws(() => ins('R1-J-YYE-197', 'J-VOL-863', 'REF01'), /FOREIGN KEY/); // 그 대진의 팀이 아님
   assert.throws(() => conn.prepare("INSERT OR REPLACE INTO tournament_slots (cat, slot_no, team_id) VALUES ('S', 8, 'NO-TEAM')").run(), /FOREIGN KEY/);
 });
 
 test('대진 교체: 점수가 걸린 대진은 지우거나 바꿀 수 없고, 점수 없는 대진은 바뀐다', () => {
   const conn = (db as unknown as { db: import('node:sqlite').DatabaseSync }).db;
-  conn.prepare("INSERT INTO scores (match_id, team_id, judge_id, points, ts) VALUES ('R1-J01', 'J01', 'REF01', 10, 1)").run();
+  conn.prepare("INSERT INTO scores (match_id, team_id, judge_id, points, ts) VALUES ('R1-J-YYE-197', 'J-YYE-197', 'REF01', 10, 1)").run();
   const all = db.listMatches();
-  assert.throws(() => db.replaceMatches(all.filter((m) => m.id !== 'R1-J01')), /matches_in_use/);
+  assert.throws(() => db.replaceMatches(all.filter((m) => m.id !== 'R1-J-YYE-197')), /matches_in_use/);
   assert.equal(db.listMatches().length, all.length); // 롤백됨
-  db.replaceMatches(all.map((m) => (m.id === 'R1-J02' ? { ...m, table: 7 } : m)));
-  assert.equal(db.listMatches().find((m) => m.id === 'R1-J02')?.table, 7);
-  conn.prepare("DELETE FROM scores WHERE match_id = 'R1-J01'").run();
+  db.replaceMatches(all.map((m) => (m.id === 'R1-J-VOL-863' ? { ...m, table: 7 } : m)));
+  assert.equal(db.listMatches().find((m) => m.id === 'R1-J-VOL-863')?.table, 7);
+  conn.prepare("DELETE FROM scores WHERE match_id = 'R1-J-YYE-197'").run();
 });

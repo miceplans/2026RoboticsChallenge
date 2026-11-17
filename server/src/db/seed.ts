@@ -10,20 +10,21 @@ export function seedIfEmpty(): void {
   if (count > 0) return;
   db.exec('BEGIN');
   try {
+    const teams = DEFAULT_TEAMS.map((t) => ({ ...t, id: t.code }));
     const insTeam = db.prepare('INSERT INTO teams (id, cat, code, name, region, org, coach, members) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-    for (const t of DEFAULT_TEAMS) insTeam.run(t.id, t.cat, t.code, t.name, t.region, t.org, t.coach, JSON.stringify(t.members));
+    for (const t of teams) insTeam.run(t.id, t.cat, t.code, t.name, t.region, t.org, t.coach, JSON.stringify(t.members));
     // 기본 배정 규칙은 lib/judge/data.ts 와 동일: 시니어 1~4, 주니어 5~8, 2차에 조 교환
     const insMatch = db.prepare('INSERT INTO matches (id, round, cat, wave, table_no, field, team_id) VALUES (?, ?, ?, ?, ?, ?, ?)');
     for (const round of [1, 2] as const) {
-      for (const t of DEFAULT_TEAMS) {
-        const i = Number(t.id.slice(1)) - 1;
+      for (const t of teams) {
+        const i = teams.filter((x) => x.cat === t.cat).findIndex((x) => x.id === t.id);
         const first = i < 8 ? 'A' : 'B';
         const k = i % 8;
         insMatch.run(`R${round}-${t.id}`, round, t.cat, round === 1 ? first : first === 'A' ? 'B' : 'A', (t.cat === 'S' ? 1 : 5) + Math.floor(k / 2), k % 2 ? '우' : '좌', t.id);
       }
     }
     db.exec('COMMIT');
-    console.log(`seeded ${DEFAULT_TEAMS.length} teams and ${DEFAULT_TEAMS.length * 2} matches`);
+    console.log(`seeded ${teams.length} teams and ${teams.length * 2} matches`);
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;

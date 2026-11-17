@@ -150,8 +150,14 @@ export function issueAccounts(list: { id: string; name: string; role: 'judge' | 
 // 심판 1~8 은 같은 번호 테이블, 9~16 은 (번호-8)번 테이블로 기본 배정한다 (관리자 화면에서 바꿀 수 있다).
 // overwrite=false(기동 시): 없는 계정만 만든다. overwrite=true(수동 스크립트): 이미 있는 계정도 비밀번호를 기본값으로 되돌린다.
 export function seedDefaultAccounts(overwrite = false): { created: number; reset: number } {
+  const existingTeamAccount = db.prepare("SELECT id FROM users WHERE role = 'user' AND team_id = ? ORDER BY created_at LIMIT 1");
   const wanted: { id: string; name: string; role: AccountRole; teamId?: string; judgeTable?: number }[] = [
-    ...listTeams().map((t) => ({ id: `team-${t.id}`, name: t.name, role: 'user' as const, teamId: t.id })),
+    ...listTeams().map((t) => ({
+      id: (existingTeamAccount.get(t.id) as { id: string } | undefined)?.id ?? `team-${t.id}`,
+      name: t.name,
+      role: 'user' as const,
+      teamId: t.id,
+    })),
     { id: 'admin', name: '관리자 1', role: 'admin' },
     { id: 'admin2', name: '관리자 2', role: 'admin' },
     ...Array.from({ length: 16 }, (_, i) => ({ id: `REF${String(i + 1).padStart(2, '0')}`, name: `심판 ${i + 1}`, role: 'judge' as const, judgeTable: (i % 8) + 1 })),
@@ -176,7 +182,15 @@ export function seedDefaultAccounts(overwrite = false): { created: number; reset
     db.exec('ROLLBACK');
     throw e;
   }
-  return { created, reset: toReset.length ? resetPasswords({ ids: toReset }).length : 0 };
+  let reset = toReset.length ? resetPasswords({ ids: toReset }).length : 0;
+  const migrationReset = db.prepare("SELECT value FROM settings WHERE key = 'password_reset_v2'").get() as { value: string } | undefined;
+  if (migrationReset) {
+    const ids = (db.prepare('SELECT id FROM users ORDER BY id').all() as { id: string }[]).map((u) => u.id);
+    reset += resetPasswords({ ids }).length;
+    db.prepare("DELETE FROM settings WHERE key = 'password_reset_v2'").run();
+    console.log(`[migrate] 전체 계정 비밀번호 초기화 완료 (${ids.length}개)`);
+  }
+  return { created, reset };
 }
 
 // 비밀번호 일괄 재발급. ids 로 지정하거나 역할(user/judge/admin) 전체를 대상으로 한다.

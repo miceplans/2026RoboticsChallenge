@@ -54,7 +54,7 @@ const userVersion = () => (db.prepare('PRAGMA user_version').get() as { user_ver
 // - 시작 전에 DB 파일 전체를 백업한다 (VACUUM INTO).
 // - 옮긴 뒤 foreign_key_check 에 위반이 있으면(고아 데이터) 아무것도 바꾸지 않고 롤백한 채 기동을 중단한다.
 // - 안 쓰이던 judge_assignments 와 16강 시절 *_backup_* 테이블은 이때 함께 지운다 (위 파일 백업에 남는다).
-if (hadTables && userVersion() < SCHEMA_VERSION) {
+if (hadTables && userVersion() < 1) {
   const backupPath = `${DB_PATH}.pre-fk-${Date.now()}.bak`;
   db.exec(`VACUUM INTO '${backupPath.replace(/'/g, "''")}'`);
   console.log(`[migrate] DB 백업: ${backupPath}`);
@@ -77,17 +77,85 @@ if (hadTables && userVersion() < SCHEMA_VERSION) {
       for (const b of bad) sum.set(`${b.table}→${b.parent}`, (sum.get(`${b.table}→${b.parent}`) ?? 0) + 1);
       throw new Error(`FK 위반 데이터가 있어 마이그레이션을 중단합니다: ${[...sum].map(([k, n]) => `${k} ${n}건`).join(', ')} (백업: ${backupPath})`);
     }
-    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    db.exec('PRAGMA user_version = 1');
     db.exec('COMMIT');
     console.log('[migrate] FK 스키마(v1) 적용 완료');
   } catch (e) {
     try { db.exec('ROLLBACK'); } catch { /* 이미 끝남 */ }
     throw e;
   }
+} else if (userVersion() < 1) {
+  db.exec('PRAGMA user_version = 1');
+}
+db.exec('PRAGMA foreign_keys = ON');
+
+// v2: 외부 참가 신청서의 팀코드(teams.code)를 실제 팀 ID로 사용한다.
+// 기존 J01/S01 식 PK를 바꾸면서 모든 참조와 대진 ID를 한 트랜잭션에서 함께 옮긴다.
+// 비밀번호 초기화는 accounts.ts가 DEFAULT_PASSWORD를 준비한 뒤 수행하도록 설정에 표식을 남긴다.
+if (hadTables && userVersion() < 2) {
+  const backupPath = `${DB_PATH}.pre-team-id-${Date.now()}.bak`;
+  db.exec(`VACUUM INTO '${backupPath.replace(/'/g, "''")}'`);
+  console.log(`[migrate] DB 백업: ${backupPath}`);
+  db.exec('PRAGMA foreign_keys = OFF');
+  try {
+    const teams = db.prepare('SELECT id, code, cat FROM teams ORDER BY id').all() as { id: string; code: string; cat: 'J' | 'S' }[];
+    const ids = new Set<string>();
+    for (const t of teams) {
+      const code = t.code.trim().replace(/^\./, '');
+      if (!/^[JS]-[A-Z]{3}-\d{3}$/.test(code) || code[0] !== t.cat) throw new Error(`잘못된 팀코드: ${t.id} → ${t.code}`);
+      if (ids.has(code)) throw new Error(`중복 팀코드: ${code}`);
+      ids.add(code);
+    }
+
+    db.exec('BEGIN');
+    db.exec('CREATE TEMP TABLE team_id_map (old_id TEXT PRIMARY KEY, new_id TEXT NOT NULL UNIQUE)');
+    const addMap = db.prepare('INSERT INTO team_id_map (old_id, new_id) VALUES (?, ?)');
+    for (const t of teams) addMap.run(t.id, t.code.trim().replace(/^\./, ''));
+
+    // 점수의 복합 FK는 대진을 바꾸기 전에 기존 대진의 round/team_id로 새 키를 계산한다.
+    db.exec(`UPDATE scores SET
+      match_id = (SELECT 'R' || m.round || '-' || x.new_id FROM matches m JOIN team_id_map x ON x.old_id = m.team_id WHERE m.id = scores.match_id),
+      team_id = (SELECT new_id FROM team_id_map WHERE old_id = scores.team_id)
+      WHERE team_id IN (SELECT old_id FROM team_id_map)`);
+    db.exec(`UPDATE users SET team_id = (SELECT new_id FROM team_id_map WHERE old_id = users.team_id)
+      WHERE team_id IN (SELECT old_id FROM team_id_map)`);
+    db.exec(`UPDATE tournament_slots SET team_id = (SELECT new_id FROM team_id_map WHERE old_id = tournament_slots.team_id)
+      WHERE team_id IN (SELECT old_id FROM team_id_map)`);
+    for (const col of ['team_a', 'team_b', 'winner']) {
+      db.exec(`UPDATE tournament_games SET ${col} = (SELECT new_id FROM team_id_map WHERE old_id = tournament_games.${col})
+        WHERE ${col} IN (SELECT old_id FROM team_id_map)`);
+    }
+    db.exec(`UPDATE matches SET
+      id = 'R' || round || '-' || (SELECT new_id FROM team_id_map WHERE old_id = matches.team_id),
+      team_id = (SELECT new_id FROM team_id_map WHERE old_id = matches.team_id)
+      WHERE team_id IN (SELECT old_id FROM team_id_map)`);
+    db.exec(`UPDATE teams SET id = (SELECT new_id FROM team_id_map WHERE old_id = teams.id)
+      WHERE id IN (SELECT old_id FROM team_id_map)`);
+
+    const rank = db.prepare("SELECT value FROM settings WHERE key = 'rank_order'").get() as { value: string } | undefined;
+    if (rank) {
+      const map = new Map(teams.map((t) => [t.id, t.code.trim().replace(/^\./, '')]));
+      const parsed = JSON.parse(rank.value) as Record<string, string[]>;
+      for (const key of Object.keys(parsed)) parsed[key] = parsed[key].map((id) => map.get(id) ?? id);
+      db.prepare("UPDATE settings SET value = ? WHERE key = 'rank_order'").run(JSON.stringify(parsed));
+    }
+    db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('password_reset_v2', 'true', ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(Date.now());
+    db.exec('DROP TABLE team_id_map');
+    const bad = db.prepare('PRAGMA foreign_key_check').all() as { table: string; rowid: number; parent: string }[];
+    if (bad.length > 0) throw new Error(`팀 ID 마이그레이션 FK 위반 ${bad.length}건 (백업: ${backupPath})`);
+    db.exec('PRAGMA user_version = 2');
+    db.exec('COMMIT');
+    console.log(`[migrate] 팀 ID를 팀코드로 변경 완료 (${teams.length}팀)`);
+  } catch (e) {
+    try { db.exec('ROLLBACK'); } catch { /* 이미 끝남 */ }
+    throw e;
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
+  }
 } else if (userVersion() < SCHEMA_VERSION) {
   db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
 }
-db.exec('PRAGMA foreign_keys = ON');
 
 // contest.db 가 없고 기존 scores.db/users.db 만 있으면 데이터를 이어 받는다 (개발/운영 경로 마이그레이션)
 if (isNewDb) {
