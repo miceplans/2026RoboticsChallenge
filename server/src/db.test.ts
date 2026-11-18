@@ -65,7 +65,15 @@ test('비밀번호 재발급은 DEFAULT_PASSWORD 로 되돌리고 다시 변경�
   assert.equal(u.mustChange, true);
 });
 
-test('점수 제출은 ts 가 오래된 걸 무시하고, 확정 후엔 덮지 못한다', () => {
+test('기본 설정에서 심판이 제출한 점수는 바로 확정된다', () => {
+  const r = db.saveScore({ matchId: 'R2-J-YYE-197', teamId: 'J-YYE-197', judgeId: 'REF07', points: 80, ts: Date.now(), sheet: null });
+  assert.equal(r.written, true);
+  assert.equal(r.status, 'confirmed');
+});
+
+test('점수 제출은 ts 가 오래된 걸 무시하고, 확정 후엔 덮지 못한다', (t) => {
+  db.setSetting('auto_confirm', '0');
+  t.after(() => db.setSetting('auto_confirm', '1'));
   const ts = Date.now();
   const first = db.saveScore({ matchId: 'R1-J-YYE-197', teamId: 'J-YYE-197', judgeId: 'REF05', points: 100, ts, sheet: null });
   assert.equal(first.written, true);
@@ -167,4 +175,19 @@ test('대진 교체: 점수가 걸린 대진은 지우거나 바꿀 수 없고, 
   db.replaceMatches(all.map((m) => (m.id === a.id ? { ...m, table: b.table, wave: b.wave } : m.id === b.id ? { ...m, table: a.table, wave: a.wave } : m)));
   assert.equal(db.listMatches().find((m) => m.id === a.id)?.table, b.table);
   conn.prepare("DELETE FROM scores WHERE match_id = 'R1-J-YYE-197'").run();
+});
+
+test('마이그레이션: 기존 DB 의 자동 확정을 켜고 확정 대기 점수를 확정하며, 한 번만 돈다', () => {
+  db.setSetting('auto_confirm', '0');
+  const r = db.saveScore({ matchId: 'R2-J-VOL-863', teamId: 'J-VOL-863', judgeId: 'REF08', points: 70, ts: Date.now(), sheet: null });
+  assert.equal(r.status, 'pending');
+
+  db.migrateAutoConfirmOn();
+  assert.equal(db.autoConfirm(), true);
+  assert.equal(db.getTeamScores('J-VOL-863').find((s) => s.judgeId === 'REF08')?.status, 'confirmed');
+
+  db.setSetting('auto_confirm', '0'); // 이후 관리자가 끈 설정은 다시 켜지지 않는다
+  db.migrateAutoConfirmOn();
+  assert.equal(db.autoConfirm(), false);
+  db.setSetting('auto_confirm', '1');
 });
