@@ -1,5 +1,5 @@
 import type { Match, Team } from '@/lib/contest';
-import { calc, ITEMS, type Item } from '@/lib/judge/rules';
+import { calc, ITEMS, penaltyCount, penaltyEntries, type Item } from '@/lib/judge/rules';
 import type { Sheet } from '@/lib/judge/sheets';
 import { btnGhost, btnPrimary } from './ui';
 
@@ -49,9 +49,20 @@ export default function ReviewView({ match, team, sheet, onEdit, onSign, ruleIte
             <p className="mt-3 text-xs text-gray-600">
               미션1 {c.sum.M1} · 미션2 {c.sum.M2} · 감점 {c.sum.PEN}
               <br />
-              리셋 {Number(sheet.values.resets) || 0}회 · 종료 {sheet.values.endTime || 120}초
+              패널티 {penaltyCount(sheet.values, ruleItems)}회 · 종료 {sheet.values.endTime || 120}초
             </p>
           </div>
+          {penaltyEntries(sheet.values, ruleItems).length > 0 && (
+            <ul className="mt-4 space-y-1 rounded-2xl border border-line p-4 text-sm">
+              {penaltyEntries(sheet.values, ruleItems).map((e) => (
+                <li key={e.key} className="flex gap-2">
+                  <b className="shrink-0 text-error">-1</b>
+                  <span className="shrink-0">{e.label}</span>
+                  <span className="min-w-0 truncate text-gray-500">{e.reason || '사유 없음'}</span>
+                </li>
+              ))}
+            </ul>
+          )}
           <div className="mt-4 flex flex-col gap-2">
             <button type="button" className={btnGhost} onClick={onEdit}>← 수정하기</button>
             <button type="button" className={`${btnPrimary} py-4 text-lg`} onClick={onSign}>서명하기</button>

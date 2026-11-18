@@ -2,7 +2,7 @@
 
 import { forwardRef, type ReactNode } from 'react';
 import type { Match, Team } from '@/lib/contest';
-import { calc, unitPoints, type Category, type Item } from '@/lib/judge/rules';
+import { calc, DAMAGE_COUNT_ID, penaltyCount, penaltyEntries, unitPoints, type Category, type Item } from '@/lib/judge/rules';
 import type { Sheet } from '@/lib/judge/sheets';
 
 // 공식 점수표(Robotics for Good Youth Challenge 2026–2027 Score sheet V4)의 항목·배치를 한국어로 옮긴 PDF 양식.
@@ -17,8 +17,8 @@ type Props = {
   ruleItems: Item[];
 };
 
-// count: 숫자 마크 / yn: NO·YES 마크 / damage: 심판 재량 감점 / dq: 실격 항목
-type RowSpec = { label: string; ids: string[]; kind: 'count' | 'yn' | 'damage' | 'dq'; marks?: number; calcText?: string };
+// count: 숫자 마크 / yn: NO·YES 마크 / counter: 횟수(공통 감점) / damage: 횟수 + 심판 재량 감점 / dq: 실격 횟수
+type RowSpec = { label: string; ids: string[]; kind: 'count' | 'yn' | 'counter' | 'damage' | 'dq'; marks?: number; calcText?: string };
 
 const M1_ROWS = (cat: Category): RowSpec[] => [
   { label: '실험실 슬롯 안에 있는 검체', ids: ['s_slot'], kind: 'count', marks: 3 },
@@ -53,10 +53,10 @@ const M2_ROWS = (cat: Category): RowSpec[] => [
 ];
 
 const PEN_ROWS: RowSpec[] = [
-  { label: '라운드 중 로봇 접촉', ids: ['pen_touch'], kind: 'count', marks: 3 },
-  { label: '경기장 또는 게임 요소 조작', ids: ['pen_field'], kind: 'count', marks: 3 },
-  { label: '프로그램 재시작 또는 수정', ids: ['pen_restart'], kind: 'count', marks: 3 },
-  { label: '로봇이 경기장 밖으로 완전히 이탈', ids: ['pen_out'], kind: 'count', marks: 3 },
+  { label: '라운드 중 로봇 접촉', ids: ['pen_touch'], kind: 'counter' },
+  { label: '경기장 또는 게임 요소 조작', ids: ['pen_field'], kind: 'counter' },
+  { label: '프로그램 재시작 또는 수정', ids: ['pen_restart'], kind: 'counter' },
+  { label: '로봇이 경기장 밖으로 완전히 이탈', ids: ['pen_out'], kind: 'counter' },
   { label: '구조물 또는 게임 요소 파손', ids: ['pen_damage'], kind: 'damage', calcText: '심판 재량' },
   { label: '관중 또는 참가자에게 위험', ids: ['dq_danger'], kind: 'dq', calcText: 'DQ' },
   { label: '규칙 중대 위반', ids: ['dq_breach'], kind: 'dq', calcText: 'DQ' },
@@ -84,19 +84,20 @@ export const ScoreSheetPdf = forwardRef<HTMLDivElement, Props>(function ScoreShe
   const itemOf = (id: string) => ruleItems.find((it) => it.id === id);
 
   const resolve = (row: RowSpec) => {
+    const times = (id: string) => (values[id] === true ? 1 : Number(values[id]) || 0);
     if (row.kind === 'dq') {
-      const yes = !!values[row.ids[0]];
-      return { qty: yes ? 1 : 0, points: yes ? '실격' : '', calcText: row.calcText! };
+      const cnt = times(row.ids[0]);
+      return { qty: cnt, points: cnt ? '실격' : '', calcText: row.calcText! };
     }
     if (row.kind === 'damage') {
       const pts = Number(values[row.ids[0]]) || 0;
-      return { qty: pts !== 0 ? 1 : 0, points: String(pts), calcText: row.calcText! };
+      return { qty: times(DAMAGE_COUNT_ID) || (pts !== 0 ? 1 : 0), points: String(pts), calcText: row.calcText! };
     }
     const qty = row.ids.reduce((s, id) => s + (lineOf(id)?.q ?? (Number(values[id]) || 0)), 0);
     const pts = row.ids.reduce((s, id) => s + (lineOf(id)?.sub ?? 0), 0);
     const it = itemOf(row.ids[0]);
     const unit = it ? unitPoints(it, cat) : 0;
-    const calcText = row.kind === 'count' ? `개수 × ${unit}` : `${unit > 0 ? '+' : ''}${unit}`;
+    const calcText = row.kind === 'count' || row.kind === 'counter' ? `${row.kind === 'counter' ? '횟수' : '개수'} × ${unit}` : `${unit > 0 ? '+' : ''}${unit}`;
     return { qty, points: String(pts), calcText };
   };
 
@@ -173,6 +174,21 @@ export const ScoreSheetPdf = forwardRef<HTMLDivElement, Props>(function ScoreShe
           subtotal={score.sum.PEN}
           note={cat === 'S' ? '시니어 전용 감점은 해당 미션 소계에 이미 포함되어 있습니다.' : undefined}
         />
+
+        {/* 패널티 횟수 · 회차별 사유 (채점 화면의 기록과 같다) */}
+        <div className="mt-2 rounded-md px-2 py-[5px]" style={{ background: C.points }}>
+          <div className="flex items-center justify-between font-bold">
+            <span>패널티 횟수</span>
+            <span className="font-extrabold tabular-nums">{penaltyCount(values, ruleItems)}회</span>
+          </div>
+          {penaltyEntries(values, ruleItems).map((e) => (
+            <div key={e.key} className="mt-[3px] flex items-center gap-2" style={{ fontSize: 11.5 }}>
+              <span className="shrink-0 rounded-[4px] bg-white px-1.5 font-bold text-[#c62828]">-1</span>
+              <span className="shrink-0" style={{ width: 210 }}>{e.label}</span>
+              <span className="min-w-0 flex-1 rounded-[4px] bg-white px-1.5">{e.reason || <span className="text-[#999]">사유 없음</span>}</span>
+            </div>
+          ))}
+        </div>
 
         {/* 합계 */}
         <div className="mt-4 flex gap-2">
@@ -261,6 +277,9 @@ function Section({
 }
 
 function MarkCell({ row, qty }: { row: RowSpec; qty: number }) {
+  if (row.kind === 'counter' || row.kind === 'damage' || row.kind === 'dq') {
+    return <Bubble on={qty > 0} width={64}>{qty}회</Bubble>;
+  }
   if (row.kind === 'count') {
     const max = row.marks ?? 3;
     const options = Array.from({ length: Math.max(max, qty) + 1 }, (_, i) => i);

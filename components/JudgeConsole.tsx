@@ -398,6 +398,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
         team={team}
         sheet={sheet}
         ruleItems={ruleItems}
+        judgeName={judgeName}
         edit={edit}
         onBack={close}
         onReview={() => {
