@@ -15,6 +15,7 @@ type Props = {
   team: Team;
   sheet: Sheet;
   ruleItems: Item[];
+  mode?: 'capture' | 'inline';
 };
 
 // count: 숫자 마크 / yn: NO·YES 마크 / counter: 횟수(공통 감점) / damage: 횟수 + 심판 재량 감점 / dq: 실격 횟수
@@ -74,7 +75,7 @@ const C = {
 const GRID = { display: 'grid', gridTemplateColumns: '1fr 262px 92px 88px', columnGap: 6 } as const;
 
 export const ScoreSheetPdf = forwardRef<HTMLDivElement, Props>(function ScoreSheetPdf(
-  { judgeName, match, team, sheet, ruleItems },
+  { judgeName, match, team, sheet, ruleItems, mode = 'capture' },
   ref,
 ) {
   const cat = match.cat;
@@ -105,7 +106,10 @@ export const ScoreSheetPdf = forwardRef<HTMLDivElement, Props>(function ScoreShe
   const isTournament = !!match.label;
 
   return (
-    <div aria-hidden="true" className="pointer-events-none fixed left-[-10000px] top-0">
+    <div
+      aria-hidden={mode === 'capture'}
+      className={mode === 'capture' ? 'pointer-events-none fixed left-[-10000px] top-0' : 'score-sheet-inline'}
+    >
       <div
         ref={ref}
         className="bg-white text-black"
@@ -173,21 +177,16 @@ export const ScoreSheetPdf = forwardRef<HTMLDivElement, Props>(function ScoreShe
           subtotalLabel="공통 감점 소계:"
           subtotal={score.sum.PEN}
           note={cat === 'S' ? '시니어 전용 감점은 해당 미션 소계에 이미 포함되어 있습니다.' : undefined}
+          reasons={(row) => {
+            const id = row.kind === 'damage' ? DAMAGE_COUNT_ID : row.ids[0];
+            return penaltyEntries(values, ruleItems).filter((e) => e.id === id);
+          }}
         />
 
-        {/* 패널티 횟수 · 회차별 사유 (채점 화면의 기록과 같다) */}
-        <div className="mt-2 rounded-md px-2 py-[5px]" style={{ background: C.points }}>
-          <div className="flex items-center justify-between font-bold">
-            <span>패널티 횟수</span>
-            <span className="font-extrabold tabular-nums">{penaltyCount(values, ruleItems)}회</span>
-          </div>
-          {penaltyEntries(values, ruleItems).map((e) => (
-            <div key={e.key} className="mt-[3px] flex items-center gap-2" style={{ fontSize: 11.5 }}>
-              <span className="shrink-0 rounded-[4px] bg-white px-1.5 font-bold text-[#c62828]">-1</span>
-              <span className="shrink-0" style={{ width: 210 }}>{e.label}</span>
-              <span className="min-w-0 flex-1 rounded-[4px] bg-white px-1.5">{e.reason || <span className="text-[#999]">사유 없음</span>}</span>
-            </div>
-          ))}
+        {/* 패널티 횟수 (회차별 사유는 각 감점 항목 바로 아래에 적는다) */}
+        <div className="mt-2 flex items-center justify-between rounded-md px-2 py-[3px] font-bold" style={{ background: C.points }}>
+          <span>패널티 횟수</span>
+          <span className="font-extrabold tabular-nums">{penaltyCount(values, ruleItems)}회</span>
         </div>
 
         {/* 합계 */}
@@ -231,6 +230,7 @@ function Section({
   subtotalLabel,
   subtotal,
   note,
+  reasons,
 }: {
   title: string;
   color: string;
@@ -240,6 +240,7 @@ function Section({
   subtotalLabel: string;
   subtotal: number;
   note?: string;
+  reasons?: (row: RowSpec) => { key: string; reason: string }[];
 }) {
   return (
     <section className="mt-3">
@@ -255,14 +256,27 @@ function Section({
 
       {rows.map((row) => {
         const r = resolve(row);
+        const why = reasons?.(row) ?? [];
         return (
-          <div key={row.label} className="mt-[4px]" style={GRID}>
+          <div key={row.label}>
+          <div className="mt-[4px]" style={GRID}>
             <div className="flex items-center rounded-md px-2" style={{ background: C.cell, marginRight: 10, minHeight: 23 }}>{row.label}</div>
             <div className="flex items-center justify-center rounded-md" style={{ border: `1px solid ${C.cell}`, minHeight: 23 }}>
               <MarkCell row={row} qty={r.qty} />
             </div>
             <div className="flex items-center justify-center font-bold">{r.calcText}</div>
             <div className="flex items-center justify-end rounded-md px-2 font-bold tabular-nums" style={{ background: C.points }}>{r.points}</div>
+          </div>
+          {why.map((e, i) => (
+            <div key={e.key} className="mt-[2px]" style={GRID}>
+              <div className="flex items-center gap-2" style={{ gridColumn: 'span 2', fontSize: 11.5 }}>
+                <span className="shrink-0 text-center font-bold text-[#c62828]" style={{ width: 30 }}>{i + 1}회</span>
+                <span className="min-w-0 flex-1 rounded-[4px] px-1.5" style={{ border: `1px solid ${C.cell}`, minHeight: 19 }}>
+                  {e.reason || <span className="text-[#999]">사유 없음</span>}
+                </span>
+              </div>
+            </div>
+          ))}
           </div>
         );
       })}

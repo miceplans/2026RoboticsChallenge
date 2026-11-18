@@ -140,6 +140,26 @@ export default function ScoreView({ match, team, sheet, edit, onBack, onReview, 
     </div>
   );
   const entries = penaltyEntries(v, ruleItems);
+  // 감점 항목 한 줄 + 그 바로 아래 회차별 사유 줄을 한 묶음으로 보여 준다 (사유 줄은 행동·마크 열 너비에 맞춘다)
+  const penaltyGroup = (key: string, row: ReactNode, id: string) => {
+    const list = entries.filter((e) => e.id === id);
+    if (!list.length) return <div key={key}>{row}</div>;
+    return (
+      <div key={key} className="-mx-1.5 rounded-lg bg-error/5 p-1.5 ring-1 ring-error/20">
+        {row}
+        <ul className="mt-1.5 space-y-1.5">
+          {list.map((e, i) => (
+            <li key={e.key} className={GRID}>
+              <div className="col-span-2 flex items-center gap-2 sm:col-span-2">
+                <span className="w-12 shrink-0 text-center text-sm font-bold tabular-nums text-error">{i + 1}회</span>
+                <ReasonInput value={e.reason} onSave={(text) => setValue(e.key, text)} />
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  };
 
   return (
     <main className="mx-auto max-w-5xl pb-28">
@@ -199,8 +219,8 @@ export default function ScoreView({ match, team, sheet, edit, onBack, onReview, 
               <div className="mt-1.5 space-y-1.5">
                 {lines.map(({ it, p, sub }) => {
                   const max = it.max ?? (it.m === 'PEN' ? 3 : 0);
-                  return (
-                    <div key={it.id} className={GRID}>
+                  const row = (
+                    <div className={GRID}>
                       <ActionCell>{it.label}</ActionCell>
                       <div className="order-last col-span-2 sm:order-none sm:col-span-1">
                         {g === 'PEN' && it.type === 'count' && counter(it.id, it.max ?? 9)}
@@ -230,24 +250,37 @@ export default function ScoreView({ match, team, sheet, edit, onBack, onReview, 
                       <PointsCell value={sub} />
                     </div>
                   );
+                  if (g !== 'PEN') return <div key={it.id}>{row}</div>;
+                  return penaltyGroup(it.id, row, it.type === 'manual' ? DAMAGE_COUNT_ID : it.id);
                 })}
 
                 {g === 'PEN' &&
-                  DQ_COUNTERS.map(({ id, label }) => (
-                    <div key={id} className={GRID}>
-                      <ActionCell>{label}</ActionCell>
-                      <div className="order-last col-span-2 sm:order-none sm:col-span-1">{counter(id)}</div>
-                      <CalcCell>DQ</CalcCell>
-                      <PointsCell text={num(id) ? '실격' : ''} />
-                    </div>
-                  ))}
+                  DQ_COUNTERS.map(({ id, label }) =>
+                    penaltyGroup(
+                      id,
+                      <div className={GRID}>
+                        <ActionCell>{label}</ActionCell>
+                        <div className="order-last col-span-2 sm:order-none sm:col-span-1">{counter(id)}</div>
+                        <CalcCell>DQ</CalcCell>
+                        <PointsCell text={num(id) ? '실격' : ''} />
+                      </div>,
+                      id,
+                    ),
+                  )}
               </div>
 
               <div className="mt-2 grid grid-cols-[1fr_auto] gap-2 sm:grid-cols-[1fr_11.5rem]">
                 <span className="rounded-md bg-[#f3f3f3] px-3 py-2 text-sm font-bold">{SUBTOTAL[g]}</span>
                 <b className="rounded-md bg-[#f3f3f3] px-3 py-2 text-right tabular-nums">{c.sum[g]}</b>
               </div>
+              {g === 'PEN' && (
+                <div className="mt-1.5 grid grid-cols-[1fr_auto] gap-2 sm:grid-cols-[1fr_11.5rem]">
+                  <span className="rounded-md bg-[#f3f3f3] px-3 py-2 text-sm font-bold">패널티 횟수:</span>
+                  <b className="rounded-md bg-[#f3f3f3] px-3 py-2 text-right tabular-nums">{penaltyCount(v, ruleItems)}회</b>
+                </div>
+              )}
               {note && <p className="mt-1 text-xs italic">{note}</p>}
+              {g === 'PEN' && entries.length > 0 && <p className="mt-1 text-xs text-gray-500">사유는 입력 후 칸을 벗어나면 저장돼요.</p>}
             </section>
           );
         })}
@@ -265,26 +298,6 @@ export default function ScoreView({ match, team, sheet, edit, onBack, onReview, 
       </article>
 
       <Card title="기록">
-        <div className="border-b border-line px-5 py-3">
-          <div className="flex items-center gap-3">
-            <div className="min-w-0 flex-1 text-sm">
-              <b className="block font-medium">패널티 횟수</b>
-              <span className="text-xs text-gray-500">공통 감점 카운터 합계 · 사유는 입력 후 칸을 벗어나면 저장돼요</span>
-            </div>
-            <b className="min-w-11 text-center text-2xl tabular-nums">{penaltyCount(v, ruleItems)}</b>
-          </div>
-          {entries.length > 0 && (
-            <ul className="mt-3 space-y-2">
-              {entries.map((e) => (
-                <li key={e.key} className="flex items-center gap-2">
-                  <span className="w-10 shrink-0 rounded-md bg-error/10 py-2 text-center text-sm font-bold text-error">-1</span>
-                  <span className="w-44 shrink-0 truncate text-sm sm:w-60" title={e.label}>{e.label}</span>
-                  <ReasonInput key={e.key} value={e.reason} onSave={(text) => setValue(e.key, text)} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
         <Row label={<><b className="block font-medium">종료 시각(초)</b><span className="text-xs text-gray-500">조기 종료 선언 시, 미선언은 120</span></>}>
           <input
             type="number"
