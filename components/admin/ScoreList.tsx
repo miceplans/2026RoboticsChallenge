@@ -1,10 +1,12 @@
 'use client';
 
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type Ref } from 'react';
 import { useToast } from '@/components/Toast';
-import { teamName, useContest, type TournamentRound } from '@/lib/contest';
-import { calc, CATEGORY_NAMES, ITEMS, MISSION_NAMES, parseTemplate, PRE_CHECKS, type Category, type Item, type Mission, type Values } from '@/lib/judge/rules';
-import { adminFetch, btn, btnPrimary, card, downloadCsv, fmtDate, Icon, STATUS_LABEL, timeAgo } from './shared';
+import { downloadScoreSheetPdf, downloadScoreSheetsPdf, ScoreSheetPdf } from '@/components/judge/ScoreSheetPdf';
+import { teamName, useContest, type Match, type Team, type TournamentRound } from '@/lib/contest';
+import { ITEMS, parseTemplate, type Item, type Values } from '@/lib/judge/rules';
+import type { Sheet } from '@/lib/judge/sheets';
+import { adminFetch, btn, btnPrimary, card, downloadCsv, Icon, STATUS_LABEL, timeAgo } from './shared';
 
 type ScoreRow = { matchId: string; teamId: string; judgeId: string; points: number; ts: number; status: string; cat: 'J' | 'S' | null };
 
@@ -43,98 +45,60 @@ type SheetRow = {
 
 const TOURNAMENT_ROUND_LABEL: Record<string, string> = { QF: '8강', SF: '4강', F: '결승', '3P': '3·4위전' };
 
-function pdfGameLabel(matchId: string, round: number | null) {
-  const tournament = /^T:[JS]:(QF|SF|F|3P):(\d+):[AB]$/.exec(matchId);
-  if (tournament) return `${TOURNAMENT_ROUND_LABEL[tournament[1]]}-${tournament[2]}경기`;
-  return round ? `${round}차-경기` : matchId;
+function officialSheetProps(row: SheetRow) {
+  const tournament = /^T:[JS]:(QF|SF|F|3P):(\d+):([AB])$/.exec(row.matchId);
+  const cat = row.cat ?? 'J';
+  const match: Match = {
+    id: row.matchId,
+    round: row.round === 2 ? 2 : 1,
+    cat,
+    wave: row.wave === 'B' ? 'B' : 'A',
+    table: row.table ?? 0,
+    field: row.field === '우' ? '우' : '좌',
+    team: row.teamId,
+    label: tournament ? `${TOURNAMENT_ROUND_LABEL[tournament[1]]} ${tournament[2]}경기` : undefined,
+  };
+  const team: Team = {
+    id: row.teamId,
+    cat,
+    code: row.teamId,
+    name: row.teamName ?? row.teamId,
+    region: '',
+    org: '',
+    coach: '',
+    members: row.members,
+  };
+  const payload = row.sheet ?? {};
+  const sheet: Sheet = {
+    status: 'signed',
+    values: payload.values ?? {},
+    pre: payload.pre ?? {},
+    updated: row.ts,
+    refSig: payload.refSig,
+    refSignedAt: payload.refSignedAt,
+    teamSig: payload.teamSig,
+    teamSigner: payload.teamSigner,
+    teamSignedAt: payload.teamSignedAt,
+    signException: payload.signException,
+    signedAt: payload.signedAt,
+  };
+  return { match, team, sheet };
 }
 
-function ScoreSheetPage({ row, items }: { row: SheetRow; items: Item[] }) {
-  const cat: Category = row.cat ?? 'J';
-  const sheet = row.sheet ?? {};
-  const c = calc(sheet.values ?? {}, cat, items);
-  const leader = row.members[0] ?? '-';
-  const missions: Mission[] = ['M1', 'M2', 'PEN'];
-  const cell = 'border border-gray-400 px-2 py-1 text-left';
-  const qty = (it: Item, q: number | null) => (it.type === 'count' ? (q ?? 0) : (q ?? 0) > 0 ? 'O' : 'X');
-
+function OfficialScoreSheet({ row, items, sheetRef }: { row: SheetRow; items: Item[]; sheetRef?: Ref<HTMLDivElement> }) {
+  const { match, team, sheet } = officialSheetProps(row);
   return (
-    <div className="print-sheet bg-white text-[12px] leading-snug text-black">
-      <div className="flex items-end justify-between border-b-2 border-black pb-2">
-        <div>
-          <h1 className="text-xl font-extrabold">2026 로보틱스 챌린지 · 채점 확인서</h1>
-          <p className="mt-1 text-[13px]">
-            {CATEGORY_NAMES[cat]} · {row.round ?? '-'}차 경기{row.table ? ` · ${row.table}조` : ''}{row.wave ? ` · ${row.wave} 테이블` : ''}
-            <span className="ml-2 text-gray-500">{row.matchId}</span>
-          </p>
-        </div>
-        <p className="text-right text-gray-500">
-          심판: <b className="text-black">{row.judgeName ?? row.judgeId}</b> <span className="text-gray-400">{row.judgeId}</span>
-          <br />제출: {fmtDate(row.ts)} · {STATUS_LABEL[row.status] ?? row.status}
-        </p>
-      </div>
-
-      <div className="mt-2 flex gap-6">
-        <p>팀: <b>{row.teamId}{row.teamName ? ` · ${row.teamName}` : ''}</b></p>
-        <p>팀장: <b>{leader}</b></p>
-        <p>서명자: <b>{sheet.teamSigner ?? '-'}</b></p>
-      </div>
-
-      <table className="mt-2 w-full border-collapse">
-        <thead>
-          <tr className="bg-gray-100">
-            <th className={`${cell} font-semibold`}>채점 항목</th>
-            <th className={`${cell} w-12 text-center font-semibold`}>개수</th>
-            <th className={`${cell} w-12 text-right font-semibold`}>배점</th>
-            <th className={`${cell} w-14 text-right font-semibold`}>점수</th>
-          </tr>
-        </thead>
-        <tbody>
-          {missions.map((m) => (
-            <Fragment key={m}>
-              <tr className="bg-gray-50">
-                <td colSpan={3} className={`${cell} font-bold`}>{MISSION_NAMES[m]}</td>
-                <td className={`${cell} text-right font-bold tabular-nums`}>{c.sum[m]}</td>
-              </tr>
-              {c.lines.filter((l) => l.it.m === m).map((l) => (
-                <tr key={l.it.id}>
-                  <td className={cell}>{l.it.label}</td>
-                  <td className={`${cell} text-center tabular-nums`}>{l.it.type === 'manual' ? '-' : qty(l.it, l.q)}</td>
-                  <td className={`${cell} text-right tabular-nums`}>{l.it.type === 'manual' ? '-' : l.p}</td>
-                  <td className={`${cell} text-right tabular-nums`}>{l.sub}</td>
-                </tr>
-              ))}
-            </Fragment>
-          ))}
-          <tr className="bg-gray-100">
-            <td colSpan={3} className={`${cell} text-base font-extrabold`}>총점{c.dq ? ' (실격)' : ''}</td>
-            <td className={`${cell} text-right text-base font-extrabold tabular-nums`}>{sheet.total ?? c.total}</td>
-          </tr>
-        </tbody>
-      </table>
-
-      {sheet.pre && (
-        <p className="mt-1 text-[11px] text-gray-600">
-          사전 확인: {PRE_CHECKS.map(([k, label]) => `${label} ${sheet.pre?.[k] ? '✓' : '✗'}`).join(' · ')}
-        </p>
-      )}
-
-      <div className="mt-3 grid grid-cols-2 gap-4">
-        <div className="rounded border border-gray-500 p-2">
-          <p className="text-[11px] font-bold text-gray-500">심판 서명</p>
-          {sheet.refSig
-            ? <img src={sheet.refSig} alt="심판 서명" className="h-[72px] object-contain" />
-            : <p className="flex h-[72px] items-center text-gray-400">서명 없음</p>}
-          <p className="mt-1 text-[11px]">{row.judgeName ?? row.judgeId} · {fmtDate(sheet.refSignedAt)}</p>
-        </div>
-        <div className="rounded border border-gray-500 p-2">
-          <p className="text-[11px] font-bold text-gray-500">팀장 서명</p>
-          {sheet.teamSig
-            ? <img src={sheet.teamSig} alt="팀장 서명" className="h-[72px] object-contain" />
-            : <p className="flex h-[72px] items-center text-gray-400">{sheet.signException ? `서명 예외: ${sheet.signException}` : '서명 없음'}</p>}
-          <p className="mt-1 text-[11px]">{sheet.teamSigner ?? leader} · {fmtDate(sheet.teamSignedAt)}</p>
-        </div>
-      </div>
+    <div className="print-sheet">
+      <ScoreSheetPdf
+        ref={sheetRef}
+        mode="inline"
+        judgeId={row.judgeId}
+        judgeName={row.judgeName ?? row.judgeId}
+        match={match}
+        team={team}
+        sheet={sheet}
+        ruleItems={items}
+      />
     </div>
   );
 }
@@ -171,19 +135,8 @@ function ScoreSheetModal({ score, items, onClose }: { score: ScoreRow; items: It
     if (!sheetRef.current || !row) return;
     setBusy(true);
     try {
-      const [{ toPng }, { jsPDF }] = await Promise.all([import('html-to-image'), import('jspdf')]);
-      const node = sheetRef.current;
-      const png = await toPng(node, { pixelRatio: 2, backgroundColor: '#ffffff' });
-      const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
-      const margin = 12;
-      const pageW = pdf.internal.pageSize.getWidth() - margin * 2;
-      const pageH = pdf.internal.pageSize.getHeight() - margin * 2;
-      const ratio = node.offsetHeight / node.offsetWidth;
-      const w = Math.min(pageW, pageH / ratio);
-      pdf.addImage(png, 'PNG', margin, margin, w, w * ratio);
-      const safe = (value: string) => value.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, '-');
-      const gameLabel = pdfGameLabel(row.matchId, row.round);
-      pdf.save(`${safe(row.teamName ?? row.teamId)}-${safe(gameLabel)}.pdf`);
+      const { match, team } = officialSheetProps(row);
+      await downloadScoreSheetPdf(sheetRef.current, match, team);
     } catch (e) {
       toast(`PDF 생성 실패: ${(e as Error).message}`);
     } finally {
@@ -202,8 +155,8 @@ function ScoreSheetModal({ score, items, onClose }: { score: ScoreRow; items: It
           {row === undefined && <p className="py-10 text-center text-gray-400">불러오는 중…</p>}
           {row === null && <p className="py-10 text-center text-gray-400">서명된 채점지가 없어 PDF를 만들 수 없습니다.</p>}
           {row && (
-            <div ref={sheetRef} className="mx-auto w-[760px] bg-white p-6">
-              <ScoreSheetPage row={row} items={items} />
+            <div className="mx-auto w-[794px] bg-white">
+              <OfficialScoreSheet row={row} items={items} sheetRef={sheetRef} />
             </div>
           )}
         </div>
@@ -212,6 +165,130 @@ function ScoreSheetModal({ score, items, onClose }: { score: ScoreRow; items: It
           <button className={`${btnPrimary} disabled:opacity-50`} onClick={download} disabled={!row || busy}>
             <span className="inline-flex items-center gap-1"><Icon name="download" />{busy ? '만드는 중…' : 'PDF 다운로드'}</span>
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 경기 ID → 회차 그룹(1차·2차·8강·4강·3·4위전·결승). 정렬 순서도 이 배열을 따른다.
+const STAGES = [
+  { id: '1', label: '1차 라운드' },
+  { id: '2', label: '2차 라운드' },
+  { id: 'QF', label: '본선 8강' },
+  { id: 'SF', label: '본선 4강' },
+  { id: '3P', label: '본선 3·4위전' },
+  { id: 'F', label: '본선 결승' },
+] as const;
+
+function stageOf(row: SheetRow): string {
+  const tournament = /^T:[JS]:(QF|SF|F|3P):/.exec(row.matchId);
+  if (tournament) return tournament[1];
+  if (row.round === 2 || row.matchId.startsWith('R2')) return '2';
+  return '1';
+}
+
+// 팀 이름을 누르면 그 팀의 1차·2차·본선 채점 확인서를 모두 보여 주고, 건별·회차별·전체 PDF로 내려받는 모달
+function TeamResultsModal({ teamId, items, onClose }: { teamId: string; items: Item[]; onClose: () => void }) {
+  const toast = useToast();
+  const { config } = useContest();
+  const name = teamName(config?.teams ?? [], teamId);
+  const [rows, setRows] = useState<SheetRow[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const nodes = useRef(new Map<string, HTMLDivElement>());
+
+  useEffect(() => {
+    let alive = true;
+    adminFetch<{ sheets: SheetRow[] }>(`/admin/scores/sheets?${new URLSearchParams({ teamId }).toString()}`)
+      .then((d) => alive && setRows(d.sheets))
+      .catch((e: Error) => {
+        if (!alive) return;
+        toast(e.message);
+        setRows([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [teamId, toast]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const keyOf = (row: SheetRow) => `${row.matchId}/${row.judgeId}`;
+  const groups = STAGES.map((stage) => ({ ...stage, rows: (rows ?? []).filter((row) => stageOf(row) === stage.id) })).filter((g) => g.rows.length > 0);
+
+  const download = async (id: string, list: SheetRow[], fileLabel: string) => {
+    const targets = list.map((row) => nodes.current.get(keyOf(row))).filter((node): node is HTMLDivElement => !!node);
+    if (targets.length === 0) return;
+    setBusy(id);
+    try {
+      await downloadScoreSheetsPdf(targets, `${name}-${fileLabel}`);
+    } catch (e) {
+      toast(`PDF 생성 실패: ${(e as Error).message}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const pdfButton = (id: string, list: SheetRow[], fileLabel: string, label: string, primary = false) => (
+    <button className={`${primary ? btnPrimary : btn} !py-1.5 disabled:opacity-50`} onClick={() => download(id, list, fileLabel)} disabled={busy !== null}>
+      <span className="inline-flex items-center gap-1"><Icon name="download" />{busy === id ? '만드는 중…' : label}</span>
+    </button>
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-label={`${name} 경기 결과`} className={`${card} flex max-h-[90vh] w-full max-w-[900px] flex-col p-5`} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-xl font-extrabold text-heading">{name} <span className="ml-1 text-sm font-normal text-gray-400">{teamId} · 전체 경기 결과</span></h2>
+          <div className="flex items-center gap-2">
+            {rows && rows.length > 0 && pdfButton('all', groups.flatMap((g) => g.rows), '전체경기', '전체 PDF', true)}
+            <button className="rounded-full p-1 text-gray-500 hover:bg-gray-100" onClick={onClose} aria-label="닫기"><Icon name="close" /></button>
+          </div>
+        </div>
+        {groups.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {groups.map((g) => (
+              <a key={g.id} href={`#team-stage-${g.id}`} className="rounded-2xl border border-line px-3 py-1 text-xs font-semibold text-gray-600 hover:border-line-hover">
+                {g.label} <span className="text-accent tabular-nums">{g.rows.map((r) => r.points).join(' / ')}</span>
+              </a>
+            ))}
+          </div>
+        )}
+        <div className="mt-4 min-h-0 flex-1 space-y-6 overflow-auto rounded-xl border border-line bg-gray-50 p-3">
+          {rows === null && <p className="py-10 text-center text-gray-400">불러오는 중…</p>}
+          {rows && rows.length === 0 && <p className="py-10 text-center text-gray-400">서명된 채점지가 없습니다.</p>}
+          {groups.map((g) => (
+            <section key={g.id} id={`team-stage-${g.id}`} className="space-y-3">
+              <div className="flex items-center justify-between gap-2 border-b border-line pb-2">
+                <h3 className="text-lg font-bold text-heading">{g.label}</h3>
+                {pdfButton(g.id, g.rows, g.label, `${g.label} PDF`)}
+              </div>
+              {g.rows.map((row) => (
+                <div key={keyOf(row)} className="space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                    <span className="text-gray-600">
+                      <span className="text-xs text-gray-400">{row.matchId}</span> · 심판 {row.judgeName ?? row.judgeId} · <b className="tabular-nums text-heading">{row.points}점</b> · {STATUS_LABEL[row.status] ?? row.status}
+                    </span>
+                    {pdfButton(keyOf(row), [row], `${g.label}-${row.judgeName ?? row.judgeId}`, 'PDF')}
+                  </div>
+                  <div className="mx-auto w-[794px] bg-white">
+                    <OfficialScoreSheet
+                      row={row}
+                      items={items}
+                      sheetRef={(node) => {
+                        if (node) nodes.current.set(keyOf(row), node);
+                        else nodes.current.delete(keyOf(row));
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </section>
+          ))}
         </div>
       </div>
     </div>
@@ -259,6 +336,7 @@ export default function ScoreList() {
   const [pdfBusy, setPdfBusy] = useState(false);
   const [printRows, setPrintRows] = useState<SheetRow[] | null>(null);
   const [selected, setSelected] = useState<ScoreRow | null>(null);
+  const [teamOpen, setTeamOpen] = useState<string | null>(null);
   const printAreaRef = useRef<HTMLDivElement>(null);
   const previousTitle = useRef<string | null>(null);
   const items = parseTemplate(config?.template) ?? ITEMS;
@@ -385,6 +463,12 @@ export default function ScoreList() {
     downloadCsv(`scores-round-${round}-${filter || 'all'}-${new Date().toISOString().slice(0, 10)}.csv`, [header, ...body]);
   };
 
+  const teamButton = (id: string) => (
+    <button type="button" className="text-left font-medium underline-offset-2 hover:text-accent hover:underline" onClick={() => setTeamOpen(id)} title="이 팀의 전체 경기 결과 보기">
+      {id} · {teamName(teams, id)}
+    </button>
+  );
+
   return (
     <section className={`${card} p-6`}>
       <div className="flex items-center justify-between">
@@ -479,8 +563,8 @@ export default function ScoreList() {
                   <tr key={`${game.cat}/${game.round}/${game.gameNo}`}>
                     <td className="px-4 py-3 font-medium">{game.gameNo}경기</td>
                     <td className="px-4 py-3">{game.cat === 'J' ? '주니어' : '시니어'}</td>
-                    <td className="px-4 py-3">{game.teamA ? `${game.teamA} · ${teamName(teams, game.teamA)}` : '-'}</td>
-                    <td className="px-4 py-3">{game.teamB ? `${game.teamB} · ${teamName(teams, game.teamB)}` : '-'}</td>
+                    <td className="px-4 py-3">{game.teamA ? teamButton(game.teamA) : '-'}</td>
+                    <td className="px-4 py-3">{game.teamB ? teamButton(game.teamB) : '-'}</td>
                     <td className="px-4 py-3 text-center font-semibold tabular-nums">{scoreA != null && scoreB != null ? `${scoreA} : ${scoreB}` : '-'}</td>
                     <td className="px-4 py-3">{submission?.judgeId ?? '-'}</td>
                     <td className={`px-4 py-3 ${game.status === 'done' ? 'text-accent' : 'text-gray-600'}`}>{game.status === 'done' ? '확정' : '미확정'}</td>
@@ -504,24 +588,26 @@ export default function ScoreList() {
               <th className="px-4 py-3 text-right font-semibold">총점</th>
               <th className="px-4 py-3 font-semibold">상태</th>
               <th className="px-4 py-3 font-semibold">제출</th>
+              <th className="px-4 py-3 text-center font-semibold">확인서</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
             {rows.map((r) => (
               <tr key={`${r.matchId}/${r.teamId}/${r.judgeId}`}>
                 <td className="px-4 py-3">{r.matchId.startsWith('R1') ? '1차' : '2차'} <span className="text-xs text-gray-400">{r.matchId}</span></td>
-                <td className="px-4 py-3 font-medium">{r.teamId} · {teamName(teams, r.teamId)}</td>
+                <td className="px-4 py-3 font-medium">{teamButton(r.teamId)}</td>
                 <td className="px-4 py-3">{r.cat === 'J' ? '주니어' : r.cat === 'S' ? '시니어' : '-'}</td>
                 <td className="px-4 py-3">{r.judgeId}</td>
-                <td className="px-4 py-3 text-right tabular-nums">
-                  <button className="font-semibold text-accent underline-offset-2 hover:underline" onClick={() => setSelected(r)} title="채점 확인서 보기 · PDF 다운로드">{r.points}</button>
-                </td>
+                <td className="px-4 py-3 text-right font-semibold tabular-nums">{r.points}</td>
                 <td className="px-4 py-3 text-gray-600">{STATUS_LABEL[r.status] ?? r.status}</td>
                 <td className="px-4 py-3 text-xs text-gray-400">{timeAgo(r.ts)}</td>
+                <td className="px-4 py-3 text-center">
+                  <button className={`${btn} !px-3 !py-1.5`} onClick={() => setSelected(r)}>확인서</button>
+                </td>
               </tr>
             ))}
             {rows.length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">선택한 라운드와 상태에 해당하는 채점이 없습니다.</td></tr>
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">선택한 라운드와 상태에 해당하는 채점이 없습니다.</td></tr>
             )}
           </tbody>
         </table>
@@ -530,10 +616,11 @@ export default function ScoreList() {
       {printRows && (
         <div ref={printAreaRef} className="print-area">
           {printRows.map((row) => (
-            <ScoreSheetPage key={`${row.matchId}/${row.teamId}/${row.judgeId}`} row={row} items={items} />
+            <OfficialScoreSheet key={`${row.matchId}/${row.teamId}/${row.judgeId}`} row={row} items={items} />
           ))}
         </div>
       )}
+      {teamOpen && <TeamResultsModal teamId={teamOpen} items={items} onClose={() => setTeamOpen(null)} />}
       {selected && <ScoreSheetModal score={selected} items={items} onClose={() => setSelected(null)} />}
     </section>
   );

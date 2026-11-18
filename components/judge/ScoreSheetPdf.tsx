@@ -358,19 +358,39 @@ function SignBox({ label, img, caption, fallback }: { label: string; img?: strin
   );
 }
 
-export async function downloadScoreSheetPdf(node: HTMLDivElement, match: Match, team: Team) {
+// 채점지 노드 여러 장을 A4 한 장씩 이어 붙여 하나의 PDF로 저장한다
+export async function downloadScoreSheetsPdf(nodes: HTMLDivElement[], fileName: string) {
+  if (nodes.length === 0) throw new Error('내려받을 채점지가 없습니다');
   const [{ toPng }, { jsPDF }] = await Promise.all([import('html-to-image'), import('jspdf')]);
-  const png = await toPng(node, { pixelRatio: 2, backgroundColor: '#ffffff' });
   const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
   // 양식 자체에 A4 여백이 들어 있으므로 페이지에 꽉 맞춘다 (내용이 길면 비율을 유지해 축소)
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
-  const ratio = node.offsetHeight / node.offsetWidth;
-  const width = Math.min(pageWidth, pageHeight / ratio);
-  pdf.addImage(png, 'PNG', (pageWidth - width) / 2, 0, width, width * ratio);
-  const safe = (value: string) => value.replace(/[\\/:*?"<>|]/g, '-');
+  for (const [i, node] of nodes.entries()) {
+    // 캡처 도중 화면이 바뀌어 노드가 사라질 수 있으므로 크기는 캡처 전에 재고, 비율은 결과 이미지에서 구한다
+    const width0 = node.offsetWidth;
+    const height0 = node.offsetHeight;
+    if (!width0 || !height0) throw new Error('채점지 양식이 화면에 그려지지 않았습니다');
+    const png = await toPng(node, { pixelRatio: 2, backgroundColor: '#ffffff', width: width0, height: height0 });
+    const img = pdf.getImageProperties(png);
+    if (!img.width || !img.height) throw new Error('채점지 이미지를 만들지 못했습니다');
+    if (i > 0) pdf.addPage();
+    const ratio = img.height / img.width;
+    const width = Math.min(pageWidth, pageHeight / ratio);
+    pdf.addImage(png, 'PNG', (pageWidth - width) / 2, 0, width, width * ratio);
+  }
+  pdf.save(`${safeFileName(fileName).replace(/\s+/g, '-')}.pdf`);
+}
+
+const safeFileName = (value: string) => value.replace(/[\\/:*?"<>|]/g, '-');
+
+// 경기 ID → '1차 경기' / '8강 2경기' 같은 표기
+export function scoreSheetGameLabel(match: Pick<Match, 'id' | 'round'>) {
   const tournament = /^T:[JS]:(QF|SF|F|3P):(\d+):[AB]$/.exec(match.id);
   const roundLabel: Record<string, string> = { QF: '8강', SF: '4강', F: '결승', '3P': '3·4위전' };
-  const gameLabel = tournament ? `${roundLabel[tournament[1]]} ${tournament[2]}경기` : `${match.round}차 경기`;
-  pdf.save(`${safe(team.name)}-${safe(gameLabel).replace(/\s+/g, '-')}.pdf`);
+  return tournament ? `${roundLabel[tournament[1]]} ${tournament[2]}경기` : `${match.round}차 경기`;
+}
+
+export async function downloadScoreSheetPdf(node: HTMLDivElement, match: Match, team: Team) {
+  await downloadScoreSheetsPdf([node], `${team.name}-${scoreSheetGameLabel(match)}`);
 }
