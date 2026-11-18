@@ -1,5 +1,4 @@
 import {
-  assignJudgeTable,
   autoConfirm,
   boardPublic,
   confirmScore,
@@ -102,7 +101,6 @@ const accountsIssueBody = obj({
       id: str({ min: 4, max: 32, re: /^[a-zA-Z0-9._-]{4,32}$/ }),
       name: str(),
       role: oneOf('judge', 'admin'),
-      table: opt(nullable(tableNo)),
     }),
     { min: 1, max: 500 },
   ),
@@ -258,20 +256,11 @@ export function createAdminRoutes(hooks: AdminHooks): Router {
     json(ctx.res, 200, { ok: true });
   });
 
-  // 심판 담당 테이블 배정 (REF01~REF08 의 고정 규칙과 별개, 추가 심판 지정/변경)
-  r.post('/accounts/assign', body(obj({ id: str(), table: opt(nullable(tableNo)) }), MAX_ADMIN_BODY_BYTES), (ctx) => {
-    const { id, table } = ctx.body as { id: string; table: number | null | undefined };
-    if (!assignJudgeTable(id, table ?? null)) return void json(ctx.res, 404, { ok: false, error: 'judge_not_found' });
-    logAudit(ctx.session!.id, 'issue', 'account', id, { assignTable: table ?? null });
-    hooks.broadcastConfig();
-    json(ctx.res, 200, { ok: true });
-  });
-
   // 계정 일괄 발급 (관리자가 올린 CSV). 결과의 password 는 평문 한 번만 낸다 → 클라이언트가 CSV 로 저장.
   r.post('/accounts/issue', body(accountsIssueBody, MAX_ADMIN_BODY_BYTES), (ctx) => {
-    const { accounts } = ctx.body as { accounts: { id: string; name: string; role: 'judge' | 'admin'; table?: number | null }[] };
+    const { accounts } = ctx.body as { accounts: { id: string; name: string; role: 'judge' | 'admin' }[] };
     try {
-      const issued = issueAccounts(accounts.map((a) => ({ id: a.id, name: a.name, role: a.role, judgeTable: a.table ?? null })));
+      const issued = issueAccounts(accounts.map((a) => ({ id: a.id, name: a.name, role: a.role })));
       logAudit(ctx.session!.id, 'issue', 'account', null, { count: issued.length, ids: issued.map((i) => i.id) });
       json(ctx.res, 200, { ok: true, issued });
     } catch (e) {

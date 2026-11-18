@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { useToast } from '@/components/Toast';
-import { teamName, useContest } from '@/lib/contest';
+import { teamName, useContest, type TournamentRound } from '@/lib/contest';
 import { calc, CATEGORY_NAMES, ITEMS, MISSION_NAMES, parseTemplate, PRE_CHECKS, type Category, type Item, type Mission, type Values } from '@/lib/judge/rules';
 import { adminFetch, btn, btnPrimary, card, downloadCsv, fmtDate, Icon, STATUS_LABEL, timeAgo } from './shared';
 
@@ -219,17 +219,38 @@ function ScoreSheetModal({ score, items, onClose }: { score: ScoreRow; items: It
 }
 
 const SCORE_FILTERS = [
-  { id: '', label: '전체' },
+  { id: '', label: '전체 상태' },
   { id: 'pending', label: '확정 대기' },
   { id: 'confirmed', label: '확정' },
   { id: 'modified', label: '수정됨' },
   { id: 'rejected', label: '반려' },
 ];
 
+const ROUND_TABS = [
+  { id: '1', label: '1차 라운드' },
+  { id: '2', label: '2차 라운드' },
+  { id: 'final', label: '본선' },
+] as const;
+
+const FINAL_ROUND_TABS: { id: TournamentRound; label: string }[] = [
+  { id: 'QF', label: '8강' },
+  { id: 'SF', label: '4강' },
+  { id: 'F', label: '결승' },
+  { id: '3P', label: '3·4위전' },
+];
+
+const FINAL_STATUS_FILTERS = [
+  { id: '', label: '전체 상태' },
+  { id: 'pending', label: '미확정' },
+  { id: 'confirmed', label: '확정' },
+];
+
 export default function ScoreList() {
   const toast = useToast();
   const { config } = useContest();
   const teams = config?.teams ?? [];
+  const [round, setRound] = useState<'1' | '2' | 'final'>('1');
+  const [finalRound, setFinalRound] = useState<TournamentRound>('QF');
   const [filter, setFilter] = useState('');
   const [rows, setRows] = useState<ScoreRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -238,12 +259,16 @@ export default function ScoreList() {
   const [pdfBusy, setPdfBusy] = useState(false);
   const [printRows, setPrintRows] = useState<SheetRow[] | null>(null);
   const [selected, setSelected] = useState<ScoreRow | null>(null);
+  const printAreaRef = useRef<HTMLDivElement>(null);
   const previousTitle = useRef<string | null>(null);
   const items = parseTemplate(config?.template) ?? ITEMS;
 
   useEffect(() => {
+    if (round === 'final') return;
     let alive = true;
-    adminFetch<{ scores: ScoreRow[]; total: number }>(`/admin/scores${filter ? `?status=${filter}` : ''}`)
+    const q = new URLSearchParams({ round });
+    if (filter) q.set('status', filter);
+    adminFetch<{ scores: ScoreRow[]; total: number }>(`/admin/scores?${q.toString()}`)
       .then((d) => {
         if (!alive) return;
         setRows(d.scores);
@@ -253,7 +278,13 @@ export default function ScoreList() {
     return () => {
       alive = false;
     };
-  }, [filter, toast]);
+  }, [filter, round, toast]);
+
+  const tournamentGames = (config?.tournament.games ?? [])
+    .filter((game) => game.round === finalRound)
+    .filter((game) => !filter || (filter === 'confirmed' ? game.status === 'done' : game.status !== 'done'));
+  const tournamentSubmission = (cat: 'J' | 'S', gameNo: number) =>
+    config?.tournament.submissions?.find((submission) => submission.cat === cat && submission.round === finalRound && submission.gameNo === gameNo);
 
   // 인쇄 대화상자가 닫히면 인쇄 영역을 비운다
   useEffect(() => {
@@ -267,6 +298,33 @@ export default function ScoreList() {
     return () => window.removeEventListener('afterprint', done);
   }, [printRows]);
 
+  // 데이터가 바뀐 직후에는 React가 인쇄 DOM을 아직 반영하지 않았거나 서명 이미지·웹폰트가
+  // 준비되지 않았을 수 있다. 실제 인쇄 영역이 모두 준비된 다음 프린트 미리보기를 연다.
+  useEffect(() => {
+    if (!printRows) return;
+    let cancelled = false;
+
+    const printWhenReady = async () => {
+      const area = printAreaRef.current;
+      if (!area) return;
+
+      await document.fonts?.ready;
+      const images = Array.from(area.querySelectorAll('img'));
+      await Promise.all(images.map((image) => image.decode().catch(() => undefined)));
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+
+      if (!cancelled) {
+        setPdfBusy(false);
+        window.print();
+      }
+    };
+
+    void printWhenReady();
+    return () => {
+      cancelled = true;
+    };
+  }, [printRows]);
+
   // 게임(부문·차수)별 채점 확인서를 인쇄한다 — 브라우저 인쇄 대화상자에서 'PDF로 저장'을 고륾면 PDF 다운로드가 된다
   const exportPdf = async () => {
     setPdfBusy(true);
@@ -275,21 +333,43 @@ export default function ScoreList() {
       if (pdfCat) q.set('cat', pdfCat);
       if (pdfRound) q.set('round', pdfRound);
       const d = await adminFetch<{ sheets: SheetRow[] }>(`/admin/scores/sheets?${q.toString()}`);
-      if (d.sheets.length === 0) return toast('선택한 게임에 서명된 채점지가 없습니다.');
+      if (d.sheets.length === 0) {
+        setPdfBusy(false);
+        return toast('선택한 게임에 서명된 채점지가 없습니다.');
+      }
       previousTitle.current = document.title;
       const categoryLabel = pdfCat === 'J' ? '주니어' : pdfCat === 'S' ? '시니어' : '전체부문';
       const roundLabel = pdfRound ? `${pdfRound}차` : '전체경기';
       document.title = `점수표-${categoryLabel}-${roundLabel}`;
       setPrintRows(d.sheets);
-      setTimeout(() => window.print(), 100);
     } catch (e) {
       toast((e as Error).message);
-    } finally {
       setPdfBusy(false);
     }
   };
 
   const exportCsv = () => {
+    if (round === 'final') {
+      const label = FINAL_ROUND_TABS.find((item) => item.id === finalRound)?.label ?? finalRound;
+      const header = ['라운드', '경기', '부문', '팀 A', '팀 B', '점수 A', '점수 B', '심판', '상태', '제출시각'];
+      const body = tournamentGames.map((game) => {
+        const submission = tournamentSubmission(game.cat, game.gameNo);
+        return [
+          label,
+          `${game.gameNo}경기`,
+          game.cat === 'J' ? '주니어' : '시니어',
+          game.teamA ? `${game.teamA} · ${teamName(teams, game.teamA)}` : '',
+          game.teamB ? `${game.teamB} · ${teamName(teams, game.teamB)}` : '',
+          game.status === 'done' ? (game.scoreA ?? '') : (submission?.scoreA ?? ''),
+          game.status === 'done' ? (game.scoreB ?? '') : (submission?.scoreB ?? ''),
+          submission?.judgeId ?? '',
+          game.status === 'done' ? '확정' : '미확정',
+          submission ? new Date(submission.ts).toLocaleString('ko-KR') : '',
+        ];
+      });
+      downloadCsv(`scores-final-${finalRound}-${filter || 'all'}-${new Date().toISOString().slice(0, 10)}.csv`, [header, ...body]);
+      return;
+    }
     const header = ['경기ID', '라운드', '팀ID', '팀명', '부문', '심판', '총점', '상태', '제출시각'];
     const body = rows.map((r) => [
       r.matchId,
@@ -302,7 +382,7 @@ export default function ScoreList() {
       STATUS_LABEL[r.status] ?? r.status,
       new Date(r.ts).toLocaleString('ko-KR'),
     ]);
-    downloadCsv(`scores-${filter || 'all'}-${new Date().toISOString().slice(0, 10)}.csv`, [header, ...body]);
+    downloadCsv(`scores-round-${round}-${filter || 'all'}-${new Date().toISOString().slice(0, 10)}.csv`, [header, ...body]);
   };
 
   return (
@@ -326,13 +406,94 @@ export default function ScoreList() {
           <button className={btn} onClick={exportCsv}><span className="inline-flex items-center gap-1"><Icon name="download" />CSV 내보내기</span></button>
         </div>
       </div>
-      <div className="mt-5 flex flex-wrap items-center gap-2">
-        {SCORE_FILTERS.map((x) => (
-          <button key={x.id} onClick={() => setFilter(x.id)} className={`rounded-2xl border px-3 py-1.5 text-sm ${filter === x.id ? 'border-accent bg-accent text-white' : 'border-line text-gray-600 hover:border-line-hover'}`}>{x.label}</button>
-        ))}
-        <span className="ml-auto text-xs text-gray-400">총 {total}건{total > rows.length ? ` (처음 ${rows.length}건 표시)` : ''}</span>
+      <div className="mt-5 flex flex-wrap items-end justify-between gap-3 border-b border-line">
+        <div className="flex gap-1" role="tablist" aria-label="라운드 선택">
+          {ROUND_TABS.map((x) => (
+            <button
+              key={x.id}
+              type="button"
+              role="tab"
+              aria-selected={round === x.id}
+              onClick={() => {
+                setRound(x.id);
+                setFilter('');
+              }}
+              className={`border-b-2 px-5 py-3 text-sm font-semibold transition-colors ${round === x.id ? 'border-accent text-accent' : 'border-transparent text-gray-500 hover:border-line-hover hover:text-gray-700'}`}
+            >
+              {x.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 pb-2">
+          <label htmlFor="score-status-filter" className="text-sm font-medium text-gray-600">상태</label>
+          <select
+            id="score-status-filter"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            className="rounded-2xl border border-line bg-white px-3 py-2 text-sm text-gray-700"
+          >
+            {(round === 'final' ? FINAL_STATUS_FILTERS : SCORE_FILTERS).map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+          </select>
+        </div>
+      </div>
+      {round === 'final' && (
+        <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="본선 라운드 선택">
+          {FINAL_ROUND_TABS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={finalRound === item.id}
+              onClick={() => setFinalRound(item.id)}
+              className={`rounded-2xl border px-4 py-2 text-sm font-semibold ${finalRound === item.id ? 'border-accent bg-accent text-white' : 'border-line text-gray-600 hover:border-line-hover'}`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="mt-3 flex justify-end">
+        <span className="ml-auto text-xs text-gray-400">총 {round === 'final' ? tournamentGames.length : total}건{round !== 'final' && total > rows.length ? ` (처음 ${rows.length}건 표시)` : ''}</span>
       </div>
       <div className="mt-5 overflow-x-auto rounded-xl border border-line">
+        {round === 'final' ? (
+          <table className="w-full min-w-[880px] text-left text-sm">
+            <thead className="bg-accent text-white">
+              <tr>
+                <th className="px-4 py-3 font-semibold">경기</th>
+                <th className="px-4 py-3 font-semibold">부문</th>
+                <th className="px-4 py-3 font-semibold">팀 A</th>
+                <th className="px-4 py-3 font-semibold">팀 B</th>
+                <th className="px-4 py-3 text-center font-semibold">점수</th>
+                <th className="px-4 py-3 font-semibold">심판</th>
+                <th className="px-4 py-3 font-semibold">상태</th>
+                <th className="px-4 py-3 font-semibold">제출</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {tournamentGames.map((game) => {
+                const submission = tournamentSubmission(game.cat, game.gameNo);
+                const scoreA = game.status === 'done' ? game.scoreA : submission?.scoreA;
+                const scoreB = game.status === 'done' ? game.scoreB : submission?.scoreB;
+                return (
+                  <tr key={`${game.cat}/${game.round}/${game.gameNo}`}>
+                    <td className="px-4 py-3 font-medium">{game.gameNo}경기</td>
+                    <td className="px-4 py-3">{game.cat === 'J' ? '주니어' : '시니어'}</td>
+                    <td className="px-4 py-3">{game.teamA ? `${game.teamA} · ${teamName(teams, game.teamA)}` : '-'}</td>
+                    <td className="px-4 py-3">{game.teamB ? `${game.teamB} · ${teamName(teams, game.teamB)}` : '-'}</td>
+                    <td className="px-4 py-3 text-center font-semibold tabular-nums">{scoreA != null && scoreB != null ? `${scoreA} : ${scoreB}` : '-'}</td>
+                    <td className="px-4 py-3">{submission?.judgeId ?? '-'}</td>
+                    <td className={`px-4 py-3 ${game.status === 'done' ? 'text-accent' : 'text-gray-600'}`}>{game.status === 'done' ? '확정' : '미확정'}</td>
+                    <td className="px-4 py-3 text-xs text-gray-400">{submission ? timeAgo(submission.ts) : '-'}</td>
+                  </tr>
+                );
+              })}
+              {tournamentGames.length === 0 && (
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">선택한 본선 라운드와 상태에 해당하는 경기가 없습니다.</td></tr>
+              )}
+            </tbody>
+          </table>
+        ) : (
         <table className="w-full min-w-[700px] text-left text-sm">
           <thead className="bg-accent text-white">
             <tr>
@@ -360,13 +521,14 @@ export default function ScoreList() {
               </tr>
             ))}
             {rows.length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">해당 상태의 채점이 없습니다.</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">선택한 라운드와 상태에 해당하는 채점이 없습니다.</td></tr>
             )}
           </tbody>
         </table>
+        )}
       </div>
       {printRows && (
-        <div className="print-area">
+        <div ref={printAreaRef} className="print-area">
           {printRows.map((row) => (
             <ScoreSheetPage key={`${row.matchId}/${row.teamId}/${row.judgeId}`} row={row} items={items} />
           ))}

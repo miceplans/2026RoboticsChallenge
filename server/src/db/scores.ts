@@ -89,7 +89,7 @@ export function modifyScore(matchId: string, teamId: string, judgeId: string, ac
   return true;
 }
 
-// 순위(부문 내): 최고점 → 조별 합계 → 감점 적은 순 → 팀 ID. 확정(confirmed/modified)만 점수로 반영.
+// 순위(부문 내): 최고점 → 1차+2차 점수 합 → 감점 적은 순 → 팀 ID. 최고점이 같으면 공동 순위(화면에서 1,2,2,3… 표기). 확정(confirmed/modified)만 점수로 반영.
 // 명단(teams)에 올라온 팀은 확정 점수가 없어도 total=0으로 포함해 순위판에 그대로 띄운다.
 // r1/r2 는 각 라운드의 확정 최고점 — 1R→2R 흐름을 화면에 그대로 보여주기 위해 낸다.
 const standingsStmt = db.prepare(`
@@ -102,7 +102,7 @@ const standingsStmt = db.prepare(`
       MAX(CASE WHEN s.status IN ('confirmed','modified') AND m.round = 2 THEN s.points END) AS r2
     FROM teams t LEFT JOIN scores s ON s.team_id = t.id LEFT JOIN matches m ON m.id = s.match_id
     GROUP BY t.id
-  ) ORDER BY cat, total DESC, sumPts DESC, pen ASC, teamId
+  ) ORDER BY cat, total DESC, COALESCE(r1, 0) + COALESCE(r2, 0) DESC, pen ASC, teamId
 `);
 export const getStandings = () => standingsStmt.all() as Standing[];
 

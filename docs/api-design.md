@@ -42,7 +42,7 @@ CREATE TABLE users (
   name          TEXT NOT NULL,
   role          TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user','judge','admin')),
   team_id       TEXT,              -- 참가자만 (teams.id)
-  judge_table   INTEGER,           -- 심판 담당 테이블 (REF01~08 고정 규칙과 별도 지정 시)
+  judge_table   INTEGER,           -- 사용 안 함 (심판에게 조 배정 없음 — 모든 심판이 전체 경기를 채점)
   salt          TEXT NOT NULL,
   hash          TEXT NOT NULL,
   must_change   INTEGER NOT NULL DEFAULT 0,  -- 일괄 재발급 후 강제 변경 표시

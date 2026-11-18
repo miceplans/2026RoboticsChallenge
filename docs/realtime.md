@@ -180,7 +180,7 @@ MVP(단일 HTML) 중 심판 흐름을 우리 코드로 옮긴 것이다. 로컬 
 | `/judge` (`JudgeConsole`) | 연결됨 — 제출, 오프라인 큐, 제출 상태, 전체 재전송. 채점 항목은 서버 템플릿(없으면 기본 규칙) 사용 |
 | `/contest` (`RankingBoard`/`TournamentBracket`) | 연결됨 — 순위표 실시간 구독. 대진표 탭은 관리자가 저장한 배정과 경기 결과(승자·점수) 표시, 저장 전엔 예선 순위 시드 배치 |
 | `/mypage` (`ParticipantPortal`) | 연결됨 — 랭킹 탭 순위표 구독, 내 점수표 탭 실시간 팀 점수·순위, 서버 공지 배너 |
-| `/admin/*` (`components/admin/*`) | 연결됨 — 대시보드 집계·활동 로그·확정 대기, 채점 목록+CSV, 템플릿 CRUD, 토너먼트 배정 저장, 계정 집계·재발급·CSV, 설정(자동 확정·보드 공개·점수 가리기·공지) |
+| `/admin/*` (`components/admin/*`) | 연결됨 — 대시보드 집계·활동 로그·확정 대기, 채점 목록+CSV, 토너먼트 배정 저장, 계정 집계·재발급·CSV, 설정(자동 확정·보드 공개·점수 가리기·공지) |
 
 운영 전에 정리할 것:
 
@@ -197,7 +197,7 @@ MVP(단일 HTML) 중 심판 흐름을 우리 코드로 옮긴 것이다. 로컬 
 - 로그인·가입 시도 제한이 있다 — 틀린 로그인 5회/10분이면 10분 차단, 가입은 IP 당 20회/시간. scrypt 는 비동기로 돌려 이벤트 루프를 막지 않는다.
 - 운영(`NODE_ENV=production`)에서는 `AUTH_SECRET` 이 빈 값이거나 개발용 기본값이면 Next/서버 모두 요청 처리 시점에 거부한다.
 - 최초 관리자·심판 계정은 서버 부트스트랩이 만든다. 비밀번호는 코드에 기본값이 없고 **반드시 환경변수**로만 지정한다 — 개발은 `server/.env.example` 을 `server/.env` 로 복사(`ADMIN_INITIAL_PASSWORD`, 선택 `JUDGE_INITIAL_PASSWORD`), 운영은 배포 환경변수. `pnpm dev` 는 `server/.env` 를 자동으로 읽는다. 심판 `REF01`~`REF08` 의 공유 임시 비밀번호는 감사 신뢰도를 떨어뜨리니, 운영 전에 '비밀번호 일괄 재발급' 으로 개별화한다.
-- `REF01`~`REF08` 계정은 담당 테이블이 ID 에서 고정된다 (`components/JudgeConsole.tsx` 의 `fixedTable`). 그 외 심판은 `judge_table`/`judge_assignments` 로 배정.
+- 심판에게 조(테이블) 배정은 없다. 모든 심판이 전체 경기를 보고 어느 경기든 채점·제출할 수 있다.
 - 이전 `users.db` 는 contest.db 첫 생성 시 자동으로 합쳐진다.
 
 ## 알려진 한계

@@ -143,7 +143,7 @@ export default function ScoreView({ match, team, sheet, edit, onBack, onReview, 
 
   return (
     <main className="mx-auto max-w-5xl pb-28">
-      <button type="button" onClick={onBack} className="mb-4 text-sm font-bold">← 담당 경기 목록</button>
+      <button type="button" onClick={onBack} className="mb-4 text-sm font-bold">← 경기 목록</button>
 
       <Card title="경기 전 확인">
         {PRE_CHECKS.map(([k, label]) => (

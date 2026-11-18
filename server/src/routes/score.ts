@@ -1,4 +1,4 @@
-import { getMatch, getProgress, judgeTableOf, saveScore } from '../db.ts';
+import { getMatch, getProgress, saveScore } from '../db.ts';
 import type { Session } from '../session.ts';
 import { Router, body, requireSession } from '../router.ts';
 import { json } from '../http.ts';
@@ -24,7 +24,7 @@ const submitBody = obj({
 });
 type SubmitBody = ReturnType<typeof submitBody>;
 
-// 제출은 실제 대진과 대조해 검증한다: 존재하는 경기인지, 팀이 그 경기 팀인지, 심판 담당 테이블이 맞는지.
+// 제출은 실제 대진과 대조해 검증한다: 존재하는 경기인지, 팀이 그 경기 팀인지. (심판에게 조 배정은 없다 — 어느 심판이든 어느 경기든 채점할 수 있다.)
 // ts 는 미래로 5분 이상 틀어진 것을 거부한다 — 심판 기기 시계가 미래로 가면 이후 정상 제출이 전부 무시되는 것을 막는다.
 // p 는 미검증 값(WebSocket score:submit 도 여기로 온다) — 아래 검증을 반드시 통과해야 한다.
 export function submitScore(session: Session, p: unknown): Result {
@@ -56,8 +56,6 @@ export function submitScore(session: Session, p: unknown): Result {
   if (match.team !== teamId) return { ok: false, error: 'team_mismatch' };
   // 1차가 끝나기 전에는 2차 점수를 받지 않는다.
   if (match.round === 2 && !getProgress()[match.cat].round2Open) return { ok: false, error: 'round_locked' };
-  const table = judgeTableOf(session.id);
-  if (table !== null && match.table !== table) return { ok: false, error: 'not_your_table' };
 
   // judgeId 는 클라이언트가 보낸 값이 아니라 세션에서만 가져온다
   saveScore({ matchId, teamId, judgeId: session.id, points, ts, sheet: sheetJson, penCnt });
