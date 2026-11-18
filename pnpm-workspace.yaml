@@ -1,0 +1,3 @@
+allowBuilds:
+  # postinstall 은 후원 안내 메시지만 출력하므로 실행하지 않는다
+  core-js: false

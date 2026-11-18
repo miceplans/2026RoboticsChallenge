@@ -61,8 +61,6 @@ export default function ParticipantPortal({ name, teamId }: { name: string; team
         {t === '내 점수표' && <Score team={team} />}
         {t === '내 일정' && <Schedule team={team} />}
         {t === '경기 순서' && <MatchOrder myTeam={team?.id} />}
-        {t === '랭킹' && <RankingBoard />}
-        {t === '경기 중계' && <Live />}
       </div>
     </main>
   );

@@ -7,7 +7,9 @@
     "start": "node --env-file-if-exists=.env src/index.ts",
     "seed:accounts": "node --env-file-if-exists=.env src/seed-accounts.ts",
     "typecheck": "tsc",
-    "test": "node --test \"src/**/*.test.ts\""
+    "test": "node --test \"src/**/*.test.ts\"",
+    "seed:demo": "node -e \"for (const f of ['demo.db','demo.db-shm','demo.db-wal']) require('fs').rmSync(f,{force:true})\" && DB_PATH=demo.db node src/seed-demo.ts",
+    "dev:demo": "DB_PATH=demo.db node --watch src/index.ts"
   },
   "dependencies": {
     "socket.io": "4.8.4"

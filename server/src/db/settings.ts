@@ -32,7 +32,7 @@ export function deleteSetting(key: string): void {
   db.prepare('DELETE FROM settings WHERE key = ?').run(key);
   settingsCache.delete(key);
 }
-export const autoConfirm = () => getSetting('auto_confirm', '0') === '1';
+export const autoConfirm = () => getSetting('auto_confirm', '1') === '1';
 export const boardPublic = () => getSetting('board_public', '1') === '1';
 export const hideScores = () => getSetting('hide_scores', '0') === '1';
 export const getNotice = () => getSettingJson('notice', { message: '', updatedAt: 0 });

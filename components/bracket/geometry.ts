@@ -1,65 +1,65 @@
 // 대진표 캔버스 기하(박스 위치·커넥터 경로). 공개 대진표와 관리자 배정 화면이 같은 좌표를 쓴다.
 
-// 8강 토너먼트 대진표 (Figma 92:316): 캔버스 1600 x 1118
-// 1열: 8팀(슬롯) → 2열: 8강 승자 4 → 3열: 준결승 승자 2 → 4열: 결승 / 3·4위전
+// 대진표(8강 ~ 결승) 시안 형식: 캔버스 560 x 680
+// 1열: 시드 태그(1위·8위 …) + 8팀 → 2열(4강): 8강 승자 4 → 3열(결승): 준결승 승자 2, 가운데 우승 칸
+// 아래: 3·4위전(준결승 패자 2) + 3위·4위 표시
 // 관리자 편집 모드에서는 1열 박스가 팀을 끌어다 놓는 점선 슬롯이 된다.
-export const BW = 256;
-export const BH = 96;
-export const W = 1600;
-export const H = 1118;
+export const W = 560;
+export const H = 680;
 
-export type Box = { x: number; y: number };
+export type Box = { x: number; y: number; w: number; h: number };
 
-const COL = [0, 424, 864, 1344];
-export const T: Box[] = [0, 158, 318, 446, 606, 734, 894, 1022].map((y) => ({ x: COL[0], y }));
-// 도착 박스는 항상 출발 박스 두 개의 정확히 가운데에 두어, 화살표가 합쳐지는 지점의 정중앙을 가리키게 한다.
-const between = (a: Box, b: Box, x: number): Box => ({ x, y: (a.y + b.y) / 2 });
+const BH = 38;
+const TAG_W = 55;
+const TEAM_W = 118;
+const COL_W = 141;
+const COL = [0, 212, 392];
+
+export const TITLE: Box = { x: 0, y: 0, w: 230, h: 42 };
+const HEAD_Y = 52;
+export const HEADS: { label: string; cx: number; y: number }[] = [
+  { label: '8강', cx: (TAG_W + TEAM_W) / 2, y: HEAD_Y },
+  { label: '4강', cx: COL[1] + COL_W / 2, y: HEAD_Y },
+  { label: '결승', cx: COL[2] + COL_W / 2, y: HEAD_Y },
+];
+
+// 1열 팀 박스(시드 태그 오른쪽). 두 칸씩 붙어 한 경기를 이룬다.
+const TEAM_Y = [77, 119, 197, 239, 317, 359, 437, 479];
+export const T: Box[] = TEAM_Y.map((y) => ({ x: TAG_W, y, w: TEAM_W, h: BH }));
+export const TAGS: Box[] = TEAM_Y.map((y) => ({ x: 0, y, w: TAG_W, h: BH }));
+
+const mid = (b: Box) => b.y + b.h / 2;
+// 도착 박스는 출발 박스 두 개의 정확히 가운데에 둔다.
+const between = (a: Box, b: Box, x: number): Box => ({ x, y: (mid(a) + mid(b)) / 2 - BH / 2, w: COL_W, h: BH });
 export const QF: Box[] = [0, 1, 2, 3].map((i) => between(T[2 * i], T[2 * i + 1], COL[1]));
 export const SF: Box[] = [0, 1].map((i) => between(QF[2 * i], QF[2 * i + 1], COL[2]));
-export const FINAL: Box = between(SF[0], SF[1], COL[3]);
-export const THIRD: Box = { x: COL[3], y: 726 };
+// 우승 칸: 결승 두 칸 사이 가운데
+export const FINAL: Box = { x: COL[2], y: (mid(SF[0]) + mid(SF[1])) / 2 - 31, w: COL_W, h: 62 };
+// 3·4위전: 준결승 패자 두 칸 + 오른쪽에 3위·4위
+export const THIRD_LABEL_Y = 537;
+export const THIRD: Box[] = [555, 597].map((y) => ({ x: COL[1], y, w: COL_W, h: BH }));
+export const PLACES: { label: string; x: number; y: number }[] = [
+  { label: '3위', x: COL[1] + COL_W + 23, y: 568 },
+  { label: '4위', x: COL[1] + COL_W + 23, y: 601 },
+];
 
-// Figma 커넥터(엘보 + 화살표 선, 굵기 4). x 는 Figma 섹션 기준에서 (941)를 뺀 값을 그대로 쓰고,
-// y 는 출발/도착 박스의 세로 중앙에 맞춘다 — 화살촉 끝이 도착 박스 정중앙을 가리키도록.
-// [시작 x, 시작 y, 끝 x, 끝 y, 세로선 위치(시작점 기준)]
-const OX = 941;
-type Conn = [number, number, number, number, number];
-const mid = (b: Box) => b.y + BH / 2;
-const k = (sx: number, from: Box, ex: number, to: Box, vx?: number): Conn => {
-  const sy = mid(from);
-  const ey = mid(to);
-  return [sx - OX, sy, ex - OX, ey, vx ?? (ey > sy ? 52.5 : 50)];
+// ㄷ자 커넥터: 두 출발 박스 오른쪽에서 나와 세로로 합쳐진 뒤 도착 박스 왼쪽 가운데로 들어간다.
+const join = (a: Box, b: Box, to?: Box) => {
+  const sx = a.x + a.w;
+  const vx = to ? (sx + to.x) / 2 : sx + 15;
+  const path = `M${sx} ${mid(a)}H${vx}V${mid(b)}H${sx}`;
+  return to ? `${path}M${vx} ${mid(to)}H${to.x}` : path;
 };
 
-const SOLID_CONNS: Conn[] = [
-  ...QF.flatMap((q, i) => [k(1221, T[2 * i], 1341, q), k(1221, T[2 * i + 1], 1341, q)]),
-  ...SF.flatMap((s, i) => [k(1645, QF[2 * i], 1765, s), k(1645, QF[2 * i + 1], 1765, s)]),
-  k(2125, SF[0], 2245, FINAL),
-  k(2125, SF[1], 2245, FINAL),
-];
-// 준결승 패자 → 3·4위전 (파란 점선)
-const DASHED_CONNS: Conn[] = [k(2101, SF[0], 2244, THIRD, 45), k(2124, SF[1], 2244, THIRD, 22)];
-
-// 모서리가 둥근 엘보 선 + ARROW_LINES 화살표(끝점에서 45° 로 12.73 씩 벌어지는 ㅅ자)
-function elbow([sx, sy, ex, ey, vx]: Conn) {
-  const down = ey > sy;
-  const x = sx + vx;
-  const r1 = Math.min(24, vx, Math.abs(ey - sy) / 2);
-  const r2 = Math.min(24, ex - x, Math.abs(ey - sy) / 2);
-  const d = down ? 1 : -1;
-  const A = 12.728;
-  return (
-    `M${sx} ${sy}H${x - r1}Q${x} ${sy} ${x} ${sy + d * r1}V${ey - d * r2}Q${x} ${ey} ${x + r2} ${ey}H${ex}` +
-    `M${ex - A} ${ey - A}L${ex} ${ey}L${ex - A} ${ey + A}`
-  );
-}
-export const SOLID = SOLID_CONNS.map(elbow).join('');
-export const DASHED = DASHED_CONNS.map(elbow).join('');
+export const LINES = [
+  ...QF.map((q, i) => join(T[2 * i], T[2 * i + 1], q)),
+  ...SF.map((s, i) => join(QF[2 * i], QF[2 * i + 1], s)),
+  join(SF[0], SF[1]),
+].join('');
 
 export const pos = (b: Box) => ({
   left: `${(b.x / W) * 100}%`,
   top: `${(b.y / H) * 100}%`,
-  width: `${(BW / W) * 100}%`,
-  height: `${(BH / H) * 100}%`,
+  width: `${(b.w / W) * 100}%`,
+  height: `${(b.h / H) * 100}%`,
 });
-

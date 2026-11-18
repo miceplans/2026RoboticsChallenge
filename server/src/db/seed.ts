@@ -1,5 +1,6 @@
 import { db } from './connection.ts';
 import { hasSetting, setSetting } from './settings.ts';
+import { logAudit } from './audit.ts';
 import { DEFAULT_TEAMS } from '../defaults.ts';
 
 // --- 시드 ---
@@ -29,7 +30,28 @@ export function seedIfEmpty(): void {
     db.exec('ROLLBACK');
     throw e;
   }
-  if (!hasSetting('auto_confirm')) setSetting('auto_confirm', '0');
+  if (!hasSetting('auto_confirm')) setSetting('auto_confirm', '1');
   if (!hasSetting('board_public')) setSetting('board_public', '1');
   if (!hasSetting('notice')) setSetting('notice', JSON.stringify({ message: '', updatedAt: Date.now() }));
+}
+
+// 1회성: 심판 제출 = 확정으로 정책 변경. 기존 DB 의 auto_confirm 을 켜고, 남아 있던 확정 대기(pending) 점수를
+// 제출한 심판 이름으로 확정한다 (자동 확정과 같은 형태). 끝나면 표시를 남겨 다시 돌지 않으므로 이후 관리자가 끈 설정은 유지된다.
+export function migrateAutoConfirmOn(): void {
+  if (hasSetting('migrated_auto_confirm_on')) return;
+  const now = Date.now();
+  db.exec('BEGIN');
+  try {
+    const pending = db.prepare("SELECT match_id AS matchId, team_id AS teamId, judge_id AS judgeId FROM scores WHERE status = 'pending'").all() as { matchId: string; teamId: string; judgeId: string }[];
+    db.prepare("UPDATE scores SET status = 'confirmed', confirmed_at = ?, confirmed_by = judge_id WHERE status = 'pending'").run(now);
+    for (const p of pending) logAudit(p.judgeId, 'confirm', 'score', `${p.matchId}/${p.teamId}`, { judgeId: p.judgeId, migration: 'auto_confirm_on' });
+    logAudit('system', 'settings', 'settings', 'auto_confirm', { autoConfirm: true, migration: 'auto_confirm_on', confirmedPending: pending.length });
+    setSetting('auto_confirm', '1');
+    setSetting('migrated_auto_confirm_on', 'true');
+    db.exec('COMMIT');
+    console.log(`[migrate] 자동 확정 켬, 확정 대기 점수 ${pending.length}건 확정`);
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
 }
