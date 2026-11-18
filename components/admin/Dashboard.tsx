@@ -28,6 +28,7 @@ const ACTIVITY_VERB: Record<string, string> = {
   issue: '계정을 발급했습니다',
   reset_password: '비밀번호를 재발급했습니다',
   tournament: '토너먼트 배정을 변경했습니다',
+  homologation: '로봇 승인서를 저장했습니다',
   login: '로그인했습니다',
 };
 

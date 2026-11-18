@@ -66,6 +66,8 @@ export type ContestConfig = {
   matches: Match[];
   tournament: { slots: { cat: Category; slotNo: number; teamId: string | null }[]; games: TournamentGame[]; submissions?: TournamentSubmission[] };
   progress?: Record<Category, CatProgress>; // 구버전 서버 응답에는 없음 — 없으면 잠그지 않는다
+  // 로봇 승인서 결과 (팀 ID → pass|fail). 서버가 심판·관리자에게는 전 팀, 참가자에게는 자기 팀만 보낸다.
+  homologation?: Record<string, 'pass' | 'fail'>;
 };
 
 // 토너먼트는 예선 순위 상위 8팀이 8강부터 시작한다.

@@ -3,8 +3,10 @@ import {
   boardPublic,
   confirmScore,
   countScores,
+  deleteHomologation,
   deleteSetting,
   getActivity,
+  getHomologation,
   getNotice,
   getOverview,
   getPending,
@@ -15,7 +17,9 @@ import {
   getTemplate,
   hideScores,
   issueAccounts,
+  listHomologations,
   listScores,
+  listTeams,
   listSheets,
   listUsers,
   logAudit,
@@ -24,6 +28,9 @@ import {
   replaceTeams,
   resetPasswords,
   resetTemplate,
+  ROBOT_CHECKS,
+  MAX_ROBOTS,
+  saveHomologation,
   revokeAllSessions,
   saveTournamentResult,
   saveTournamentSlots,
@@ -31,6 +38,7 @@ import {
   setTemplate,
   setTournamentTeam,
   type AccountRole,
+  type HomologationData,
   type ScoreStatus,
   type TournamentRound,
 } from '../db.ts';
@@ -143,6 +151,18 @@ const matchImportBody = obj({
     }),
     { min: 1 },
   ),
+});
+
+// 로봇 승인서. 서명은 캔버스 PNG(data URL) — 한 장에 수십 KB 라 넉넉히 잡는다.
+const signature = str({ min: 32, max: 400_000, re: /^data:image\/png;base64,[A-Za-z0-9+/=]+$/ }); // 심판·팀 대표 서명은 필수
+const robotChecks = arr(bool, { max: MAX_ROBOTS });
+const homologationBody = obj({
+  robots: num({ int: true, min: 1, max: MAX_ROBOTS }),
+  judge: str({ max: 64 }),
+  decoration: nullable(oneOf('yes', 'no')),
+  checks: obj(Object.fromEntries(ROBOT_CHECKS.map((k) => [k, robotChecks])) as Record<(typeof ROBOT_CHECKS)[number], typeof robotChecks>),
+  judgeSig: signature,
+  teamSig: signature,
 });
 
 export function createAdminRoutes(hooks: AdminHooks): Router {
@@ -406,6 +426,31 @@ export function createAdminRoutes(hooks: AdminHooks): Router {
       return void json(ctx.res, 409, { ok: false, error: (e as Error).message });
     }
     logAudit(ctx.session!.id, 'teams', 'teams', null, { count: teams.length });
+    hooks.broadcastConfig();
+    json(ctx.res, 200, { ok: true });
+  });
+
+  // 로봇 승인서: 목록(서명 제외) · 한 장 조회(서명 포함) · 저장 · 삭제.
+  // 저장·삭제하면 팀 이름 옆 승인 표시가 바뀌므로 config 를 브로드캐스트한다.
+  r.get('/homologations', (ctx) => {
+    json(ctx.res, 200, { ok: true, homologations: listHomologations() });
+  });
+  r.get('/homologations/:teamId', (ctx) => {
+    json(ctx.res, 200, { ok: true, homologation: getHomologation(ctx.params.teamId) });
+  });
+  r.put('/homologations/:teamId', body(homologationBody, MAX_ADMIN_BODY_BYTES, { nullStatus: 413 }), (ctx) => {
+    const { teamId } = ctx.params;
+    if (!listTeams().some((t) => t.id === teamId)) return void json(ctx.res, 404, { ok: false, error: '팀을 찾을 수 없습니다.' });
+    const data = ctx.body as HomologationData;
+    if (!data.judge.trim()) return void json(ctx.res, 400, { ok: false, error: '심판 이름을 입력하세요.' });
+    const saved = saveHomologation(teamId, data, ctx.session!.id);
+    logAudit(ctx.session!.id, 'homologation', 'homologation', teamId, { robots: saved.robots, status: saved.status });
+    hooks.broadcastConfig();
+    json(ctx.res, 200, { ok: true, homologation: saved });
+  });
+  r.post('/homologations/:teamId/delete', (ctx) => {
+    if (!deleteHomologation(ctx.params.teamId)) return void json(ctx.res, 404, { ok: false, error: 'not_found' });
+    logAudit(ctx.session!.id, 'homologation', 'homologation', ctx.params.teamId, { deleted: true });
     hooks.broadcastConfig();
     json(ctx.res, 200, { ok: true });
   });

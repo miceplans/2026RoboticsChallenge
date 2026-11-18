@@ -14,6 +14,7 @@ export type AuditAction =
   | 'issue'
   | 'reset_password'
   | 'tournament'
+  | 'homologation'
   | 'login';
 export type AuditEntry = { id: number; ts: number; actorId: string; actorName?: string | null; action: AuditAction; entity: string; entityId: string | null; detail: unknown };
 

@@ -377,7 +377,8 @@ export async function downloadScoreSheetsPdf(nodes: HTMLDivElement[], fileName: 
     if (i > 0) pdf.addPage();
     const ratio = img.height / img.width;
     const width = Math.min(pageWidth, pageHeight / ratio);
-    pdf.addImage(png, 'PNG', (pageWidth - width) / 2, 0, width, width * ratio);
+    // 'FAST' = PNG 데이터를 압축해 넣는다 (무압축이면 한 장에 10MB 가까이 된다)
+    pdf.addImage(png, 'PNG', (pageWidth - width) / 2, 0, width, width * ratio, undefined, 'FAST');
   }
   pdf.save(`${safeFileName(fileName).replace(/\s+/g, '-')}.pdf`);
 }

@@ -5,6 +5,7 @@ export * from './db/settings.ts';
 export * from './db/audit.ts';
 export * from './db/scores.ts';
 export * from './db/teams.ts';
+export * from './db/homologation.ts';
 export * from './db/overview.ts';
 export * from './db/seed.ts';
 export * from './accounts.ts';

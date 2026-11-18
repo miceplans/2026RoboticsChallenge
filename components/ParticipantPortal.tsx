@@ -1,6 +1,7 @@
 'use client';
 
 import ScoreValue from '@/components/team/Score';
+import HomologationBadge from '@/components/team/HomologationBadge';
 import { useState } from 'react';
 import LiveBroadcast from './LiveBroadcast';
 import MatchOrder from './MatchOrder';
@@ -134,7 +135,7 @@ function Score({ team }: { team?: Team }) {
 
   return (
     <section className="mt-7">
-      <p className="font-bold text-accent">{team.id} {team.name} · {team.cat === 'J' ? '주니어' : '시니어'}</p>
+      <p className="font-bold text-accent">{team.id} {team.name}<HomologationBadge teamId={team.id} /> · {team.cat === 'J' ? '주니어' : '시니어'}</p>
       <h1 className="mt-1 text-3xl font-extrabold">내 점수표</h1>
       {mine && (
         <article className="mt-6 rounded-2xl border border-line bg-white p-6">

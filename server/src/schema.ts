@@ -79,6 +79,18 @@ export const AUDIT_DDL = `
   );
   CREATE INDEX IF NOT EXISTS score_audit_ts ON score_audit (ts DESC);`;
 
+// 로봇 승인서(Homologation Sheet). 팀당 한 장 — 양식 값(로봇 수·체크 항목·서명)은 JSON 으로 통째로 둔다.
+// status 는 저장할 때 계산해 둔다: 정적·동적 검사를 모두 통과한 로봇이 1대 이상이면 pass, 아니면 fail.
+// 팀이 명단에서 빠지면 승인서도 같이 지운다(CASCADE). 새 테이블이라 IF NOT EXISTS 로 기존 DB 에도 그대로 붙는다.
+export const HOMOLOGATIONS_DDL = `
+  CREATE TABLE IF NOT EXISTS homologations (
+    team_id    TEXT PRIMARY KEY REFERENCES teams(id) ON DELETE CASCADE,
+    data       TEXT NOT NULL CHECK (json_valid(data)),
+    status     TEXT NOT NULL CHECK (status IN ('pass','fail')),
+    updated_at INTEGER NOT NULL,
+    updated_by TEXT NOT NULL
+  );`;
+
 export const SETTINGS_DDL = (n = 'settings') => `
   CREATE TABLE ${n} (
     key        TEXT PRIMARY KEY,

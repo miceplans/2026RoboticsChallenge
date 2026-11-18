@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { existsSync } from 'node:fs';
-import { AUDIT_DDL, MIGRATED_TABLES, SCHEMA_VERSION, USERS_INDEX } from '../schema.ts';
+import { AUDIT_DDL, HOMOLOGATIONS_DDL, MIGRATED_TABLES, SCHEMA_VERSION, USERS_INDEX } from '../schema.ts';
 
 // 대회 운영 데이터 전부를 담는 단일 SQLite 파일 (scores + users + teams + ...).
 // Next 와 이 서버가 같은 호스트에서 같은 파일을 연다 (WAL + busy_timeout, lib/users.ts 와 같은 패턴).
@@ -47,6 +47,7 @@ if (tableExists('users') && !columnsOf('users').includes('token_version')) db.ex
 // 없는 테이블은 최신 정의(FK 포함)로 만든다. 이미 있는 옛 테이블은 아래 마이그레이션이 옮긴다.
 for (const t of MIGRATED_TABLES) if (!tableExists(t.name)) db.exec(t.ddl(t.name));
 db.exec(`${USERS_INDEX}\n${AUDIT_DDL}`);
+db.exec(HOMOLOGATIONS_DDL);
 
 const userVersion = () => (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
 

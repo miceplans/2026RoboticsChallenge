@@ -9,6 +9,7 @@ import NoticeBanner from '../NoticeBanner';
 
 export const adminNav: { href: string; label: string; icon: string }[] = [
   { href: '/admin', label: '대시보드', icon: 'dashboard' },
+  { href: '/admin/homologation', label: '등록', icon: 'verified' },
   { href: '/admin/scores', label: '채점 목록', icon: 'fact_check' },
   { href: '/admin/results', label: '경기 결과', icon: 'leaderboard' },
   { href: '/admin/draw', label: '토너먼트 배정', icon: 'shuffle' },
