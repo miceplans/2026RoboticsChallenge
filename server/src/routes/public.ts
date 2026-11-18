@@ -2,7 +2,6 @@ import {
   autoConfirm,
   boardPublic,
   getConfigVersion,
-  getJudgeTables,
   getNotice,
   getRankOrder,
   getStandings,
@@ -48,7 +47,6 @@ export function createPublicRoutes(): Router {
             rankOrder: getRankOrder(),
           },
           template: null,
-          judgeTables: {},
           teams,
           matches: [],
           tournament: getTournament(),
@@ -61,9 +59,6 @@ export function createPublicRoutes(): Router {
         ? t
         : { ...t, region: '', org: '', coach: '', members: [] },
     );
-    const allTables = getJudgeTables();
-    const judgeTables =
-      session.role === 'admin' ? allTables : session.role === 'judge' && allTables[session.id] !== undefined ? { [session.id]: allTables[session.id] } : {};
     json(ctx.res, 200, {
       ok: true,
       config: {
@@ -76,7 +71,6 @@ export function createPublicRoutes(): Router {
           rankOrder: getRankOrder(),
         },
         template: getTemplate(),
-        judgeTables,
         teams,
         matches: listMatches(),
         tournament: getTournament(),

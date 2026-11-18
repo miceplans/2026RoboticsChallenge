@@ -12,7 +12,7 @@ const { sessionFromCookie } = await import('./session.ts');
 
 before(() => {
   db.seedIfEmpty();
-  db.issueAccounts([{ id: 'jdg1', name: '테스트 심판', role: 'judge', judgeTable: 3 }]);
+  db.issueAccounts([{ id: 'jdg1', name: '테스트 심판', role: 'judge' }]);
 });
 
 // 개발용 기본 키로 서명 (테스트는 NODE_ENV 미설정 → lib/session.ts 와 같은 DEV_SECRET)

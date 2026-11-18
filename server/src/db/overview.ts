@@ -5,7 +5,7 @@ import type { ScoreStatus } from './scores.ts';
 export type Overview = {
   matches: { total: number; done: number };
   pendingCount: number;
-  judges: { id: string; name: string; table: number | null; submitted: number; total: number }[];
+  judges: { id: string; name: string; submitted: number }[];
   users: { total: number; active24h: number; neverLoggedIn: number };
   scores: { total: number; pending: number; confirmed: number; modified: number; rejected: number };
 };
@@ -13,10 +13,10 @@ export function getOverview(): Overview {
   const matchTotal = (db.prepare('SELECT COUNT(*) AS c FROM matches').get() as { c: number }).c;
   const matchDone = (db.prepare("SELECT COUNT(DISTINCT match_id) AS c FROM scores WHERE status != 'rejected'").get() as { c: number }).c;
   const pendingCount = (db.prepare("SELECT COUNT(*) AS c FROM scores WHERE status = 'pending'").get() as { c: number }).c;
-  const judges = (db.prepare('SELECT id, name, judge_table AS "table" FROM users WHERE role = \'judge\' ORDER BY id').all() as { id: string; name: string; table: number | null }[]).map((j) => {
-    const total = j.table ? (db.prepare('SELECT COUNT(*) AS c FROM matches WHERE table_no = ?').get(j.table) as { c: number }).c : 0;
+  // 심판에게 조 배정은 없으므로 심판별 '담당 경기 수' 는 없고, 제출한 경기 수만 센다.
+  const judges = (db.prepare('SELECT id, name FROM users WHERE role = \'judge\' ORDER BY id').all() as { id: string; name: string }[]).map((j) => {
     const submitted = (db.prepare("SELECT COUNT(DISTINCT match_id) AS c FROM scores WHERE judge_id = ? AND status != 'rejected'").get(j.id) as { c: number }).c;
-    return { ...j, submitted, total };
+    return { ...j, submitted };
   });
   const userTotal = (db.prepare('SELECT COUNT(*) AS c FROM users').get() as { c: number }).c;
   const active24h = (db.prepare('SELECT COUNT(*) AS c FROM users WHERE last_login_at > ?').get(Date.now() - 24 * 3600_000) as { c: number }).c;

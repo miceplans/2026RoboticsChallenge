@@ -36,7 +36,7 @@ function RankList({ teams, ranked }: { teams: Team[]; ranked: RankedStanding[] }
             </div>
           )}
           <div className="relative min-h-[72px] shrink-0 overflow-hidden rounded-xl bg-white/80 shadow-[4px_4px_20px_0_rgba(0,0,0,0.25)]">
-            <span className="absolute -top-[32px] -left-[18px] whitespace-nowrap text-[113.895px] font-bold leading-[normal] text-[#ebebf1]">{i + 1}</span>
+            <span className="absolute -top-[32px] -left-[18px] whitespace-nowrap text-[113.895px] font-bold leading-[normal] text-[#ebebf1]">{s.rank}</span>
             <Score value={s.total} className="absolute top-1/2 right-5 -translate-y-1/2 text-xl font-bold text-black" />
             <div className="relative py-[13px] pr-24 pl-[80px] text-black">
               <p className="break-keep text-xl font-semibold leading-[normal]"><TeamName id={s.teamId} /></p>

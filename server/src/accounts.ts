@@ -12,7 +12,6 @@ export type AccountRow = {
   name: string;
   role: AccountRole;
   teamId: string | null;
-  judgeTable: number | null;
   mustChange: number;
   createdAt: number;
   lastLoginAt: number | null;
@@ -34,29 +33,13 @@ export function listUsers(filter: { role?: AccountRole | 'staff'; q?: string }):
   }
   const base = `FROM users ${where.length ? `WHERE ${where.join(' AND ')}` : ''}`;
   const total = (db.prepare(`SELECT COUNT(*) AS c ${base}`).get(...args) as { c: number }).c;
-  const sql = `SELECT id, name, role, team_id AS teamId, judge_table AS judgeTable, must_change AS mustChange,
+  const sql = `SELECT id, name, role, team_id AS teamId, must_change AS mustChange,
     created_at AS createdAt, last_login_at AS lastLoginAt ${base} ORDER BY role, id LIMIT 2000`;
   return { users: db.prepare(sql).all(...args) as AccountRow[], total };
 }
-
 export function countAdmins(): number {
   return (db.prepare("SELECT COUNT(*) AS c FROM users WHERE role = 'admin'").get() as { c: number }).c;
 }
-
-// 심판별 담당 테이블. REF01~REF08 의 고정 규칙은 클라이언트가 ID에서 도출하고,
-// 그 외 심판은 발급/배정 시 지정한 judge_table 을 쓴다.
-export function getJudgeTables(): Record<string, number> {
-  const rows = db.prepare("SELECT id, judge_table FROM users WHERE role = 'judge' AND judge_table IS NOT NULL").all() as { id: string; judge_table: number }[];
-  return Object.fromEntries(rows.map((r) => [r.id, r.judge_table]));
-}
-
-export function assignJudgeTable(judgeId: string, table: number | null): boolean {
-  const row = db.prepare("SELECT COUNT(*) AS c FROM users WHERE id = ? AND role = 'judge'").get(judgeId) as { c: number };
-  if (row.c === 0) return false;
-  db.prepare('UPDATE users SET judge_table = ? WHERE id = ?').run(table, judgeId);
-  return true;
-}
-
 // 세션 토큰 대조: 토큰의 role·teamId·tv 가 DB 와 일치해야 유효하다.
 // 비밀번호 재발급이나 권한 변경 때 tv 를 올리면 기존 세션이 즉시 무효화된다.
 export function assertSessionFresh(s: { id: string; role: string; teamId?: string; tv?: number }): boolean {
@@ -119,16 +102,16 @@ const genPassword = () => randomBytes(6).toString('base64url');
 const hashPw = (password: string, salt: string) => scryptSync(password, salt, 32).toString('base64url');
 
 // 발급·재발급 계정은 모두 must_change=1 (처음 로그인 후 비밀번호를 바꾸도록 운영에서 안내)
-function insertAccount(a: { id: string; name: string; role: AccountRole; teamId?: string | null; judgeTable?: number | null; password?: string; mustChange?: boolean }): IssuedAccount {
+function insertAccount(a: { id: string; name: string; role: AccountRole; teamId?: string | null; password?: string; mustChange?: boolean }): IssuedAccount {
   const password = a.password ?? genPassword();
   const salt = randomBytes(16).toString('base64url');
-  db.prepare('INSERT INTO users (id, name, role, team_id, judge_table, salt, hash, must_change, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(a.id, a.name, a.role, a.teamId ?? null, a.judgeTable ?? null, salt, hashPw(password, salt), a.mustChange === false ? 0 : 1, Date.now());
+  db.prepare('INSERT INTO users (id, name, role, team_id, salt, hash, must_change, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(a.id, a.name, a.role, a.teamId ?? null, salt, hashPw(password, salt), a.mustChange === false ? 0 : 1, Date.now());
   return { id: a.id, name: a.name, role: a.role, password };
 }
 
 // 계정 일괄 발급 (관리자가 올린 CSV). 하나라도 아이디가 겹치면 전체를 취소한다.
-export function issueAccounts(list: { id: string; name: string; role: 'judge' | 'admin'; judgeTable?: number | null }[]): IssuedAccount[] {
+export function issueAccounts(list: { id: string; name: string; role: 'judge' | 'admin' }[]): IssuedAccount[] {
   const dup = db.prepare('SELECT COUNT(*) AS c FROM users WHERE id = ?');
   for (const a of list) {
     if (!/^[a-zA-Z0-9._-]{4,32}$/.test(a.id)) throw new Error(`invalid_id:${a.id}`);
@@ -147,10 +130,10 @@ export function issueAccounts(list: { id: string; name: string; role: 'judge' | 
 }
 
 // 대회 기본 계정: 팀별 1개(team-J01 …), 관리자 2개(admin, admin2), 심판 REF01~REF16. 비밀번호는 모두 DEFAULT_PASSWORD.
-// 심판 1~8 은 같은 번호 테이블, 9~16 은 (번호-8)번 테이블로 기본 배정한다 (관리자 화면에서 바꿀 수 있다).
+// 심판에게 조 배정은 없다 — 모든 심판이 전체 경기를 채점할 수 있다.
 // overwrite=false(기동 시): 없는 계정만 만든다. overwrite=true(수동 스크립트): 이미 있는 계정도 비밀번호를 기본값으로 되돌린다.
 export function seedDefaultAccounts(overwrite = false): { created: number; reset: number } {
-  const wanted: { id: string; name: string; role: AccountRole; teamId?: string; judgeTable?: number }[] = [
+  const wanted: { id: string; name: string; role: AccountRole; teamId?: string }[] = [
     ...listTeams().map((t) => ({
       id: t.id,
       name: t.name,
@@ -159,7 +142,7 @@ export function seedDefaultAccounts(overwrite = false): { created: number; reset
     })),
     { id: 'admin', name: '관리자 1', role: 'admin' },
     { id: 'admin2', name: '관리자 2', role: 'admin' },
-    ...Array.from({ length: 16 }, (_, i) => ({ id: `REF${String(i + 1).padStart(2, '0')}`, name: `심판 ${i + 1}`, role: 'judge' as const, judgeTable: (i % 8) + 1 })),
+    ...Array.from({ length: 16 }, (_, i) => ({ id: `REF${String(i + 1).padStart(2, '0')}`, name: `심판 ${i + 1}`, role: 'judge' as const })),
   ];
   const exists = db.prepare('SELECT role FROM users WHERE id = ?');
   const toReset: string[] = [];
@@ -234,7 +217,7 @@ export function bootstrapStaffIfNone(): void {
   try {
     insertAccount({ id: adminId, name: '관리자', role: 'admin', password: adminPw });
     if (judgePw) {
-      for (let i = 1; i <= 8; i++) insertAccount({ id: `REF0${i}`, name: `심판 ${i}`, role: 'judge', judgeTable: i, password: judgePw });
+      for (let i = 1; i <= 8; i++) insertAccount({ id: `REF0${i}`, name: `심판 ${i}`, role: 'judge', password: judgePw });
     }
     db.exec('COMMIT');
   } catch (e) {
@@ -244,12 +227,3 @@ export function bootstrapStaffIfNone(): void {
   if (process.env.NODE_ENV === 'production') console.log(`최초 관리자 계정 '${adminId}' 이 만들어졌습니다.`);
   else console.log(`개발용 계정이 만들어졌습니다: 관리자 ${adminId}, 심판 REF01~REF08 (비밀번호는 환경변수에서 확인 — 임시 비밀번호이므로 바꾸세요)`);
 }
-
-// 심판의 담당 테이블. REF01~REF08 는 ID 에서 고정, 그 외는 발급/배정된 judge_table.
-const REF_TABLE = /^REF0?([1-8])$/i;
-export function judgeTableOf(judgeId: string): number | null {
-  const fromId = REF_TABLE.exec(judgeId)?.[1];
-  if (fromId) return Number(fromId);
-  return getJudgeTables()[judgeId] ?? null;
-}
-

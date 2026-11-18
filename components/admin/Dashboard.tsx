@@ -9,7 +9,7 @@ import { adminFetch, btn, card, timeAgo } from './shared';
 type Overview = {
   matches: { total: number; done: number };
   pendingCount: number;
-  judges: { id: string; name: string; table: number | null; submitted: number; total: number }[];
+  judges: { id: string; name: string; submitted: number }[];
   users: { total: number; active24h: number; neverLoggedIn: number };
   scores: { total: number; pending: number; confirmed: number; modified: number; rejected: number };
 };
@@ -117,14 +117,9 @@ export default function Dashboard() {
           <h2 className="font-semibold">심판별 제출 현황</h2>
           <div className="mt-5 space-y-4">
             {(ov?.judges ?? []).map((j) => (
-              <div key={j.id}>
-                <div className="flex justify-between text-sm">
-                  <span>{j.name} <span className="text-gray-400">{j.table ? `${j.table}조` : j.id}</span></span>
-                  <span className="tabular-nums">{j.submitted} / {j.total}</span>
-                </div>
-                <div className="mt-2 h-1.5 bg-surface-secondary">
-                  <div className="h-full bg-accent" style={{ width: `${j.total > 0 ? (j.submitted / j.total) * 100 : 0}%` }} />
-                </div>
+              <div key={j.id} className="flex justify-between text-sm">
+                <span>{j.name} <span className="text-gray-400">{j.id}</span></span>
+                <span className="tabular-nums">{j.submitted}경기 제출</span>
               </div>
             ))}
             {!ov && <p className="text-sm text-gray-400">불러오는 중…</p>}

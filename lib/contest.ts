@@ -11,7 +11,7 @@ export type Team = { id: string; cat: Category; code: string; name: string; regi
 // table = 조 번호(1~8), wave = A/B 테이블. 컬럼 이름은 예전 스키마 그대로다.
 export type Match = { id: string; round: 1 | 2; cat: Category; wave: 'A' | 'B'; table: number; field: '좌' | '우'; team: string; label?: string };
 export type Notice = { message: string; updatedAt: number };
-// 순위(서버 /standings, /leaderboard). 부문(cat) 안에서 최고점 → 합계 → 감점 → 팀 ID 순.
+// 순위(서버 /standings, /leaderboard). 부문(cat) 안에서 최고점 → 1차+2차 합 → 감점 → 팀 ID 순.
 // r1/r2 는 각 라운드 확정 최고점 (1R→2R 흐름 표시용, 없으면 null).
 export type Standing = { teamId: string; total: number; cat: Category; sum: number; pen: number; r1: number | null; r2: number | null };
 export type TournamentRound = 'QF' | 'SF' | 'F' | '3P';
@@ -62,7 +62,6 @@ export type ContestConfig = {
     rankOrder: Partial<Record<Category, string[]>>; // 관리자 순위 조정 (없으면 계산 순위)
   };
   template: unknown; // null 이면 lib/judge/rules.ts 기본 항목 사용
-  judgeTables: Record<string, number>; // 심판 ID → 담당 조 (REF 외 추가 심판 배정). 담당 조의 주니어·시니어 경기를 채점한다
   teams: Team[];
   matches: Match[];
   tournament: { slots: { cat: Category; slotNo: number; teamId: string | null }[]; games: TournamentGame[]; submissions?: TournamentSubmission[] };
@@ -92,28 +91,29 @@ export function computeSchedule(matches: Match[]): ScheduledMatch[] {
     .map((m, i) => ({ ...m, seq: i + 1, game: gameNoOf(m) }));
 }
 
-// 부문 순위에 경쟁 순위(동점 표기)를 붙인다. 동점 = 최고점·합계·감점이 모두 같음 (말단 정렬키 팀 ID 는 제외).
+// 부문 순위. 동점 = 최고점(total)이 같음 → 같은 순위 번호를 공유하고, 다음 순위는 건너뛰지 않는다 (1,2,2,3,4…).
+// 동점 팀끼리의 표시 순서는 1차+2차 점수 합이 큰 팀이 위 → 감점 적은 순 → 팀 ID.
 export type RankedStanding = Standing & { rank: number; tied: boolean };
+
+export const roundSum = (s: Pick<Standing, 'r1' | 'r2'>) => (s.r1 ?? 0) + (s.r2 ?? 0);
 
 // 서버의 전송 순서에 의존하지 않고, 실시간 점수 변경 직후에도 화면에서 다시 정렬한다.
 export function compareStandings(a: Standing, b: Standing) {
-  return b.total - a.total || b.sum - a.sum || a.pen - b.pen || a.teamId.localeCompare(b.teamId);
+  return b.total - a.total || roundSum(b) - roundSum(a) || a.pen - b.pen || a.teamId.localeCompare(b.teamId);
+}
+
+// 이미 compareStandings 로 정렬된 목록에 공동 순위(dense)를 붙인다.
+export function assignRanks<T extends Standing>(rows: T[]): (T & { rank: number; tied: boolean })[] {
+  let rank = 0;
+  return rows.map((s, i) => {
+    if (i === 0 || rows[i - 1].total !== s.total) rank += 1;
+    const tied = (i > 0 && rows[i - 1].total === s.total) || (i + 1 < rows.length && rows[i + 1].total === s.total);
+    return { ...s, rank, tied };
+  });
 }
 
 export function withRanks(standings: Standing[], cat: Category): RankedStanding[] {
-  const rows = standings.filter((s) => s.cat === cat).sort(compareStandings);
-  const keyOf = (s: Standing) => `${s.total}|${s.sum}|${s.pen}`;
-  let rank = 0;
-  let prevKey = '';
-  return rows.map((s, i) => {
-    const key = keyOf(s);
-    if (key !== prevKey) {
-      rank = i + 1;
-      prevKey = key;
-    }
-    const tied = (i > 0 && keyOf(rows[i - 1]) === key) || (i + 1 < rows.length && keyOf(rows[i + 1]) === key);
-    return { ...s, rank, tied };
-  });
+  return assignRanks(standings.filter((s) => s.cat === cat).sort(compareStandings));
 }
 
 // useRealtime.ts 와 같은 규칙: 개발 중에는 접속한 호스트의 :4000
@@ -210,14 +210,6 @@ export function useContest() {
 // 관리자가 저장한 뒤 즉시 반영하고 싶을 때 (설정 탭 저장 등) 캐시를 무효화한다.
 export const refreshContest = () => fetchConfig();
 
-// 심판 담당 단위 = 조 (1~8). 대진이 아직 없으면 1~8 전체.
-export const TABLES = GROUPS;
-export const tablesOf = (matches: Match[]) => {
-  const used = [...new Set(matches.map((m) => m.table))].sort((a, b) => a - b);
-  return used.length > 0 ? used : TABLES;
-};
-
 // 순위판 표시용. 목록에 없는 ID 는 그대로 보여준다.
 export const teamName = (teams: Team[], id: string) => teams.find((t) => t.id === id)?.name ?? id;
 export const teamOf = (teams: Team[], id: string) => teams.find((t) => t.id === id);
-export const matchesOfTable = (matches: Match[], table: number) => matches.filter((m) => m.table === table);
