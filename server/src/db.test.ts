@@ -13,6 +13,7 @@ const { submitScore } = await import('./routes/score.ts');
 
 before(() => {
   db.seedIfEmpty();
+  db.seedDefaultMatches();
   db.seedDefaultAccounts();
 });
 

@@ -12,6 +12,7 @@ const { sessionFromCookie } = await import('./session.ts');
 
 before(() => {
   db.seedIfEmpty();
+  db.seedDefaultMatches();
   db.issueAccounts([{ id: 'jdg1', name: '테스트 심판', role: 'judge' }]);
 });
 

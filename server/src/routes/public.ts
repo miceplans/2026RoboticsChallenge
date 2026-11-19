@@ -49,7 +49,8 @@ export function createPublicRoutes(): Router {
           },
           template: null,
           teams,
-          matches: [],
+          // 공개 '조 추첨' 탭용 (칸 위치와 팀 ID 만 담고 있어 개인정보가 없다)
+          matches: listMatches(),
           tournament: getTournament(),
         },
       });
