@@ -3,10 +3,9 @@
 import { useState } from 'react';
 import ConnectionToast from './ConnectionToast';
 import Score from '@/components/team/Score';
-import TeamName from '@/components/team/TeamName';
 import { useRealtime } from '@/lib/realtime/useRealtime';
 import { useTeamScores } from '@/lib/scores';
-import { useContest, type RankedStanding, type Team } from '@/lib/contest';
+import { type RankedStanding } from '@/lib/contest';
 import { CATEGORY_NAMES, type Category } from '@/lib/judge/rules';
 
 // 부문별 순위: 시니어/주니어는 각각 16팀이라 부문마다 따로 집계해서 보여준다.
@@ -15,13 +14,8 @@ const CATEGORIES: Category[] = ['J', 'S'];
 const PER_CATEGORY = 16;
 const CUT = 8; // 부문 순위 상위 8팀이 8강 진출
 
-function memberLine(teams: Team[], id: string) {
-  const members = teams.find((t) => t.id === id)?.members ?? [];
-  return members.filter(Boolean).join(', ');
-}
-
 // 전체 순위를 같은 카드로 표시한다. 왼쪽에는 큰 순위 숫자(워터마크), 오른쪽에는 점수를 둔다.
-function RankList({ teams, ranked }: { teams: Team[]; ranked: RankedStanding[] }) {
+function RankList({ ranked }: { ranked: RankedStanding[] }) {
   const rows = ranked.slice(0, PER_CATEGORY);
   return (
     <ol className="mx-auto mt-10 flex w-full max-w-[660px] flex-col gap-3">
@@ -39,8 +33,8 @@ function RankList({ teams, ranked }: { teams: Team[]; ranked: RankedStanding[] }
             <span className="absolute -top-[32px] -left-[18px] whitespace-nowrap text-[113.895px] font-bold leading-[normal] text-[#ebebf1]">{s.rank}</span>
             <Score value={s.total} className="absolute top-1/2 right-5 -translate-y-1/2 text-xl font-bold text-black" />
             <div className="relative py-[13px] pr-24 pl-[80px] text-black">
-              <p className="break-keep text-xl font-semibold leading-[normal]"><TeamName id={s.teamId} /></p>
-              <p className="break-keep text-base leading-[normal]">{memberLine(teams, s.teamId)}</p>
+              <p className="break-keep text-xl font-semibold leading-[normal]">{s.teamName || '팀 이름 불러오는 중…'}</p>
+              <p className="break-keep text-base leading-[normal]">{s.teamOrg || '소속 학교 미등록'}</p>
             </div>
           </div>
         </li>
@@ -52,8 +46,6 @@ function RankList({ teams, ranked }: { teams: Team[]; ranked: RankedStanding[] }
 export default function RankingBoard({ switcher }: { switcher?: React.ReactNode }) {
   const { status } = useRealtime();
   const { ranked: rankedOf } = useTeamScores();
-  const { config } = useContest();
-  const teams = config?.teams ?? [];
   const [cat, setCat] = useState<Category>('J');
   const ranked = rankedOf(cat);
   const standings = ranked;
@@ -79,7 +71,7 @@ export default function RankingBoard({ switcher }: { switcher?: React.ReactNode 
         {standings.length === 0 ? (
           <p className="mt-24 text-center text-gray-500">아직 집계된 {CATEGORY_NAMES[cat]} 점수가 없습니다.</p>
         ) : (
-          <RankList key={`list-${cat}`} teams={teams} ranked={ranked} />
+          <RankList key={`list-${cat}`} ranked={ranked} />
         )}
       </div>
       <ConnectionToast status={status} />

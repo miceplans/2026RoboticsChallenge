@@ -111,6 +111,8 @@ test('순위는 확정 점수 기준으로 높은 점수 → 조별 합계 → �
   assert.ok(idxOf('J-ARB-743') < idxOf('J-GYI-674'));
   assert.ok(idxOf('J-GYI-674') < idxOf('J-YYE-197'));
   const j01 = standings.find((s) => s.teamId === 'J-YYE-197');
+  assert.equal(j01?.teamName, '골든타임');
+  assert.equal(j01?.teamOrg, '고양서정초등학교');
   assert.equal(j01?.total, 100);
   assert.equal(j01?.r1, 100);
 });

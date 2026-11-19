@@ -13,7 +13,7 @@ export type Match = { id: string; round: 1 | 2; cat: Category; wave: 'A' | 'B'; 
 export type Notice = { message: string; updatedAt: number };
 // 순위(서버 /standings, /leaderboard). 부문(cat) 안에서 최고점 → 1차+2차 합 → 감점 → 팀 ID 순.
 // r1/r2 는 각 라운드 확정 최고점 (1R→2R 흐름 표시용, 없으면 null).
-export type Standing = { teamId: string; total: number; cat: Category; sum: number; pen: number; r1: number | null; r2: number | null };
+export type Standing = { teamId: string; teamName: string; teamOrg: string | null; total: number; cat: Category; sum: number; pen: number; r1: number | null; r2: number | null };
 export type TournamentRound = 'QF' | 'SF' | 'F' | '3P';
 export type TournamentGame = {
   cat: Category;

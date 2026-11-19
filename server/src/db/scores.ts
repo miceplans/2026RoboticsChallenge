@@ -14,7 +14,7 @@ export type ScoreInput = {
   sheet: string | null; // 채점지 전체(JSON 문자열). 점수만 본내는 경우 null
   penCnt?: number; // 규정 순위 3순위(감점 적은 순) 집계용
 };
-export type Standing = { teamId: string; cat: 'J' | 'S'; total: number; sum: number; pen: number; r1: number | null; r2: number | null };
+export type Standing = { teamId: string; teamName: string; teamOrg: string | null; cat: 'J' | 'S'; total: number; sum: number; pen: number; r1: number | null; r2: number | null };
 export type TeamScore = { matchId: string; judgeId: string; points: number; ts: number; status: ScoreStatus };
 export type PendingScore = {
   matchId: string;
@@ -93,8 +93,8 @@ export function modifyScore(matchId: string, teamId: string, judgeId: string, ac
 // 명단(teams)에 올라온 팀은 확정 점수가 없어도 total=0으로 포함해 순위판에 그대로 띄운다.
 // r1/r2 는 각 라운드의 확정 최고점 — 1R→2R 흐름을 화면에 그대로 보여주기 위해 낸다.
 const standingsStmt = db.prepare(`
-  SELECT teamId, cat, total, sumPts AS sum, pen, r1, r2 FROM (
-    SELECT t.id AS teamId, t.cat AS cat,
+  SELECT teamId, teamName, teamOrg, cat, total, sumPts AS sum, pen, r1, r2 FROM (
+    SELECT t.id AS teamId, t.name AS teamName, t.org AS teamOrg, t.cat AS cat,
       COALESCE(MAX(CASE WHEN s.status IN ('confirmed','modified') THEN s.points END), 0) AS total,
       COALESCE(SUM(CASE WHEN s.status IN ('confirmed','modified') THEN s.pen_cnt END), 0) AS pen,
       COALESCE(SUM(CASE WHEN s.status IN ('confirmed','modified') THEN s.points END), 0) AS sumPts,
