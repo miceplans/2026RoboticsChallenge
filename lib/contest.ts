@@ -58,6 +58,7 @@ export type ContestConfig = {
     autoConfirm: boolean;
     boardPublic: boolean;
     notice: Notice;
+    broadcastUrl?: string; // 관리자 설정의 경기 중계 주소 (구버전 서버 응답에는 없음)
     tableOrder?: number[]; // 구버전 설정 (더 이상 쓰지 않음 — 진행 순서는 조 번호로 고정)
     rankOrder: Partial<Record<Category, string[]>>; // 관리자 순위 조정 (없으면 계산 순위)
   };

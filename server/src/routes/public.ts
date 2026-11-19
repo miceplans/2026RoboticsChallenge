@@ -2,6 +2,7 @@ import {
   autoConfirm,
   boardPublic,
   getConfigVersion,
+  getBroadcastUrl,
   getNotice,
   getRankOrder,
   getStandings,
@@ -12,7 +13,6 @@ import {
   homologationApprovedRobots,
   homologationStatuses,
   getProgress,
-  hideScores,
   listMatches,
   listSheets,
   listTeams,
@@ -46,6 +46,7 @@ export function createPublicRoutes(): Router {
             autoConfirm: false,
             boardPublic: true,
             notice: getNotice(),
+            broadcastUrl: getBroadcastUrl(),
             tableOrder: [],
             rankOrder: getRankOrder(),
           },
@@ -80,6 +81,7 @@ export function createPublicRoutes(): Router {
           autoConfirm: autoConfirm(),
           boardPublic: boardPublic(),
           notice: getNotice(),
+          broadcastUrl: getBroadcastUrl(),
           tableOrder: getTableOrder(),
           rankOrder: getRankOrder(),
         },
@@ -94,6 +96,11 @@ export function createPublicRoutes(): Router {
     });
   });
 
+  // 경기 중계 주소: 로그인·보드 공개 여부와 상관없이 /live 화면이 읽는다 (공개 정보).
+  r.get('/broadcast', (ctx) => {
+    json(ctx.res, 200, { ok: true, url: getBroadcastUrl() });
+  });
+
   // 순위판 스냅샷. 소켓 끊김 시 재검증용. 보드 비공개 설정을 반영한다.
   r.get('/standings', requireSession, (ctx) => {
     const s = ctx.session!;
@@ -101,24 +108,21 @@ export function createPublicRoutes(): Router {
     json(ctx.res, 200, { ok: true, standings: visible ? getStandings() : [] });
   });
 
-  // 팀 채점 표: 참가자는 자기 팀만, 심판/관리자는 모든 팀을 조회할 수 있다.
-  // '점수 가리기' 중에도 본인 팀 요청은 200으로 응답하되, 점수는 빈 목록으로 가린다.
-  // 폴링 요청에 403을 반복해 내보내지 않고 클라이언트가 로딩을 정상적으로 끝내게 한다.
+  // 팀 채점 표: 참가자는 자기 팀의 모든 점수를, 심판/관리자는 모든 팀을 조회할 수 있다.
   r.get('/team-scores', requireSession, query({ teamId: str({ min: 1, max: 64 }) }), (ctx) => {
     const s = ctx.session!;
     const { teamId } = ctx.query as { teamId: string };
     if (s.role === 'user' && s.teamId !== teamId) return void json(ctx.res, 403, { ok: false, error: 'forbidden' });
-    const scores = s.role === 'user' && hideScores() ? [] : getTeamScores(teamId);
-    const body: TeamScoresResult = { ok: true, scores };
+    const body: TeamScoresResult = { ok: true, scores: getTeamScores(teamId) };
     json(ctx.res, 200, body);
   });
 
-  // 팀 심사표(심판이 서명한 채점지 원본): 참가자는 자기 팀만, 심판/관리자는 모든 팀. '점수 가리기'가 켜져 있으면 참가자 조회를 막는다.
+  // 팀 심사표(심판이 서명한 채점지 원본): 참가자는 자기 팀만, 심판/관리자는 모든 팀을 조회한다.
   // 반려된 채점지는 무효이므로 참가자에게는 보내지 않는다.
   r.get('/team-sheets', requireSession, query({ teamId: str({ min: 1, max: 64 }), matchId: qOpt(str({ min: 1, max: 64 })) }), (ctx) => {
     const s = ctx.session!;
     const { teamId, matchId } = ctx.query as { teamId: string; matchId?: string };
-    if (s.role === 'user' && (s.teamId !== teamId || hideScores())) return void json(ctx.res, 403, { ok: false, error: 'forbidden' });
+    if (s.role === 'user' && s.teamId !== teamId) return void json(ctx.res, 403, { ok: false, error: 'forbidden' });
     const sheets = listSheets({ teamId, matchId }).filter((row) => s.role !== 'user' || row.status !== 'rejected');
     json(ctx.res, 200, { ok: true, sheets });
   });

@@ -7,6 +7,7 @@ import {
   deleteSetting,
   getActivity,
   getHomologation,
+  getBroadcastUrl,
   getNotice,
   getOverview,
   getPending,
@@ -120,6 +121,8 @@ const settingsBody = obj({
   boardPublic: opt(bool),
   hideScores: opt(bool),
   notice: opt(obj({ message: str(), updatedAt: opt(num()) })),
+  // 경기 중계 주소: http(s) 주소만 받는다 (iframe src 로 쓰이므로 javascript: 등 차단). 빈 문자열이면 지운다.
+  broadcastUrl: opt(str({ max: 2048, re: /^(|https?:\/\/\S+)$/i })),
   // 구버전 클라이언트가 수동 점수를 보내더라도 묵시하지 않고 명시적으로 거부한다.
   roundScores: opt(rec(obj({ r1: opt(strOrNum), r2: opt(strOrNum) }))),
   tableOrder: opt(arr(tableNo, { min: 8, max: 8 })),
@@ -189,6 +192,7 @@ export function createAdminRoutes(hooks: AdminHooks): Router {
         boardPublic: boardPublic(),
         hideScores: hideScores(),
         notice: getNotice(),
+        broadcastUrl: getBroadcastUrl(),
         tableOrder: getTableOrder(),
         rankOrder: getRankOrder(),
       },
@@ -387,6 +391,11 @@ export function createAdminRoutes(hooks: AdminHooks): Router {
     if (b.autoConfirm !== undefined) setSetting('auto_confirm', b.autoConfirm ? '1' : '0');
     if (b.boardPublic !== undefined) setSetting('board_public', b.boardPublic ? '1' : '0');
     if (b.hideScores !== undefined) setSetting('hide_scores', b.hideScores ? '1' : '0');
+    if (b.broadcastUrl !== undefined) {
+      const url = b.broadcastUrl.trim();
+      if (url) setSetting('broadcast_url', url);
+      else deleteSetting('broadcast_url');
+    }
     // 당일 진행 순서: 테이블 1~8 의 실행 순서 (순열)
     if (b.tableOrder !== undefined) {
       if (new Set(b.tableOrder).size !== 8) return void json(ctx.res, 400, { ok: false, error: 'table_order_must_be_permutation' });

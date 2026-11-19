@@ -178,6 +178,8 @@ CREATE TABLE tournament_games (
 | GET | `/config` | 설정(공개분), 템플릿, teams, matches, tournament 한 번에. `updatedAt` 포함 → 클라이언트 캐시 비교용. JudgeConsole·RankingBoard·관리자 페이지(`components/admin/*`)가 기존 `TEAMS`/`MATCHES` import 대신 사용 |
 | GET | `/standings` | 순위판 스냅샷. `board_public=0`이면 user/judge에게 빈 배열. 소켓 끊김 시 재검증용 |
 | GET | `/team-scores?teamId=` | 기존 |
+| GET | `/team-sheets?teamId=&matchId=` | 팀 심사표 원본 (참가자는 자기 팀, 반려 제외) |
+| GET | `/broadcast` | 경기 중계 주소 (비로그인 허용) |
 | GET | `/tournament?cat=` | 토너먼트 슬롯+경기 결과 |
 
 ### 심판 (기존 + 확장)
@@ -204,7 +206,7 @@ CREATE TABLE tournament_games (
 | POST | `/admin/accounts/reset-password` | `{ids[]}` 또는 `{role:'judge'}` 일괄 재발급 → CSV. `must_change=1` |
 | PUT | `/admin/teams` | 팀 목록 전체 교체 (Import). 대진(matches)도 함께 초기화되므로 이어서 matches 재저장 필요 |
 | PUT | `/admin/matches` | 대진·심판 배정 수정 |
-| GET/PUT | `/admin/settings` | `auto_confirm`, `board_public`, `notice` |
+| GET/PUT | `/admin/settings` | `auto_confirm`, `board_public`, `notice`, `broadcast_url` |
 | GET/PUT | `/admin/template` · POST `/admin/template/reset` | 채점표 템플릿 CRUD, "복원"=rules.ts 기본값 |
 | PUT | `/admin/tournament/slots` | `{cat, teamIds[8]}` 배정 저장 → 결과 초기화, `/contest` 즉시 반영 |
 | POST | `/admin/tournament/result` | `{cat, round, gameNo, winner?}` → 서버에 저장된 심판 제출 점수만 확정. 동점일 때만 `winner` 선택 |

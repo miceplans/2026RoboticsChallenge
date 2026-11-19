@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useToast } from '@/components/Toast';
 import { refreshContest, useContest } from '@/lib/contest';
+import { toEmbedUrl } from '@/components/LiveBroadcast';
 import { adminFetch, btnPrimary, card } from './shared';
 
 export default function SettingsPanel() {
@@ -10,6 +11,7 @@ export default function SettingsPanel() {
   const { config, loaded } = useContest();
   const [flags, setFlags] = useState({ autoConfirm: true, boardPublic: true, hideScores: false });
   const [notice, setNotice] = useState('');
+  const [broadcastUrl, setBroadcastUrl] = useState('');
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
@@ -22,6 +24,7 @@ export default function SettingsPanel() {
       hideScores: false,
     });
     setNotice(config?.settings.notice.message ?? '');
+    setBroadcastUrl(config?.settings.broadcastUrl ?? '');
     adminFetch<{ settings: { hideScores: boolean } }>('/admin/settings')
       .then((d) => {
         setFlags((f) => ({ ...f, hideScores: d.settings.hideScores }));
@@ -35,9 +38,12 @@ export default function SettingsPanel() {
     { key: 'hideScores', label: '점수 가리기', hint: '참가자의 내 점수표 탭 조회를 막습니다.' },
   ];
 
+  const urlInvalid = broadcastUrl.trim() !== '' && !toEmbedUrl(broadcastUrl);
+
   const save = async () => {
+    if (urlInvalid) return toast('경기 중계 주소는 http:// 또는 https:// 로 시작해야 합니다.');
     try {
-      await adminFetch('/admin/settings', { method: 'PUT', body: { autoConfirm: flags.autoConfirm, boardPublic: flags.boardPublic, hideScores: flags.hideScores, notice: { message: notice } } });
+      await adminFetch('/admin/settings', { method: 'PUT', body: { autoConfirm: flags.autoConfirm, boardPublic: flags.boardPublic, hideScores: flags.hideScores, notice: { message: notice }, broadcastUrl: broadcastUrl.trim() } });
       setDirty(false);
       toast('설정을 저장했습니다. 접속 중인 화면에 즉시 반영됩니다.');
       refreshContest();
@@ -53,6 +59,19 @@ export default function SettingsPanel() {
         <label className="block">
           <span className="text-sm font-medium">공지</span>
           <textarea value={notice} onChange={(e) => { setNotice(e.target.value); setDirty(true); }} className="mt-2 h-24 w-full rounded-lg border border-line bg-white p-3 text-sm" placeholder="참가자 화면 상단에 표시할 공지 (비우면 숨김)" />
+        </label>
+        <label className="block">
+          <span className="text-sm font-medium">경기 중계 주소</span>
+          <input
+            type="url"
+            value={broadcastUrl}
+            onChange={(e) => { setBroadcastUrl(e.target.value); setDirty(true); }}
+            className={`mt-2 w-full rounded-lg border bg-white p-3 text-sm ${urlInvalid ? 'border-red-400' : 'border-line'}`}
+            placeholder="https://www.youtube.com/watch?v=… (비우면 기본 주소 사용)"
+          />
+          <span className={`mt-1 block text-xs ${urlInvalid ? 'text-red-500' : 'text-gray-400'}`}>
+            {urlInvalid ? 'http:// 또는 https:// 로 시작하는 주소를 입력해 주세요.' : '경기 중계 화면에 바로 반영됩니다. 유튜브 시청·라이브 주소는 자동으로 삽입용 주소로 바뀝니다.'}
+          </span>
         </label>
         {items.map(({ key, label, hint }) => (
           <label key={label} className="flex cursor-pointer items-center justify-between gap-4 pt-4 text-sm">
