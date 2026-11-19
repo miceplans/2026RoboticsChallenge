@@ -149,7 +149,7 @@ const matchImportBody = obj({
       field: oneOf('좌', '우'),
       team: str(),
     }),
-    { min: 1 },
+    // 최소 건수 없음: 조 추첨 '비우기'로 모든 배정을 지울 수 있어야 한다
   ),
 });
 
