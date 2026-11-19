@@ -4,10 +4,11 @@ import { useState } from 'react';
 import { useToast } from '@/components/Toast';
 import { fieldOfSide, teamName, useContest, refreshContest, type Match, type Side } from '@/lib/contest';
 import { CATEGORY_NAMES, type Category } from '@/lib/judge/rules';
-import GroupDrawTable, { boardOf, DRAW_THEME, slotKey, SLOT_KEYS, type Board, type Round } from '@/components/GroupDrawTable';
+import GroupDrawTable, { boardOf, DRAW_THEME, slotKey, SLOT_KEYS, type Board } from '@/components/GroupDrawTable';
 import { adminFetch, btn } from './shared';
 
-// 조 추첨 결과 입력: 공개 '조 추첨' 탭과 같은 표에 팀을 끌어다 놓는다.
+// 라운드 조 추첨 결과 입력: 공개 '조 추첨' 탭과 같은 표에 팀을 끌어다 놓는다.
+// 1차·2차는 같은 조 배정으로 진행하므로, 한 번 배치하면 두 라운드 대진에 똑같이 저장한다.
 // 놓는 즉시 저장되고, 서버가 config 이벤트를 보내 중계 화면이 바로 채워진다.
 // 칸끼리 끌면 자리가 바뀌고, 칸에서 대기 팀으로 끌면 빠진다. (터치: 팀을 누른 뒤 칸을 누른다)
 const CATS: Category[] = ['J', 'S'];
@@ -25,30 +26,31 @@ export default function GroupDraw() {
   const { config } = useContest();
   const teams = config?.teams ?? [];
   const matches = config?.matches ?? [];
-  const [round, setRound] = useState<Round>(1);
-  const [pending, setPending] = useState<{ round: Round; boards: Boards } | null>(null); // 저장 중 미리 보여줄 배치
+  const [pending, setPending] = useState<{ boards: Boards } | null>(null); // 저장 중 미리 보여줄 배치
   const [drag, setDrag] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null); // 터치용: 먼저 누른 팀/칸
   const busy = pending !== null;
 
-  const boardFor = (cat: Category) => (pending?.round === round && pending.boards[cat]) || boardOf(matches, cat, round);
+  const boardFor = (cat: Category) => pending?.boards[cat] || boardOf(matches, cat, 1);
 
-  // 바뀐 부문들의 배치를 한 번의 요청으로 저장한다. 나머지 부문·라운드 줄은 그대로 보낸다.
-  const persist = async (boards: Boards, r: Round = round, done?: string) => {
-    setPending({ round: r, boards });
+  // 바뀐 부문들의 배치를 1차·2차 모두에 한 번의 요청으로 저장한다. 나머지 부문 줄은 그대로 보낸다.
+  const persist = async (boards: Boards, done?: string) => {
+    setPending({ boards });
     try {
       const changed = Object.keys(boards) as Category[];
       // 같은 팀·라운드의 기존 경기 ID 를 유지해야 이미 들어온 점수(scores FK)가 끊기지 않는다
-      const idOf = (team: string) => matches.find((m) => m.round === r && m.team === team)?.id ?? `R${r}-${team}`;
-      const others = matches.filter((m) => !(m.round === r && changed.includes(m.cat)));
-      const mine: Match[] = changed.flatMap((cat) =>
-        SLOT_KEYS.flatMap((k) => {
-          const team = boards[cat]![k];
-          if (!team) return [];
-          const [g, side] = k.split('-') as [string, Side];
-          return [{ id: idOf(team), round: r, cat, wave: side, table: Number(g), field: fieldOfSide(side), team }];
-        }),
+      const idOf = (r: 1 | 2, team: string) => matches.find((m) => m.round === r && m.team === team)?.id ?? `R${r}-${team}`;
+      const others = matches.filter((m) => !changed.includes(m.cat));
+      const mine: Match[] = ([1, 2] as const).flatMap((r) =>
+        changed.flatMap((cat) =>
+          SLOT_KEYS.flatMap((k) => {
+            const team = boards[cat]![k];
+            if (!team) return [];
+            const [g, side] = k.split('-') as [string, Side];
+            return [{ id: idOf(r, team), round: r, cat, wave: side, table: Number(g), field: fieldOfSide(side), team }];
+          }),
+        ),
       );
       const all = [...others, ...mine].map(({ id, round, cat, wave, table, field, team }) => ({ id, round, cat, wave, table, field, team }));
       await adminFetch('/admin/matches', { method: 'PUT', body: { matches: all } });
@@ -89,13 +91,9 @@ export default function GroupDraw() {
     } else if (board[key]) setPicked(enc({ cat, kind: 'slot', val: key }));
   };
 
-  const copyRound1 = () => {
-    if (!confirm('1차 조 배정을 2차에 그대로 복사할까요? (현재 2차 배정은 덮어씁니다)')) return;
-    void persist({ J: boardOf(matches, 'J', 1), S: boardOf(matches, 'S', 1) }, 2, '1차 배정을 2차에 복사했습니다.');
-  };
   const clearAll = () => {
-    if (!confirm(`${round}차 조 배정을 주니어·시니어 모두 비울까요? 중계 화면에서도 바로 지워집니다.`)) return;
-    void persist({ J: {}, S: {} }, round, `${round}차 조 배정을 비웠습니다.`);
+    if (!confirm('조 배정을 주니어·시니어 모두 비울까요? 중계 화면에서도 바로 지워집니다.')) return;
+    void persist({ J: {}, S: {} }, '조 배정을 비웠습니다.');
   };
 
   const chip = (cat: Category, id: string, from: string) => (
@@ -111,25 +109,19 @@ export default function GroupDraw() {
     </span>
   );
 
-  const tab = (on: boolean) => `px-4 py-2 text-sm font-bold ${on ? 'border-b-2 border-accent text-accent' : 'text-gray-500'}`;
-
   return (
     <div>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="font-semibold">조 추첨 배정</h2>
-          <p className="mt-1 text-xs text-gray-500">추첨 결과가 나오는 대로 대기 팀을 표의 칸에 끌어다 놓으세요. 놓는 즉시 저장되고 대회 진행 › 조 추첨 탭에 실시간으로 표시됩니다. 칸끼리 끌면 자리가 바뀌고, 칸에서 대기 팀으로 끌면 빠집니다. (터치: 팀을 누른 뒤 칸을 누르세요)</p>
+          <h2 className="font-semibold">라운드 조 추첨</h2>
+          <p className="mt-1 text-xs text-gray-500">추첨 결과가 나오는 대로 대기 팀을 표의 칸에 끌어다 놓으세요. 1차·2차 라운드에 같은 조로 적용되며, 놓는 즉시 저장되고 대회 진행 › 조 추첨 탭에 실시간으로 표시됩니다. 칸끼리 끌면 자리가 바뀌고, 칸에서 대기 팀으로 끌면 빠집니다. (터치: 팀을 누른 뒤 칸을 누르세요)</p>
         </div>
         <div className="flex gap-2">
-          {round === 2 && <button onClick={copyRound1} disabled={busy} className={`${btn} disabled:opacity-40`}>1차 배정 복사</button>}
           <button onClick={clearAll} disabled={busy} className={`${btn} disabled:opacity-40`}>비우기</button>
         </div>
       </div>
 
-      <nav className="mt-4 flex flex-wrap gap-2 border-b border-line">
-        {([1, 2] as Round[]).map((r) => <button key={r} onClick={() => { setRound(r); setPicked(null); }} disabled={busy} className={tab(round === r)}>{r}차 조 추첨</button>)}
-        {busy && <span className="ml-auto self-center text-xs text-gray-500">저장 중…</span>}
-      </nav>
+      {busy && <p className="mt-3 text-right text-xs text-gray-500">저장 중…</p>}
 
       <div className="mt-5 grid gap-8 lg:grid-cols-2">
         {CATS.map((cat) => {
@@ -185,7 +177,7 @@ export default function GroupDraw() {
           );
         })}
       </div>
-      <p className="mt-2 text-xs text-gray-500">진행 순서는 주니어 1조 → 시니어 1조 → 주니어 2조 → … → 시니어 8조로 고정이며, 1차·2차 모두 같습니다.</p>
+      <p className="mt-2 text-xs text-gray-500">진행 순서는 주니어 1조 → 시니어 1조 → 주니어 2조 → … → 시니어 8조로 고정이며, 1차·2차 모두 같은 조·같은 순서로 진행합니다.</p>
     </div>
   );
 }

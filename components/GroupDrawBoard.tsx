@@ -1,20 +1,16 @@
 'use client';
 
-import { useState } from 'react';
 import { teamName, useContest } from '@/lib/contest';
 import type { Category } from '@/lib/judge/rules';
-import GroupDrawTable, { boardOf, slotKey, type Round } from './GroupDrawTable';
+import GroupDrawTable, { boardOf, slotKey } from './GroupDrawTable';
 
-// 공개 '조 추첨' 탭. 관리자가 칸을 채울 때마다 서버가 config 이벤트를 보내므로 실시간으로 채워진다.
+// 공개 '조 추첨' 탭 (1차·2차 공통 라운드 조 추첨). 관리자가 칸을 채울 때마다 서버가 config 이벤트를 보내므로 실시간으로 채워진다.
 const CATS: Category[] = ['J', 'S'];
 
 export default function GroupDrawBoard({ switcher }: { switcher?: React.ReactNode }) {
   const { config, loaded } = useContest();
   const teams = config?.teams ?? [];
   const matches = config?.matches ?? [];
-  // 직접 고르기 전에는 배정이 시작된 가장 최근 라운드를 보여준다
-  const [picked, setPicked] = useState<Round | null>(null);
-  const round: Round = picked ?? (matches.some((m) => m.round === 2) ? 2 : 1);
 
   return (
     <section className="relative min-h-screen overflow-hidden bg-white pt-[73px] pb-24 font-sans">
@@ -23,23 +19,16 @@ export default function GroupDrawBoard({ switcher }: { switcher?: React.ReactNod
           <h1 className="text-3xl font-extrabold text-heading [word-break:keep-all]">대회 진행</h1>
           {switcher}
         </div>
-        <nav className="flex gap-2 border-b border-line">
-          {([1, 2] as Round[]).map((r) => (
-            <button
-              key={r}
-              onClick={() => setPicked(r)}
-              className={`px-4 py-3 text-base font-bold ${round === r ? 'border-b-2 border-accent text-accent' : 'text-gray-500'}`}
-            >
-              {r}차 조 추첨
-            </button>
-          ))}
-        </nav>
+        <div className="border-b border-line pb-3">
+          <h2 className="text-xl font-bold text-heading">라운드 조 추첨</h2>
+          <p className="mt-1 text-sm text-gray-500">1차·2차 라운드는 같은 조 배정으로 진행합니다.</p>
+        </div>
         {!loaded ? (
           <p className="mt-24 text-center text-gray-500">조 추첨 결과를 불러오는 중입니다…</p>
         ) : (
           <div className="mt-8 grid gap-8 md:grid-cols-2">
             {CATS.map((cat) => {
-              const board = boardOf(matches, cat, round);
+              const board = boardOf(matches, cat, 1);
               return (
                 <GroupDrawTable
                   key={cat}
@@ -48,7 +37,7 @@ export default function GroupDrawBoard({ switcher }: { switcher?: React.ReactNod
                   renderTeam={(g, side) => {
                     const id = board[slotKey(g, side)];
                     return id ? (
-                      <span key={`${round}-${id}`} className="draw-reveal block truncate font-semibold text-gray-900" title={teamName(teams, id)}>
+                      <span key={id} className="draw-reveal block truncate font-semibold text-gray-900" title={teamName(teams, id)}>
                         {teamName(teams, id)}
                       </span>
                     ) : null;

@@ -21,7 +21,7 @@ export default function Ops() {
   return (
     <section className={`${card} p-6`}>
       <h1 className="text-3xl font-extrabold text-heading">경기 순서 · 운영</h1>
-      <p className="mt-2 text-sm text-gray-500">조 추첨 결과를 부문·라운드별로 배치합니다. 한 조의 두 팀이 A·B 테이블에서 동시에 경기하며(2분), 저장하면 심판·참가자 화면의 순서 안내에도 반영됩니다.</p>
+      <p className="mt-2 text-sm text-gray-500">조 추첨 결과를 부문별로 배치합니다 (1차·2차 라운드 공통). 한 조의 두 팀이 A·B 테이블에서 동시에 경기하며(2분), 저장하면 심판·참가자 화면의 순서 안내에도 반영됩니다.</p>
 
       <div className="mt-8"><GroupDraw /></div>
 

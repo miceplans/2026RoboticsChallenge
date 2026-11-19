@@ -77,7 +77,7 @@ export default function MatchOrder({ myTeam, title = '경기 순서' }: { myTeam
       <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-gray-500">
         <li>다음 경기 조는 경기장 옆에서 대기 후 바로 입장합니다.</li>
         <li>시니어는 경기마다 배치 시트대로 검체 위치를 바꿉니다.</li>
-        <li>2차 라운드도 같은 순서로 진행합니다 (조 배정은 라운드마다 새로 추첨).</li>
+        <li>2차 라운드도 1차와 같은 조·같은 순서로 진행합니다.</li>
       </ul>
     </section>
   );
