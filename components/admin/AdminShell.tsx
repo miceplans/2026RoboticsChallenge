@@ -10,10 +10,10 @@ import NoticeBanner from '../NoticeBanner';
 export const adminNav: { href: string; label: string; icon: string }[] = [
   { href: '/admin', label: '대시보드', icon: 'dashboard' },
   { href: '/admin/homologation', label: '등록', icon: 'verified' },
+  { href: '/admin/order', label: '경기 순서 · 운영', icon: 'format_list_numbered' },
+  { href: '/admin/draw', label: '토너먼트 배정', icon: 'shuffle' },
   { href: '/admin/scores', label: '채점 목록', icon: 'fact_check' },
   { href: '/admin/results', label: '경기 결과', icon: 'leaderboard' },
-  { href: '/admin/draw', label: '토너먼트 배정', icon: 'shuffle' },
-  { href: '/admin/order', label: '경기 순서 · 운영', icon: 'format_list_numbered' },
   { href: '/admin/teams', label: '팀 · 계정', icon: 'group' },
   { href: '/admin/accounts', label: '사용자 현황', icon: 'badge' },
   { href: '/admin/settings', label: '설정', icon: 'settings' },
