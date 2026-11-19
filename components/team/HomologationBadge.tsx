@@ -3,7 +3,7 @@
 import { useContest } from '@/lib/contest';
 
 // 로봇 승인서 결과 표시: 승인 로봇 1대 이상 → 파란 체크, 한 대도 없음 → 빨간 X.
-// 서버가 볼 수 있는 팀(심판·관리자는 전 팀, 참가자는 자기 팀)의 결과만 내려주므로 여기서는 받은 값만 그린다.
+// 서버가 로그인한 참가자·심판·관리자에게 전 팀 결과를 내려주므로 여기서는 받은 값을 그린다.
 export default function HomologationBadge({ teamId, status: given }: { teamId: string; status?: 'pass' | 'fail' | null }) {
   const { config } = useContest();
   const status = given === undefined ? config?.homologation?.[teamId] : given;

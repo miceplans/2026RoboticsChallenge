@@ -61,11 +61,9 @@ export function createPublicRoutes(): Router {
         ? t
         : { ...t, region: '', org: '', coach: '', members: [] },
     );
-    // 로봇 승인 여부(팀 이름 옆 체크·X)는 심판·관리자에게는 전 팀, 참가자에게는 자기 팀 것만 보낸다
-    const allStatuses = homologationStatuses();
-    const homologation = isStaff
-      ? allStatuses
-      : session.teamId && allStatuses[session.teamId] ? { [session.teamId]: allStatuses[session.teamId] } : {};
+    // 로봇 승인 여부(팀 이름 옆 체크·X)는 로그인한 참가자·심판·관리자 모두 전 팀 것을 본다.
+    // 승인 현황에는 개인정보가 없고, 대진표·순위표에서 어느 팀이 출전 가능한지 함께 확인해야 한다.
+    const homologation = homologationStatuses();
     json(ctx.res, 200, {
       ok: true,
       config: {
