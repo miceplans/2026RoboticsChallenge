@@ -23,6 +23,7 @@ import {
   listSheets,
   listUsers,
   logAudit,
+  modifyScore,
   rejectScore,
   replaceMatches,
   replaceTeams,
@@ -336,13 +337,9 @@ export function createAdminRoutes(hooks: AdminHooks): Router {
     },
   );
 
-  // 점수 확정 / 반려. 관리자는 점수를 정정(입력)할 수 없다.
+  // 점수 확정 / 반려 / 강제 정정. 강제 정정은 원본 채점지를 보존하고 감사 로그에 사유를 남긴다.
   const scoreActionGuard: Guard = (ctx) => {
-    if (ctx.params.action === 'modify') {
-      json(ctx.res, 403, { ok: false, error: 'score_input_forbidden' });
-      return false;
-    }
-    if (ctx.params.action !== 'confirm' && ctx.params.action !== 'reject') {
+    if (ctx.params.action !== 'confirm' && ctx.params.action !== 'reject' && ctx.params.action !== 'modify') {
       json(ctx.res, 404, { ok: false, error: 'not_found' });
       return false;
     }
@@ -358,7 +355,7 @@ export function createAdminRoutes(hooks: AdminHooks): Router {
         judgeId: str(),
         points: opt(num()),
         penCnt: opt(num({ int: true })),
-        reason: opt(str()),
+        reason: opt(str({ max: 500 })),
         sheet: opt(nullable(jsonObj)),
       }),
       MAX_ADMIN_BODY_BYTES,
@@ -370,7 +367,13 @@ export function createAdminRoutes(hooks: AdminHooks): Router {
       let changed: boolean;
       if (ctx.params.action === 'confirm') {
         changed = confirmScore(matchId, teamId, judgeId, s.id);
-      } else changed = rejectScore(matchId, teamId, judgeId, s.id, b.reason ?? '');
+      } else if (ctx.params.action === 'reject') {
+        changed = rejectScore(matchId, teamId, judgeId, s.id, b.reason ?? '');
+      } else {
+        if (b.points === undefined) return void json(ctx.res, 400, { ok: false, error: 'points_required' });
+        if (!b.reason?.trim()) return void json(ctx.res, 400, { ok: false, error: 'reason_required' });
+        changed = modifyScore(matchId, teamId, judgeId, s.id, { points: b.points, reason: b.reason.trim() });
+      }
       if (!changed) return void json(ctx.res, 409, { ok: false, error: 'not_found_or_bad_status' });
       hooks.onScoresChanged();
       json(ctx.res, 200, { ok: true });

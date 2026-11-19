@@ -10,6 +10,65 @@ import { adminFetch, btn, btnPrimary, card, downloadCsv, Icon, STATUS_LABEL, tim
 
 type ScoreRow = { matchId: string; teamId: string; judgeId: string; points: number; ts: number; status: string; cat: 'J' | 'S' | null };
 
+function ForceEditModal({ score, onClose, onSaved }: { score: ScoreRow; onClose: () => void; onSaved: (points: number) => void }) {
+  const toast = useToast();
+  const [points, setPoints] = useState(String(score.points));
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !busy && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [busy, onClose]);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const nextPoints = Number(points);
+    if (!Number.isFinite(nextPoints)) return toast('수정할 점수를 입력해 주세요.');
+    if (!reason.trim()) return toast('강제 수정 사유를 입력해 주세요.');
+    setBusy(true);
+    try {
+      await adminFetch('/admin/scores/modify', {
+        method: 'POST',
+        body: { matchId: score.matchId, teamId: score.teamId, judgeId: score.judgeId, points: nextPoints, reason: reason.trim() },
+      });
+      toast('점수가 강제 수정되었습니다.');
+      onSaved(nextPoints);
+    } catch (error) {
+      toast((error as Error).message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !busy && onClose()}>
+      <form role="dialog" aria-modal="true" aria-label="점수 강제 수정" className={`${card} w-full max-w-md p-6`} onSubmit={save} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-xl font-extrabold text-heading">점수 강제 수정</h2>
+          <button type="button" className="rounded-full p-1 text-gray-500 hover:bg-gray-100 disabled:opacity-50" onClick={onClose} disabled={busy} aria-label="닫기"><Icon name="close" /></button>
+        </div>
+        <p className="mt-2 text-sm text-gray-500">{score.matchId} · {score.teamId} · 심판 {score.judgeId}</p>
+        <div className="mt-5 space-y-4">
+          <label className="block text-sm font-semibold text-gray-700">
+            총점
+            <input type="number" step="any" value={points} onChange={(e) => setPoints(e.target.value)} autoFocus required className="mt-1 w-full rounded-xl border border-line px-3 py-2 font-normal tabular-nums" />
+          </label>
+          <label className="block text-sm font-semibold text-gray-700">
+            수정 사유 <span className="text-red-500">*</span>
+            <textarea value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} rows={3} required placeholder="수정 사유를 입력하세요 (감사 로그에 기록됩니다)" className="mt-1 w-full resize-none rounded-xl border border-line px-3 py-2 font-normal" />
+          </label>
+        </div>
+        <p className="mt-3 text-xs text-amber-700">원본 서명 채점지는 변경되지 않으며, 수정된 총점은 즉시 순위에 반영됩니다.</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" className={btn} onClick={onClose} disabled={busy}>취소</button>
+          <button type="submit" className={`${btnPrimary} disabled:opacity-50`} disabled={busy}>{busy ? '수정 중…' : '강제 수정'}</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 // --- 점수표 PDF (게임별 채점 확인서 인쇄) ---
 
 // 채점 한 건의 확인서를 보여주고 그대로 PDF 파일로 내려받는 모달
@@ -245,6 +304,7 @@ export default function ScoreList() {
   const [pdfBusy, setPdfBusy] = useState(false);
   const [printRows, setPrintRows] = useState<SheetRow[] | null>(null);
   const [selected, setSelected] = useState<ScoreRow | null>(null);
+  const [editing, setEditing] = useState<ScoreRow | null>(null);
   const [teamOpen, setTeamOpen] = useState<string | null>(null);
   const printAreaRef = useRef<HTMLDivElement>(null);
   const previousTitle = useRef<string | null>(null);
@@ -497,7 +557,7 @@ export default function ScoreList() {
               <th className="px-4 py-3 text-right font-semibold">총점</th>
               <th className="px-4 py-3 font-semibold">상태</th>
               <th className="px-4 py-3 font-semibold">제출</th>
-              <th className="px-4 py-3 text-center font-semibold">확인서</th>
+              <th className="px-4 py-3 text-center font-semibold">관리</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
@@ -511,7 +571,10 @@ export default function ScoreList() {
                 <td className="px-4 py-3 text-gray-600">{STATUS_LABEL[r.status] ?? r.status}</td>
                 <td className="px-4 py-3 text-xs text-gray-400">{timeAgo(r.ts)}</td>
                 <td className="px-4 py-3 text-center">
-                  <button className={`${btn} !px-3 !py-1.5`} onClick={() => setSelected(r)}>확인서</button>
+                  <div className="flex justify-center gap-1">
+                    <button className={`${btn} !px-3 !py-1.5`} onClick={() => setSelected(r)}>확인서</button>
+                    <button className={`${btn} !px-3 !py-1.5 text-red-600`} onClick={() => setEditing(r)}>강제 수정</button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -531,6 +594,16 @@ export default function ScoreList() {
       )}
       {teamOpen && <TeamResultsModal teamId={teamOpen} items={items} onClose={() => setTeamOpen(null)} />}
       {selected && <ScoreSheetModal score={selected} items={items} onClose={() => setSelected(null)} />}
+      {editing && (
+        <ForceEditModal
+          score={editing}
+          onClose={() => setEditing(null)}
+          onSaved={(points) => {
+            setRows((current) => current.map((row) => row.matchId === editing.matchId && row.teamId === editing.teamId && row.judgeId === editing.judgeId ? { ...row, points, status: 'modified' } : row));
+            setEditing(null);
+          }}
+        />
+      )}
     </section>
   );
 }

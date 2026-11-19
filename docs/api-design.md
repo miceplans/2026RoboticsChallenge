@@ -196,7 +196,7 @@ CREATE TABLE tournament_games (
 | GET | `/admin/activity?limit=` | score_audit 최근 내역 (대시보드 활동 로그) |
 | GET | `/admin/pending` | 확정 대기 목록 (팀·경기·심판·서명 시각) |
 | POST | `/admin/scores/confirm` | `{matchId, teamId, judgeId}` |
-| POST | `/admin/scores/modify` | 금지 (`403 score_input_forbidden`). 관리자는 점수를 입력·정정할 수 없음 |
+| POST | `/admin/scores/modify` | 관리자 강제 정정. `points`와 `reason` 필수, 원본 채점지는 보존하고 감사 로그 기록 |
 | POST | `/admin/scores/reject` | `{matchId, teamId, judgeId, reason}` |
 | GET | `/admin/scores?status&round&cat&judgeId&format=csv` | 채점 목록 조회·필터·CSV 낳볃내기 |
 | GET | `/admin/users?role&q` | 계정 목록 (마지막 로그인 포함) |
