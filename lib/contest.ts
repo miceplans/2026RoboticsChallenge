@@ -66,7 +66,7 @@ export type ContestConfig = {
   matches: Match[];
   tournament: { slots: { cat: Category; slotNo: number; teamId: string | null }[]; games: TournamentGame[]; submissions?: TournamentSubmission[] };
   progress?: Record<Category, CatProgress>; // 구버전 서버 응답에는 없음 — 없으면 잠그지 않는다
-  // 로봇 승인서 결과 (팀 ID → pass|fail). 로그인한 모든 역할에 전 팀 결과가 제공된다.
+  // 로봇 승인서 결과 (팀 ID → pass|fail). 심판·관리자는 전 팀, 참가자는 자기 팀 결과만 제공된다.
   homologation?: Record<string, 'pass' | 'fail'>;
 };
 
