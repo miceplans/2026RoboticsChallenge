@@ -393,7 +393,7 @@ export function createAdminRoutes(hooks: AdminHooks): Router {
     if (b.hideScores !== undefined) setSetting('hide_scores', b.hideScores ? '1' : '0');
     if (b.broadcastUrl !== undefined) {
       const url = b.broadcastUrl.trim();
-      if (url) setSetting('broadcast_url', url);
+      if (url) setSetting('broadcast_url', JSON.stringify(url));
       else deleteSetting('broadcast_url');
     }
     // 당일 진행 순서: 테이블 1~8 의 실행 순서 (순열)

@@ -72,6 +72,15 @@ test('기본 설정에서 심판이 제출한 점수는 바로 확정된다', ()
   assert.equal(r.status, 'confirmed');
 });
 
+test('경기 중계 주소는 JSON 문자열로 저장하고 원래 주소로 읽는다', (t) => {
+  t.after(() => db.deleteSetting('broadcast_url'));
+  const url = 'https://www.youtube.com/watch?v=test123';
+
+  db.setSetting('broadcast_url', JSON.stringify(url));
+
+  assert.equal(db.getBroadcastUrl(), url);
+});
+
 test('점수 제출은 ts 가 오래된 걸 무시하고, 확정 후엔 덮지 못한다', (t) => {
   db.setSetting('auto_confirm', '0');
   t.after(() => db.setSetting('auto_confirm', '1'));

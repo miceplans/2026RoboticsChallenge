@@ -35,8 +35,9 @@ export function deleteSetting(key: string): void {
 export const autoConfirm = () => getSetting('auto_confirm', '1') === '1';
 export const boardPublic = () => getSetting('board_public', '1') === '1';
 export const hideScores = () => getSetting('hide_scores', '0') === '1';
-// 경기 중계 영상 주소 (비어 있으면 화면은 NEXT_PUBLIC_BROADCAST_URL 로 돌아간다)
-export const getBroadcastUrl = () => getSetting('broadcast_url', '');
+// 경기 중계 영상 주소 (비어 있으면 화면은 NEXT_PUBLIC_BROADCAST_URL 로 돌아간다).
+// settings.value 는 json_valid 제약이 있으므로 문자열 값도 JSON 문자열로 저장한다.
+export const getBroadcastUrl = () => getSettingJson('broadcast_url', '');
 export const getNotice = () => getSettingJson('notice', { message: '', updatedAt: 0 });
 // 설정이 마지막으로 바뀐 시각 — /config 의 updatedAt(캐시 비교용)으로 쓴다. 요청할 때마다 새 값을 내는 게 아니다.
 export function getConfigVersion(): number {
