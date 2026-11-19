@@ -3,10 +3,12 @@
 import { useState } from 'react';
 import RankingBoard from './RankingBoard';
 import TournamentBracket from './TournamentBracket';
+import GroupDrawBoard from './GroupDrawBoard';
 
-type View = 'ranking' | 'bracket';
+type View = 'ranking' | 'draw' | 'bracket';
 const VIEWS: { id: View; label: string }[] = [
   { id: 'ranking', label: '순위' },
+  { id: 'draw', label: '조 추첨' },
   { id: 'bracket', label: '토너먼트' },
 ];
 
@@ -27,5 +29,6 @@ export default function ContestView() {
       ))}
     </div>
   );
+  if (view === 'draw') return <GroupDrawBoard switcher={switcher} />;
   return view === 'ranking' ? <RankingBoard switcher={switcher} /> : <TournamentBracket switcher={switcher} />;
 }

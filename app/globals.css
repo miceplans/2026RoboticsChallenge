@@ -81,6 +81,14 @@ body {
   animation: rank-fade 0.6s ease-out both;
 }
 
+/* 조 추첨: 칸에 팀 이름이 새로 들어올 때 */
+@keyframes draw-reveal {
+  from { opacity: 0; transform: translateY(4px); }
+}
+.draw-reveal {
+  animation: draw-reveal 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 /* 토너먼트 탈락: 연기가 피어오른 뒤 카드가 회색으로 바뀐다 (시드 태그와 줄이 어긋나지 않도록 위치는 그대로). */
 @keyframes bracket-eliminated {
   0% { background-color: #fff; border-color: #6b7280; color: var(--color-heading); filter: grayscale(0); }

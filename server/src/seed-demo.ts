@@ -8,10 +8,11 @@ if (!path || /(^|\/)contest\.db$/.test(path)) {
 }
 
 const { db } = await import('./db/connection.ts');
-const { seedIfEmpty, getStandings } = await import('./db.ts');
+const { seedIfEmpty, seedDefaultMatches, getStandings } = await import('./db.ts');
 const { saveTournamentSlots, saveTournamentResult } = await import('./tournament.ts');
 
 seedIfEmpty();
+seedDefaultMatches(); // 데모는 추첨 없이 명단 순서대로 대진을 채운다
 
 const JUDGE = 'DEMO_JUDGE';
 db.prepare(`INSERT OR IGNORE INTO users (id, name, role, salt, hash, must_change, created_at) VALUES (?, '데모 심판', 'judge', '-', '-', 0, ?)`).run(JUDGE, Date.now());
