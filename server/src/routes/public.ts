@@ -14,12 +14,13 @@ import {
   getProgress,
   hideScores,
   listMatches,
+  listSheets,
   listTeams,
 } from '../db.ts';
 import type { Session } from '../session.ts';
 import { Router, query, requireSession } from '../router.ts';
 import { json } from '../http.ts';
-import { str } from '../validate.ts';
+import { qOpt, str } from '../validate.ts';
 
 // --- 인증 필요 조회 API (공개 순위판 설정이 켜져 있으면 /config 는 비로그인도 일부 조회 가능) ---
 
@@ -101,13 +102,25 @@ export function createPublicRoutes(): Router {
   });
 
   // 팀 채점 표: 참가자는 자기 팀만, 심판/관리자는 모든 팀을 조회할 수 있다.
-  // '점수 가리기' 설정이 켜져 있으면 참가자 조회를 막는다.
+  // '점수 가리기' 중에도 본인 팀 요청은 200으로 응답하되, 점수는 빈 목록으로 가린다.
+  // 폴링 요청에 403을 반복해 내보내지 않고 클라이언트가 로딩을 정상적으로 끝내게 한다.
   r.get('/team-scores', requireSession, query({ teamId: str({ min: 1, max: 64 }) }), (ctx) => {
     const s = ctx.session!;
     const { teamId } = ctx.query as { teamId: string };
-    if (s.role === 'user' && (s.teamId !== teamId || hideScores())) return void json(ctx.res, 403, { ok: false, error: 'forbidden' });
-    const body: TeamScoresResult = { ok: true, scores: getTeamScores(teamId) };
+    if (s.role === 'user' && s.teamId !== teamId) return void json(ctx.res, 403, { ok: false, error: 'forbidden' });
+    const scores = s.role === 'user' && hideScores() ? [] : getTeamScores(teamId);
+    const body: TeamScoresResult = { ok: true, scores };
     json(ctx.res, 200, body);
+  });
+
+  // 팀 심사표(심판이 서명한 채점지 원본): 참가자는 자기 팀만, 심판/관리자는 모든 팀. '점수 가리기'가 켜져 있으면 참가자 조회를 막는다.
+  // 반려된 채점지는 무효이므로 참가자에게는 보내지 않는다.
+  r.get('/team-sheets', requireSession, query({ teamId: str({ min: 1, max: 64 }), matchId: qOpt(str({ min: 1, max: 64 })) }), (ctx) => {
+    const s = ctx.session!;
+    const { teamId, matchId } = ctx.query as { teamId: string; matchId?: string };
+    if (s.role === 'user' && (s.teamId !== teamId || hideScores())) return void json(ctx.res, 403, { ok: false, error: 'forbidden' });
+    const sheets = listSheets({ teamId, matchId }).filter((row) => s.role !== 'user' || row.status !== 'rejected');
+    json(ctx.res, 200, { ok: true, sheets });
   });
 
   return r;
