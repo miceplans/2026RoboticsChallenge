@@ -192,7 +192,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
                       <Chip tone={m.cat === 'S' ? 'info' : 'neutral'}>{CATEGORY_NAMES[m.cat]}</Chip>
                       <span className="flex-1">
                         <b className="block">{gameNoOf(m)}번째 경기 · {m.table}조 · {m.wave} 테이블</b>
-                        <small className="text-gray-500">{t ? <>{t.id} {t.name}<HomologationBadge teamId={t.id} /> · {t.org}{config?.homologation?.[t.id] && <ApprovedRobots robots={approvedRobotsOf(t.id)} />}</> : m.team}</small>
+                        <small className="text-gray-500">{t ? <>{t.id} {t.name} · {t.org}{config?.homologation?.[t.id] && <ApprovedRobots robots={approvedRobotsOf(t.id)} />}</> : m.team}</small>
                       </span>
                       {s?.status === 'signed' ? <b><Score value={calc(s.values, m.cat, ruleItems).total} /></b> : !s && serverPts != null ? <b><Score value={serverPts} /></b> : null}
                       <Chip tone={tone}>{text}</Chip>
@@ -227,7 +227,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
                         return (
                           <button key={m.id} type="button" onClick={() => open(m)} className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-surface">
                             <span className="flex-1">
-                              <b className="block">{t ? <>{t.id} {t.name}<HomologationBadge teamId={t.id} /></> : m.team}</b>
+                              <b className="block">{t ? <>{t.id} {t.name}</> : m.team}</b>
                               <small className="text-gray-500">{t?.org}{t && config?.homologation?.[t.id] && <ApprovedRobots robots={approvedRobotsOf(t.id)} />}</small>
                             </span>
                             {s?.status === 'signed' && <b><Score value={totalOf(m, s)} /></b>}
@@ -384,9 +384,7 @@ function ApprovedRobots({ robots }: { robots: string[] }) {
   return (
     <>
       {' · '}
-      <span className={`font-bold ${ok ? 'text-accent' : 'text-error'}`} aria-label={ok ? '승인 로봇' : '승인 로봇 없음'}>
-        {ok ? '✓' : '✕'}
-      </span>
+      <HomologationBadge teamId="" status={ok ? 'pass' : 'fail'} />
       {ok ? ` ${robots.join(', ')}` : ' 없음'}
     </>
   );
