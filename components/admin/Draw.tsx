@@ -21,9 +21,7 @@ export default function Draw() {
   const [custom, setCustom] = useState(false); // false 면 아직 배정을 손대지 않은 빈 상태
   const [editing, setEditing] = useState(false); // 변경 모드: 팀을 끌어서 다시 배치
   const [picked, setPicked] = useState<string>();
-  const [localRank, setLocalRank] = useState<string[] | null>(null); // 드래그로 바꾼 표시 순서 (null 이면 서버 순위)
-  const [dragRank, setDragRank] = useState<string | null>(null);
-  const [overRank, setOverRank] = useState<string | null>(null);
+  const [localRank, setLocalRank] = useState<string[] | null>(null); // ▲▼ 로 바꾼 표시 순서 (null 이면 서버 순위)
   const loadedCat = useRef<Category | null>(null);
   // 토너먼트 경기 점수는 심판이 입력해 제출한다. 관리자는 칸마다 미리보기를 보고 '확정' 하거나 '변경'(다시 입력받기)한다.
   const [saving, setSaving] = useState<number | null>(null);
@@ -181,18 +179,14 @@ export default function Draw() {
   const onClear = (slot: number) => change((prev) => prev.map((t, i) => (i === slot ? undefined : t)));
   const autoFill = () => !locked && change(() => SEED_ORDER.map((seed) => ranking[seed - 1]?.teamId));
 
-  // 순위 패널끼리의 드래그: rank:팀ID 페이로드만 받아 슬롯 드래그(team:/slot:)와 섞이지 않게 한다
-  const onRankDrop = (target: string, payload: string) => {
-    if (!payload.startsWith('rank:')) return;
-    const from = payload.slice(5);
-    if (from === target) return;
+  // 순위 순서 바꾸기: ▲▼ 버튼으로 한 칸씩 옮긴다
+  const moveRank = (id: string, dir: -1 | 1) => {
     setLocalRank((prev) => {
       const list = [...(prev ?? baseRankIds)];
-      const fi = list.indexOf(from);
-      const ti = list.indexOf(target);
-      if (fi < 0 || ti < 0) return prev;
-      list.splice(fi, 1);
-      list.splice(ti, 0, from);
+      const i = list.indexOf(id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= list.length) return prev;
+      [list[i], list[j]] = [list[j], list[i]];
       return list;
     });
   };
@@ -247,7 +241,7 @@ export default function Draw() {
         </p>
       )}
       {tieAtCut && (
-        <p className="mt-4 rounded-xl bg-[#fff4e5] p-3 text-sm font-semibold text-[#b45309]">⚠ 8위 경계에 동점이 있습니다. 드래그로 진출 팀을 결정하고 순서 고정을 누르세요.</p>
+        <p className="mt-4 rounded-xl bg-[#fff4e5] p-3 text-sm font-semibold text-[#b45309]">⚠ 8위 경계에 동점이 있습니다. ▲▼ 버튼으로 진출 팀 순서를 정하고 순서 고정을 누르세요.</p>
       )}
       <div className="mt-6 grid gap-6 xl:grid-cols-[260px_1fr]">
         <div
@@ -265,23 +259,23 @@ export default function Draw() {
               if (!r) return null;
               const used = placed.has(id);
               return (
-                <li key={id}>
+                <li key={id} className="flex items-stretch gap-1">
                   <button
                     type="button"
                     draggable
-                    onDragStart={(e) => { e.dataTransfer.setData('text/plain', `rank:${id}`); setDragRank(id); }}
-                    onDragEnd={() => { setDragRank(null); setOverRank(null); }}
-                    onDragOver={(e) => { e.preventDefault(); setOverRank(id); }}
-                    onDragLeave={() => setOverRank((o) => (o === id ? null : o))}
-                    onDrop={(e) => { e.preventDefault(); onRankDrop(id, e.dataTransfer.getData('text/plain')); setOverRank(null); setDragRank(null); }}
+                    onDragStart={(e) => e.dataTransfer.setData('text/plain', `rank:${id}`)}
                     onClick={() => setPicked((p) => (p === id ? undefined : id))}
-                    className={`flex w-full items-center gap-2 rounded border bg-white px-3 py-2 text-left text-sm ${overRank === id && dragRank !== id ? 'border-accent' : picked === id ? 'border-accent' : 'border-line'} ${used ? 'opacity-40' : 'cursor-grab hover:border-line-hover'}`}
+                    className={`flex min-w-0 flex-1 items-center gap-2 rounded border bg-white px-3 py-2 text-left text-sm ${picked === id ? 'border-accent' : 'border-line'} ${used ? 'opacity-40' : 'hover:border-line-hover'}`}
                   >
                     <span className="w-6 font-bold tabular-nums text-accent">{i + 1}</span>
                     <span className="min-w-0 flex-1 truncate font-medium"><TeamName id={id} /></span>
                     {tieKeys.has(rankKey(r)) && <span className="text-xs font-bold text-[#b45309]">=</span>}
                     <Score value={r.total} unit="" className="text-gray-500" />
                   </button>
+                  <div className="flex flex-col gap-0.5">
+                    <button type="button" aria-label="위로" disabled={i === 0} onClick={() => moveRank(id, -1)} className="flex-1 rounded border border-line bg-white px-1.5 text-[10px] leading-none text-gray-600 hover:border-accent hover:text-accent disabled:opacity-30">▲</button>
+                    <button type="button" aria-label="아래로" disabled={i === rankIds.length - 1} onClick={() => moveRank(id, 1)} className="flex-1 rounded border border-line bg-white px-1.5 text-[10px] leading-none text-gray-600 hover:border-accent hover:text-accent disabled:opacity-30">▼</button>
+                  </div>
                 </li>
               );
             })}
