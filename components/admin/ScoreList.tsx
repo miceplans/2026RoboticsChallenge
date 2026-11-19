@@ -1,107 +1,16 @@
 'use client';
 
-import { useEffect, useRef, useState, type Ref } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useToast } from '@/components/Toast';
-import { downloadScoreSheetPdf, downloadScoreSheetsPdf, ScoreSheetPdf } from '@/components/judge/ScoreSheetPdf';
-import { teamName, useContest, type Match, type Team, type TournamentRound } from '@/lib/contest';
-import { ITEMS, parseTemplate, type Item, type Values } from '@/lib/judge/rules';
-import type { Sheet } from '@/lib/judge/sheets';
+import { downloadScoreSheetPdf, downloadScoreSheetsPdf } from '@/components/judge/ScoreSheetPdf';
+import { officialSheetProps, OfficialScoreSheet, type SheetRow } from '@/components/judge/OfficialScoreSheet';
+import { teamName, useContest, type TournamentRound } from '@/lib/contest';
+import { ITEMS, parseTemplate, type Item } from '@/lib/judge/rules';
 import { adminFetch, btn, btnPrimary, card, downloadCsv, Icon, STATUS_LABEL, timeAgo } from './shared';
 
 type ScoreRow = { matchId: string; teamId: string; judgeId: string; points: number; ts: number; status: string; cat: 'J' | 'S' | null };
 
 // --- 점수표 PDF (게임별 채점 확인서 인쇄) ---
-
-type SheetPayload = {
-  values?: Values;
-  pre?: Record<string, boolean>;
-  total?: number;
-  refSig?: string;
-  refSignedAt?: number;
-  teamSig?: string;
-  teamSigner?: string;
-  teamSignedAt?: number;
-  signException?: string;
-  signedAt?: number;
-};
-
-type SheetRow = {
-  matchId: string;
-  teamId: string;
-  teamName: string | null;
-  members: string[];
-  judgeId: string;
-  judgeName: string | null;
-  round: number | null;
-  cat: 'J' | 'S' | null;
-  wave: string | null;
-  table: number | null;
-  field: string | null;
-  points: number;
-  status: string;
-  ts: number;
-  sheet: SheetPayload | null;
-};
-
-const TOURNAMENT_ROUND_LABEL: Record<string, string> = { QF: '8강', SF: '4강', F: '결승', '3P': '3·4위전' };
-
-function officialSheetProps(row: SheetRow) {
-  const tournament = /^T:[JS]:(QF|SF|F|3P):(\d+):([AB])$/.exec(row.matchId);
-  const cat = row.cat ?? 'J';
-  const match: Match = {
-    id: row.matchId,
-    round: row.round === 2 ? 2 : 1,
-    cat,
-    wave: row.wave === 'B' ? 'B' : 'A',
-    table: row.table ?? 0,
-    field: row.field === '우' ? '우' : '좌',
-    team: row.teamId,
-    label: tournament ? `${TOURNAMENT_ROUND_LABEL[tournament[1]]} ${tournament[2]}경기` : undefined,
-  };
-  const team: Team = {
-    id: row.teamId,
-    cat,
-    code: row.teamId,
-    name: row.teamName ?? row.teamId,
-    region: '',
-    org: '',
-    coach: '',
-    members: row.members,
-  };
-  const payload = row.sheet ?? {};
-  const sheet: Sheet = {
-    status: 'signed',
-    values: payload.values ?? {},
-    pre: payload.pre ?? {},
-    updated: row.ts,
-    refSig: payload.refSig,
-    refSignedAt: payload.refSignedAt,
-    teamSig: payload.teamSig,
-    teamSigner: payload.teamSigner,
-    teamSignedAt: payload.teamSignedAt,
-    signException: payload.signException,
-    signedAt: payload.signedAt,
-  };
-  return { match, team, sheet };
-}
-
-function OfficialScoreSheet({ row, items, sheetRef }: { row: SheetRow; items: Item[]; sheetRef?: Ref<HTMLDivElement> }) {
-  const { match, team, sheet } = officialSheetProps(row);
-  return (
-    <div className="print-sheet">
-      <ScoreSheetPdf
-        ref={sheetRef}
-        mode="inline"
-        judgeId={row.judgeId}
-        judgeName={row.judgeName ?? row.judgeId}
-        match={match}
-        team={team}
-        sheet={sheet}
-        ruleItems={items}
-      />
-    </div>
-  );
-}
 
 // 채점 한 건의 확인서를 보여주고 그대로 PDF 파일로 내려받는 모달
 function ScoreSheetModal({ score, items, onClose }: { score: ScoreRow; items: Item[]; onClose: () => void }) {

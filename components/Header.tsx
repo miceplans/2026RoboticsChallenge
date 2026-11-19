@@ -53,7 +53,9 @@ export default async function Header() {
             <Link href="/live" className="whitespace-nowrap text-[15px] font-semibold text-heading hover:text-accent transition-colors">경기 중계</Link>
             {session ? (
               <>
-                <Link href="/mypage" className={linkClass}>{session.name}</Link>
+                <Link href="/mypage" className={linkClass}>
+                  내 정보{session.teamId ? ` (${session.name})` : ''}
+                </Link>
                 <Link href="/password" className={`${linkClass} hidden sm:block`}>비밀번호 변경</Link>
                 <form action={logout}>
                   <button aria-label="로그아웃" className={`flex items-center ${linkClass}`}>
