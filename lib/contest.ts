@@ -68,6 +68,8 @@ export type ContestConfig = {
   progress?: Record<Category, CatProgress>; // 구버전 서버 응답에는 없음 — 없으면 잠그지 않는다
   // 로봇 승인서 결과 (팀 ID → pass|fail). 심판·관리자는 전 팀, 참가자는 자기 팀 결과만 제공된다.
   homologation?: Record<string, 'pass' | 'fail'>;
+  // 출전 승인된 로봇 라벨 (팀 ID → R1, R2…). 위와 같은 역할 범위로 제공된다.
+  homologationRobots?: Record<string, string[]>;
 };
 
 // 토너먼트는 예선 순위 상위 8팀이 8강부터 시작한다.

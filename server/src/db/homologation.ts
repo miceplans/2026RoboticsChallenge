@@ -66,6 +66,18 @@ export function homologationStatuses(): Record<string, HomologationStatus> {
   return out;
 }
 
+// 팀 ID → 출전 승인된 로봇 라벨. 서명·검사 세부 내용은 내보내지 않는다.
+export function homologationApprovedRobots(): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const r of db.prepare('SELECT team_id, data FROM homologations').all() as Pick<Row, 'team_id' | 'data'>[]) {
+    const data = JSON.parse(r.data) as HomologationData;
+    out[r.team_id] = Array.from({ length: data.robots }, (_, i) => i)
+      .filter((i) => robotApproved(data, i))
+      .map((i) => `R${i + 1}`);
+  }
+  return out;
+}
+
 export function saveHomologation(teamId: string, data: HomologationData, actorId: string): Homologation {
   const clean = normalizeHomologation(data);
   const status = homologationStatus(clean);

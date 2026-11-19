@@ -77,7 +77,10 @@ function TeamNotice() {
 }
 
 function TeamInfo({ team, me }: { team?: Team; me: string }) {
+  const { config } = useContest();
   if (!team) return <TeamNotice />;
+  const status = config?.homologation?.[team.id];
+  const approvedRobots = config?.homologationRobots?.[team.id] ?? [];
   const rows: [string, string][] = [
     ['팀명', team.name],
     ['팀번호', team.id],
@@ -91,7 +94,22 @@ function TeamInfo({ team, me }: { team?: Team; me: string }) {
     <section className="mt-7">
       <p className="font-bold text-accent">{team.id} · {team.cat === 'J' ? '주니어' : '시니어'} 부문</p>
       <h1 className="mt-1 text-3xl font-extrabold">팀 정보</h1>
-      <article className="mt-6 rounded-2xl border border-line bg-white p-6">
+      <article className={`mt-6 rounded-2xl border p-5 ${status === 'pass' ? 'border-accent bg-accent-tint' : 'border-line bg-white'}`}>
+        <div className="flex items-start gap-3">
+          <HomologationBadge teamId={team.id} />
+          <div>
+            <h2 className="font-extrabold">로봇 승인 결과</h2>
+            <p className="mt-1 text-sm text-gray-600">
+              {!status
+                ? '아직 승인 결과가 등록되지 않았습니다.'
+                : approvedRobots.length
+                  ? `출전 승인 로봇: ${approvedRobots.join(', ')}`
+                  : '출전 승인된 로봇이 없습니다.'}
+            </p>
+          </div>
+        </div>
+      </article>
+      <article className="mt-4 rounded-2xl border border-line bg-white p-6">
         <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
           {rows.map(([label, value]) => (
             <div key={label} className="flex justify-between gap-4 border-b border-line pb-3 text-sm sm:block sm:border-b-0 sm:pb-0">

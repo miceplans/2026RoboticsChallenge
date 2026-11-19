@@ -32,6 +32,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
   const { config, failed } = useContest();
   const matches = config?.matches ?? [];
   const teams = config?.teams ?? [];
+  const approvedRobotsOf = (teamId: string) => config?.homologationRobots?.[teamId] ?? [];
   // 관리자가 저장한 채점표 템플릿이 있으면 그것을 쓰고, 없거나 형식이 이상하면 기본 규칙 항목표를 쓴다
   const ruleItems = useMemo<Item[]>(() => parseTemplate(config?.template) ?? ITEMS, [config?.template]);
   const { sheets, update } = useSheets(judgeId);
@@ -191,7 +192,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
                       <Chip tone={m.cat === 'S' ? 'info' : 'neutral'}>{CATEGORY_NAMES[m.cat]}</Chip>
                       <span className="flex-1">
                         <b className="block">{gameNoOf(m)}번째 경기 · {m.table}조 · {m.wave} 테이블</b>
-                        <small className="text-gray-500">{t ? <>{t.id} {t.name}<HomologationBadge teamId={t.id} /> · {t.org}</> : m.team}</small>
+                        <small className="text-gray-500">{t ? <>{t.id} {t.name}<HomologationBadge teamId={t.id} /> · {t.org}{config?.homologation?.[t.id] && ` · 승인 ${approvedRobotsOf(t.id).join(', ') || '없음'}`}</> : m.team}</small>
                       </span>
                       {s?.status === 'signed' ? <b><Score value={calc(s.values, m.cat, ruleItems).total} /></b> : !s && serverPts != null ? <b><Score value={serverPts} /></b> : null}
                       <Chip tone={tone}>{text}</Chip>
@@ -227,7 +228,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
                           <button key={m.id} type="button" onClick={() => open(m)} className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-surface">
                             <span className="flex-1">
                               <b className="block">{t ? <>{t.id} {t.name}<HomologationBadge teamId={t.id} /></> : m.team}</b>
-                              <small className="text-gray-500">{t?.org}</small>
+                              <small className="text-gray-500">{t?.org}{t && config?.homologation?.[t.id] && ` · 승인 ${approvedRobotsOf(t.id).join(', ') || '없음'}`}</small>
                             </span>
                             {s?.status === 'signed' && <b><Score value={totalOf(m, s)} /></b>}
                             <Chip tone={tone}>{text}</Chip>

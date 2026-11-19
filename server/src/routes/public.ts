@@ -9,6 +9,7 @@ import {
   getTeamScores,
   getTemplate,
   getTournament,
+  homologationApprovedRobots,
   homologationStatuses,
   getProgress,
   hideScores,
@@ -63,9 +64,13 @@ export function createPublicRoutes(): Router {
     );
     // 로봇 승인 여부(팀 이름 옆 체크·X)는 심판·관리자에게는 전 팀, 참가자에게는 자기 팀 것만 보낸다.
     const allStatuses = homologationStatuses();
+    const allApprovedRobots = homologationApprovedRobots();
     const homologation = isStaff
       ? allStatuses
       : session.teamId && allStatuses[session.teamId] ? { [session.teamId]: allStatuses[session.teamId] } : {};
+    const homologationRobots = isStaff
+      ? allApprovedRobots
+      : session.teamId && allApprovedRobots[session.teamId] ? { [session.teamId]: allApprovedRobots[session.teamId] } : {};
     json(ctx.res, 200, {
       ok: true,
       config: {
@@ -83,6 +88,7 @@ export function createPublicRoutes(): Router {
         tournament: getTournament(),
         progress: getProgress(),
         homologation,
+        homologationRobots,
       },
     });
   });
