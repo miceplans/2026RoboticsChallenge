@@ -18,7 +18,7 @@ export default function Draw() {
   const teams = config?.teams ?? [];
   const [slots, setSlots] = useState<(string | undefined)[]>(Array(8).fill(undefined));
   const [applied, setApplied] = useState(false);
-  const [custom, setCustom] = useState(false); // false 면 순위 기반 시드 배치를 미리보기로 보여준다
+  const [custom, setCustom] = useState(false); // false 면 아직 배정을 손대지 않은 빈 상태
   const [editing, setEditing] = useState(false); // 변경 모드: 팀을 끌어서 다시 배치
   const [picked, setPicked] = useState<string>();
   const [localRank, setLocalRank] = useState<string[] | null>(null); // 드래그로 바꾼 표시 순서 (null 이면 서버 순위)
@@ -44,9 +44,8 @@ export default function Draw() {
   // 서버가 강제하는 잠금: 그 부문 1·2차가 모두 확정돼야 8강을 배정할 수 있다 (progress 가 없는 구버전 응답은 잠그지 않음)
   const prog = config?.progress?.[cat];
   const locked = prog ? !prog.tournamentOpen : false;
-  // 심사가 끝났으면(잠금 해제) 저장 전에도 상위 8팀 시드 배치를 미리보기로 보여준다
-  const preview = locked ? Array<string | undefined>(8).fill(undefined) : SEED_ORDER.map((seed) => ranking[seed - 1]?.teamId);
-  const shown = custom ? slots : preview;
+  // 저장된 배정이 없으면 빈 칸으로 시작한다. 상위 8팀 시드 배치는 '시드 자동 배치' 버튼으로만 채운다
+  const shown = custom ? slots : Array<string | undefined>(8).fill(undefined);
   const placed = new Set(shown.filter(Boolean));
   const count = placed.size;
   const complete = count === Math.min(8, ranking.length) && count > 0;

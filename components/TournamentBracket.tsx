@@ -4,7 +4,7 @@ import { useState } from 'react';
 import ConnectionToast from './ConnectionToast';
 import { FINAL, H, HEADS, LINES, PLACES, QF, SF, T, TAGS, THIRD, THIRD_LABEL_Y, TITLE, W, pos } from './bracket/geometry';
 import { DropSlot, SeedTag, Slot, TeamBox } from './bracket/BracketBoxes';
-import { confirmedPreview, SEED_ORDER, useRanking, type QfPreview, type Seeding } from './bracket/logic';
+import { confirmedPreview, SEED_ORDER, type QfPreview, type Seeding } from './bracket/logic';
 import { BRACKET_THEME } from './bracket/theme';
 import Score from './team/Score';
 import TeamName from './team/TeamName';
@@ -106,10 +106,9 @@ export default function TournamentBracket({ switcher }: { switcher?: React.React
   const { status } = useRealtime();
   const { config } = useContest();
   const [cat, setCat] = useState<Category>('J');
-  const ranked = useRanking(cat).slice(0, 8).map((s) => s.teamId);
-  // 관리자가 저장한 배정이 있으면 그것을 보여주고, 없으면 예선 순위 기반 시드 배치를 보여준다
+  // 관리자가 저장한 배정만 보여준다. 배정 전에는 빈 대진표 (예선 순위로 임의로 채우지 않는다)
   const saved = config?.tournament.slots.filter((s) => s.cat === cat).sort((a, b) => a.slotNo - b.slotNo) ?? [];
-  const slots = saved.length === 8 && saved.some((s) => s.teamId) ? saved.map((s) => s.teamId ?? undefined) : SEED_ORDER.map((seed) => ranked[seed - 1]);
+  const slots = saved.length === 8 ? saved.map((s) => s.teamId ?? undefined) : Array<string | undefined>(8).fill(undefined);
 
   return (
     <section className="mx-auto min-h-screen max-w-[1280px] px-6 pt-[121px] pb-24">
