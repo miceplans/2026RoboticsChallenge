@@ -35,14 +35,14 @@ const updateScore = db.prepare(`UPDATE scores SET points = ?, ts = ?, sheet = ?,
 
 // 심판 제출 upsert.
 // - 더 오래된 ts 면 무시 (멱등).
-// - 심판은 서명 후 스스로 고칠 수 없다: 확정(confirmed)·관리자 정정(modified) 행은 재전송이 덮지 못한다.
-//   정정은 관리자 확인(modify/반려 후 재제출)을 거친다. 복구(resendAll) 재전송은 원래 ts 를 그대로 쓰므로 무시되지 않는다.
+// - 심판은 확정된 자기 채점을 다시 열어 고칠 수 있다(심판·팀 대표 재서명 후 더 새로운 ts 로 재제출). 이전 값은 감사 로그의 prevStatus 로 남는다.
+// - 관리자 정정(modified) 행은 재전송이 덮지 못한다. 복구(resendAll) 재전송은 원래 ts 를 그대로 쓰므로 무시되지 않는다.
 // - 반려(rejected) 상태면 더 새로운 ts 로 다시 제출해 확정 절차를 다시 거칠 수 있다.
 export function saveScore(s: ScoreInput): { written: boolean; status: ScoreStatus } {
   const key = [s.matchId, s.teamId, s.judgeId] as const;
   db.exec('BEGIN');
   try {
-    const row = getScore.get(...key) as { ts: number; status: ScoreStatus } | undefined;
+    const row = getScore.get(...key) as { ts: number; status: ScoreStatus; points: number } | undefined;
     if (!row) {
       const status: ScoreStatus = autoConfirm() ? 'confirmed' : 'pending';
       insertScore.run(s.matchId, s.teamId, s.judgeId, s.points, s.ts, s.sheet, status, s.penCnt ?? 0, status === 'confirmed' ? Date.now() : null, status === 'confirmed' ? s.judgeId : null);
@@ -50,13 +50,13 @@ export function saveScore(s: ScoreInput): { written: boolean; status: ScoreStatu
       db.exec('COMMIT');
       return { written: true, status };
     }
-    if (s.ts <= row.ts || row.status === 'modified' || row.status === 'confirmed') {
+    if (s.ts <= row.ts || row.status === 'modified') {
       db.exec('COMMIT');
       return { written: false, status: row.status };
     }
     const status: ScoreStatus = autoConfirm() ? 'confirmed' : 'pending';
     updateScore.run(s.points, s.ts, s.sheet, status, s.penCnt ?? 0, status === 'confirmed' ? Date.now() : null, status === 'confirmed' ? s.judgeId : null, ...key, s.ts);
-    logAudit(s.judgeId, 'submit', 'score', `${s.matchId}/${s.teamId}`, { points: s.points, prevStatus: row.status, status });
+    logAudit(s.judgeId, 'submit', 'score', `${s.matchId}/${s.teamId}`, { points: s.points, prevPoints: row.points, prevStatus: row.status, status });
     db.exec('COMMIT');
     return { written: true, status };
   } catch (e) {

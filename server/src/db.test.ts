@@ -81,7 +81,7 @@ test('경기 중계 주소는 JSON 문자열로 저장하고 원래 주소로 �
   assert.equal(db.getBroadcastUrl(), url);
 });
 
-test('점수 제출은 ts 가 오래된 걸 무시하고, 확정 후엔 덮지 못한다', (t) => {
+test('점수 제출은 ts 가 오래된 걸 무시하고, 확정 후 심판 재제출은 반영하되 관리자 정정은 덮지 못한다', (t) => {
   db.setSetting('auto_confirm', '0');
   t.after(() => db.setSetting('auto_confirm', '1'));
   const ts = Date.now();
@@ -96,13 +96,19 @@ test('점수 제출은 ts 가 오래된 걸 무시하고, 확정 후엔 덮지 �
   assert.equal(db.confirmScore('R1-J-YYE-197', 'J-YYE-197', 'REF05', 'admin'), true);
 
   const resubmit = db.saveScore({ matchId: 'R1-J-YYE-197', teamId: 'J-YYE-197', judgeId: 'REF05', points: 999, ts: ts + 1000, sheet: null });
-  assert.equal(resubmit.written, false);
-  assert.equal(resubmit.status, 'confirmed');
+  // 심판이 재서명하고 다시 낸 점수는 반영된다 (autoConfirm 꺼짐 → 다시 확정 대기)
+  assert.equal(resubmit.written, true);
+  assert.equal(resubmit.status, 'pending');
+  assert.equal(db.confirmScore('R1-J-YYE-197', 'J-YYE-197', 'REF05', 'admin'), true);
 
-  const scores = db.getTeamScores('J-YYE-197');
-  const row = scores.find((s) => s.judgeId === 'REF05');
+  // 관리자가 정정한 점수는 심판 재전송이 덮지 못한다
+  assert.equal(db.modifyScore('R1-J-YYE-197', 'J-YYE-197', 'REF05', 'admin', { points: 100 }), true);
+  const afterModify = db.saveScore({ matchId: 'R1-J-YYE-197', teamId: 'J-YYE-197', judgeId: 'REF05', points: 5, ts: ts + 2000, sheet: null });
+  assert.equal(afterModify.written, false);
+
+  const row = db.getTeamScores('J-YYE-197').find((s) => s.judgeId === 'REF05');
   assert.equal(row?.points, 100);
-  assert.equal(row?.status, 'confirmed');
+  assert.equal(row?.status, 'modified');
 });
 
 test('순위는 확정 점수 기준으로 높은 점수 → 조별 합계 → 감점 적은 순이다', () => {

@@ -107,7 +107,7 @@ ALTER TABLE scores ADD COLUMN confirmed_by TEXT;
 - 순위에는 `confirmed`, `modified`만 점수로 반영. `rejected`는 사유와 함께 감사 로그에 남는다.
 - 확정 점수가 없는 팀도 `total=0, pen=0`으로 순위판에 포함된다 (teams 명단 전체가 항상 난다).
 - 관리자 수정: `points`(와 필요 시 sheet)를 덮고 상태를 `modified`로, 이전 값은 `score_audit`에 보관.
-- 심판 재전송 규칙: `pending`/`rejected`만 더 새로운 ts 로 덮을 수 있다. `confirmed`·`modified`는 심판이 덮지 못한다 — 정정은 관리자 확인을 거친다. 제출은 실제 대진과 대조(경기 존재, 팀 일치, 담당 테이블, 점수/ts 범위)해 검증한다.
+- 심판 재전송 규칙: `pending`/`rejected`/`confirmed`는 더 새로운 ts 로 덮을 수 있다(확정 경기를 심판이 다시 열어 재서명 후 제출, 이전 값은 감사 로그에 남는다). `modified`(관리자 정정)는 심판이 덮지 못한다. 제출은 실제 대진과 대조(경기 존재, 팀 일치, 담당 테이블, 점수/ts 범위)해 검증한다.
 
 ### score_audit (감사 로그 = 대시보드 활동 로그 소스)
 
