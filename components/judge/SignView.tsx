@@ -36,7 +36,7 @@ export default function SignView({ match, team, sheet, judgeName, step, onRefSig
     const img = pad.current!.toDataURL();
     if (step === 0) {
       setHasInk(false);
-      onRefSigned({ refSig: img, refSignedAt: Date.now() });
+      onRefSigned({ refSig: img, refSignedAt: Date.now(), refName: judgeName });
       return;
     }
     const name = signer === OTHER ? custom.trim() : signer;

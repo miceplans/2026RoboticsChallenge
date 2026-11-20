@@ -111,14 +111,14 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
 
   // 확인·서명 중에 점수를 고치면 작성 중으로 되돌리고, 받아둔 서명은 무효로 한다
   const invalidate = (s: Sheet, next: Sheet): Sheet =>
-    s.status === 'reviewing' ? { ...next, status: 'draft', refSig: undefined, refSignedAt: undefined, teamSig: undefined } : next;
+    s.status === 'reviewing' ? { ...next, status: 'draft', refSig: undefined, refSignedAt: undefined, refName: undefined, teamSig: undefined } : next;
   // 수정 중이면 작업 사본을, 아니면 저장된 채점지를 고친다
   const patch = (fn: (s: Sheet) => Sheet) => (draft ? setDraft((d) => (d ? { ...fn(d), updated: Date.now() } : d)) : update(match!.id, fn));
   const edit = (fn: (s: Sheet) => Sheet) => patch((s) => invalidate(s, fn(s)));
 
   // 확정된 채점을 불러와 수정 시작: 서명은 모두 다시 받는다
   const revise = () => {
-    setDraft({ ...sheet!, status: 'draft', refSig: undefined, refSignedAt: undefined, teamSig: undefined, teamSigner: undefined, teamSignedAt: undefined, signException: undefined, signedAt: undefined, updated: Date.now() });
+    setDraft({ ...sheet!, status: 'draft', refSig: undefined, refSignedAt: undefined, refName: undefined, teamSig: undefined, teamSigner: undefined, teamSignedAt: undefined, signException: undefined, signedAt: undefined, updated: Date.now() });
     setStep(0);
     setMode('score');
     window.scrollTo(0, 0);

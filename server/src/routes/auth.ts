@@ -1,7 +1,7 @@
 import { recordAttempt, recordFail, throttle } from '../rate-limit.ts';
-import { changeOwnPassword, touchLogin, verifyUser } from '../db.ts';
+import { changeOwnPassword, renameOwnAccount, touchLogin, verifyUser } from '../db.ts';
 import { clientIpOf } from '../guards.ts';
-import { Router, body, internalOnly, requireSession } from '../router.ts';
+import { Router, body, internalOnly, requireRole, requireSession } from '../router.ts';
 import { json } from '../http.ts';
 import { obj, opt, str } from '../validate.ts';
 
@@ -9,6 +9,7 @@ import { obj, opt, str } from '../validate.ts';
 // 모두 웹 서버 전용 — 난수 공유 비밀(INTERNAL_API_SECRET)이 틀리면 거절한다 (internalOnly 가드).
 
 const loginBody = obj({ id: str(), password: str(), ip: opt(str()) });
+const nameBody = obj({ name: str({ min: 1, max: 20 }) });
 const passwordBody = obj({ current: str(), next: str() });
 
 export function createAuthRoutes(): Router {
@@ -56,6 +57,14 @@ export function createAuthRoutes(): Router {
       return void json(ctx.res, 401, { ok: false, error: 'invalid' });
     }
     json(ctx.res, 200, { ok: true, tv: await changeOwnPassword(s.id, next) });
+  });
+
+  // 심판 본인의 표시 이름 변경 (서명에 들어가는 이름)
+  r.post('/auth/name', internalOnly, requireSession, requireRole('judge'), body(nameBody, 1024), (ctx) => {
+    const name = (ctx.body as ReturnType<typeof nameBody>).name.replace(/\s+/g, ' ').trim();
+    if (!name) return void json(ctx.res, 400, { ok: false, error: 'invalid' });
+    if (!renameOwnAccount(ctx.session!.id, name)) return void json(ctx.res, 404, { ok: false, error: 'not_found' });
+    json(ctx.res, 200, { ok: true, name });
   });
 
   return r;

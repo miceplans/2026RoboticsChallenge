@@ -195,7 +195,7 @@ export const ScoreSheetPdf = forwardRef<HTMLDivElement, Props>(function ScoreShe
 
         {/* 서명 */}
         <div className="mt-2 grid grid-cols-2 gap-3">
-          <SignBox label="심판 서명" img={sheet.refSig} caption={[judgeName, fmtDate(sheet.refSignedAt)].filter(Boolean).join(' · ')} />
+          <SignBox label="심판 서명" img={sheet.refSig} caption={[sheet.refName ?? judgeName, fmtDate(sheet.refSignedAt)].filter(Boolean).join(' · ')} />
           <SignBox
             label="팀 확인"
             img={sheet.teamSig}
