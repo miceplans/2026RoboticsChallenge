@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Match, Team } from '@/lib/contest';
 import { autoLabel, calc, CATEGORY_NAMES, DAMAGE_COUNT_ID, damagePtsKey, damageTotal, DQ_COUNTERS, ITEMS, MISSION_NAMES, penaltyCount, penaltyEntries, PRE_CHECKS, reasonKey, REASON_IDS, validate, type Item, type Mission } from '@/lib/judge/rules';
 import type { Sheet } from '@/lib/judge/sheets';
+import { useContest } from '@/lib/contest';
 import { btnGhost, btnPrimary, Card, inputCls } from './ui';
 
 // 공식 점수표(Robotics for Good Youth Challenge 2026–2027 Score sheet V4)를 그대로 옮긴 채점 화면.
@@ -193,6 +194,8 @@ export default function ScoreView({ match, team, sheet, edit, onBack, backLabel 
   return (
     <main className="mx-auto max-w-5xl pb-28">
       <button type="button" onClick={onBack} className="mb-4 text-sm font-bold">{backLabel}</button>
+
+      <RobotResult teamId={team.id} />
 
       <Card title="경기 전 확인">
         {PRE_CHECKS.map(([k, label]) => (
@@ -392,5 +395,29 @@ function SumBox({ label, value, dark }: { label: string; value: ReactNode; dark?
       <span className="text-sm">{label}</span>
       <span className="text-lg font-extrabold tabular-nums">{value}</span>
     </div>
+  );
+}
+
+// 로봇 검사 결과: 승인된 대수와 승인된 로봇 번호(R1, R2 …). 채점 화면에만 보이고 채점표(PDF)에는 넣지 않는다.
+function RobotResult({ teamId }: { teamId: string }) {
+  const { config } = useContest();
+  const approved = config?.homologationRobots?.[teamId] ?? [];
+  const hasResult = !!config?.homologation?.[teamId];
+  return (
+    <section className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl bg-[#dcdcdc] px-4 py-3" aria-label="로봇 검사 결과">
+      {!hasResult ? (
+        <span className="rounded-xl bg-white px-4 py-2 text-sm font-bold text-gray-600">로봇 검사 결과 없음</span>
+      ) : approved.length === 0 ? (
+        <span className="rounded-xl bg-error px-4 py-2 text-sm font-bold text-white">승인된 로봇 없음</span>
+      ) : (
+        <>
+          <span className="rounded-xl bg-[#5b9a3c] px-4 py-2 text-sm font-bold text-white">{approved.length}대 승인 완료</span>
+          <span className="h-7 w-px bg-black/40" aria-hidden />
+          {approved.map((r) => (
+            <span key={r} className="min-w-12 rounded-xl bg-[#5b9a3c] px-3 py-2 text-center text-sm font-bold text-white">{r}</span>
+          ))}
+        </>
+      )}
+    </section>
   );
 }
