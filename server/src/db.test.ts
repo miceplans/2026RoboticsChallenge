@@ -209,3 +209,13 @@ test('마이그레이션: 기존 DB 의 자동 확정을 켜고 확정 대기 �
   assert.equal(db.autoConfirm(), false);
   db.setSetting('auto_confirm', '1');
 });
+
+test('소속명 "춘천기계공업고등학교 영재학급"을 "춘천기계공업고등학교"로 고치고, 다시 돌려도 바뀌는 게 없다', async () => {
+  const { db: raw } = await import('./db/connection.ts');
+  const id = db.listTeams().find((t) => t.org?.startsWith('춘천기계공업고등학교'))!.id;
+  raw.prepare('UPDATE teams SET org = ? WHERE id = ?').run('춘천기계공업고등학교 영재학급', id);
+
+  assert.equal(db.migrateTeamOrgNames(), 1);
+  assert.equal(db.listTeams().find((t) => t.id === id)?.org, '춘천기계공업고등학교');
+  assert.equal(db.migrateTeamOrgNames(), 0);
+});
