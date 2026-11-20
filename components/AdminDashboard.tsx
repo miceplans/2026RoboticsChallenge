@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
 import { TEAMS, teamOf } from '@/lib/judge/data';
-import { ROBOT_IDS, saveRobotApproval, useRobotApproval, type RobotId } from '@/lib/judge/robotApproval';
+import { saveRobotApproval, useRobotApproval, type RobotId } from '@/lib/judge/robotApproval';
 
 type Tab = 'dashboard' | 'scores' | 'template' | 'robotApproval' | 'draw' | 'teams' | 'settings';
 
@@ -228,19 +228,29 @@ const robotGuide = [
 
 function RobotApprovalPanel() {
   const [teamId, setTeamId] = useState(TEAMS[0].id);
+  const [robotCount, setRobotCount] = useState(0);
   const [selected, setSelected] = useState<RobotId[]>([]);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const { approval, loading, refresh } = useRobotApproval(teamId);
   const team = teamOf(teamId);
 
-  useEffect(() => { setSelected(approval?.approvedRobotIds ?? []); }, [approval]);
+  useEffect(() => {
+    setRobotCount(approval?.robotCount ?? 0);
+    setSelected(approval?.approvedRobotIds ?? []);
+  }, [approval]);
   const toggle = (robot: RobotId) => setSelected((current) => current.includes(robot) ? current.filter((id) => id !== robot) : [...current, robot]);
+  const robots = Array.from({ length: robotCount }, (_, index) => `R${index + 1}` as RobotId);
+  const setCount = (value: number) => {
+    const count = Math.max(0, Math.min(200, value || 0));
+    setRobotCount(count);
+    setSelected((current) => current.filter((id) => Number(id.slice(1)) <= count));
+  };
   const save = async () => {
     setSaving(true);
     setMessage(null);
     try {
-      await saveRobotApproval(teamId, selected);
+      await saveRobotApproval(teamId, robotCount, selected);
       await refresh();
       setMessage(`승인 결과를 저장했습니다. 승인 완료 ${selected.length}대`);
     } catch {
@@ -260,6 +270,11 @@ function RobotApprovalPanel() {
           {TEAMS.map((item) => <option key={item.id} value={item.id}>{item.id} · {item.name} · {item.org}</option>)}
         </select>
       </label>
+      <label className="mt-4 block text-sm font-medium">
+        검차 대상 로봇 수
+        <input type="number" min={0} max={200} value={robotCount} onChange={(e) => setCount(Number(e.target.value))} className="mt-2 block w-40 rounded-lg border border-line bg-white px-3 py-2" />
+        <span className="mt-1 block text-xs font-normal text-gray-500">입력한 수만큼 R1부터 생성합니다. 팀별 로봇 수에 맞게 입력하십시오.</span>
+      </label>
       <div className="mt-6 rounded-xl border border-line">
         <div className="border-b border-line bg-surface-secondary px-4 py-3 text-sm font-bold">{team.id} {team.name} 검차 가이드</div>
         {robotGuide.map(([title, content]) => <div key={title} className="border-b border-line px-4 py-3 last:border-0"><b className="block text-sm">{title}</b><p className="mt-1 text-sm text-gray-600">{content}</p></div>)}
@@ -268,7 +283,8 @@ function RobotApprovalPanel() {
         <table className="w-full text-left text-sm">
           <thead className="bg-accent text-white"><tr><th className="px-4 py-3">로봇</th><th className="px-4 py-3">정적 검사</th><th className="px-4 py-3">출전 승인</th></tr></thead>
           <tbody className="divide-y divide-line">
-            {ROBOT_IDS.map((robot) => <tr key={robot}><td className="px-4 py-3 font-bold">{robot}</td><td className="px-4 py-3">검사 통과</td><td className="px-4 py-3"><label className="inline-flex cursor-pointer items-center gap-2"><input type="checkbox" checked={selected.includes(robot)} onChange={() => toggle(robot)} className="size-4 accent-accent" />승인</label></td></tr>)}
+            {robots.map((robot) => <tr key={robot}><td className="px-4 py-3 font-bold">{robot}</td><td className="px-4 py-3">검사 통과</td><td className="px-4 py-3"><label className="inline-flex cursor-pointer items-center gap-2"><input type="checkbox" checked={selected.includes(robot)} onChange={() => toggle(robot)} className="size-4 accent-accent" />승인</label></td></tr>)}
+            {robots.length === 0 && <tr><td colSpan={3} className="px-4 py-6 text-center text-gray-500">검차 대상 로봇 수를 입력해 주십시오.</td></tr>}
           </tbody>
         </table>
       </div>

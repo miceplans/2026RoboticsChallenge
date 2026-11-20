@@ -9,7 +9,7 @@ export type ScoreInput = {
   sheet: string | null; // 채점지 전체(JSON 문자열). 점수만 보내는 경우 null
 };
 export type Standing = { teamId: string; total: number };
-export type RobotApproval = { teamId: string; approvedRobotIds: string[]; updatedAt: number };
+export type RobotApproval = { teamId: string; robotCount: number; approvedRobotIds: string[]; updatedAt: number };
 
 const db = new DatabaseSync(process.env.DB_PATH ?? 'scores.db');
 db.exec(`
@@ -25,10 +25,14 @@ db.exec(`
   );
   CREATE TABLE IF NOT EXISTS robot_approvals (
     team_id TEXT PRIMARY KEY,
+    robot_count INTEGER NOT NULL DEFAULT 0,
     approved_robot_ids TEXT NOT NULL,
     updated_at INTEGER NOT NULL
   );
 `);
+if (!(db.prepare('PRAGMA table_info(robot_approvals)').all() as { name: string }[]).some((c) => c.name === 'robot_count')) {
+  db.exec('ALTER TABLE robot_approvals ADD COLUMN robot_count INTEGER NOT NULL DEFAULT 0');
+}
 // sheet 컬럼이 생기기 전에 만든 DB 를 그대로 쓸 수 있게 한다
 if (!(db.prepare('PRAGMA table_info(scores)').all() as { name: string }[]).some((c) => c.name === 'sheet')) {
   db.exec('ALTER TABLE scores ADD COLUMN sheet TEXT');
@@ -49,23 +53,26 @@ const standings = db.prepare(`
   FROM scores GROUP BY team_id
   ORDER BY total DESC, SUM(points) DESC, team_id
 `);
-const robotApprovalOf = db.prepare('SELECT team_id AS teamId, approved_robot_ids AS approvedRobotIds, updated_at AS updatedAt FROM robot_approvals WHERE team_id = ?');
+const robotApprovalOf = db.prepare('SELECT team_id AS teamId, robot_count AS robotCount, approved_robot_ids AS approvedRobotIds, updated_at AS updatedAt FROM robot_approvals WHERE team_id = ?');
 const saveRobotApprovalStatement = db.prepare(`
-  INSERT INTO robot_approvals (team_id, approved_robot_ids, updated_at)
-  VALUES (?, ?, ?)
-  ON CONFLICT (team_id) DO UPDATE SET approved_robot_ids = excluded.approved_robot_ids, updated_at = excluded.updated_at
+  INSERT INTO robot_approvals (team_id, robot_count, approved_robot_ids, updated_at)
+  VALUES (?, ?, ?, ?)
+  ON CONFLICT (team_id) DO UPDATE SET robot_count = excluded.robot_count, approved_robot_ids = excluded.approved_robot_ids, updated_at = excluded.updated_at
 `);
 
 export const saveScore = (s: ScoreInput) => upsert.run(s.matchId, s.teamId, s.judgeId, s.points, s.ts, s.sheet);
 export const getStandings = () => standings.all() as Standing[];
 export const getRobotApproval = (teamId: string): RobotApproval | null => {
-  const row = robotApprovalOf.get(teamId) as { teamId: string; approvedRobotIds: string; updatedAt: number } | undefined;
+  const row = robotApprovalOf.get(teamId) as { teamId: string; robotCount: number; approvedRobotIds: string; updatedAt: number } | undefined;
   if (!row) return null;
   try {
     const ids = JSON.parse(row.approvedRobotIds);
-    return Array.isArray(ids) ? { ...row, approvedRobotIds: ids.filter((id): id is string => typeof id === 'string') } : null;
+    if (!Array.isArray(ids)) return null;
+    const approvedRobotIds = ids.filter((id): id is string => typeof id === 'string');
+    const inferredCount = approvedRobotIds.reduce((max, id) => /^R[1-9]\d*$/.test(id) ? Math.max(max, Number(id.slice(1))) : max, 0);
+    return { ...row, robotCount: Math.max(row.robotCount, inferredCount), approvedRobotIds };
   } catch {
     return null;
   }
 };
-export const saveRobotApproval = (approval: RobotApproval) => saveRobotApprovalStatement.run(approval.teamId, JSON.stringify(approval.approvedRobotIds), approval.updatedAt);
+export const saveRobotApproval = (approval: RobotApproval) => saveRobotApprovalStatement.run(approval.teamId, approval.robotCount, JSON.stringify(approval.approvedRobotIds), approval.updatedAt);

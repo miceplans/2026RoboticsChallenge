@@ -10,7 +10,7 @@ const BROADCAST_MS = 500;
 
 type SubmitPayload = { matchId: unknown; teamId: unknown; points: unknown; ts: unknown; sheet?: unknown };
 type Result = { ok: true } | { ok: false; error: string };
-type RobotApprovalPayload = { teamId: unknown; approvedRobotIds: unknown };
+type RobotApprovalPayload = { teamId: unknown; robotCount: unknown; approvedRobotIds: unknown };
 
 // 채점지(서명 이미지 포함) 상한. 초과분은 거부한다.
 const MAX_SHEET_BYTES = 400 * 1024;
@@ -41,12 +41,11 @@ function submitScore(session: Session, p: SubmitPayload | undefined): Result {
 
 function parseRobotApproval(session: Session, payload: RobotApprovalPayload | undefined) {
   if (session.role !== 'admin') return { error: 'forbidden' as const };
-  const { teamId, approvedRobotIds } = payload ?? {};
-  const robotIds = ['R1', 'R2', 'R3', 'R4', 'R5'];
-  if (typeof teamId !== 'string' || !teamId || teamId.length > 64 || !Array.isArray(approvedRobotIds) || approvedRobotIds.some((id) => typeof id !== 'string' || !robotIds.includes(id))) {
+  const { teamId, robotCount, approvedRobotIds } = payload ?? {};
+  if (typeof teamId !== 'string' || !teamId || teamId.length > 64 || !Number.isInteger(robotCount) || robotCount < 0 || robotCount > 200 || !Array.isArray(approvedRobotIds) || approvedRobotIds.some((id) => typeof id !== 'string' || !/^R[1-9]\d*$/.test(id) || Number(id.slice(1)) > robotCount)) {
     return { error: 'invalid' as const };
   }
-  return { approval: { teamId, approvedRobotIds: [...new Set(approvedRobotIds)], updatedAt: Date.now() } };
+  return { approval: { teamId, robotCount, approvedRobotIds: [...new Set(approvedRobotIds)], updatedAt: Date.now() } };
 }
 
 // WebSocket 이 막히거나 불안정할 때 클라이언트가 쓰는 폴백: POST /score
