@@ -161,7 +161,7 @@ export const DEFAULT_TEAMS: DefaultTeam[] = [
     "code": "J-OTI-402",
     "name": "춘천 닭갈비",
     "region": "강원",
-    "org": "춘천기계공업고등학교 영재학급",
+    "org": "춘천기계공업고등학교",
     "coach": "이성동",
     "members": [
       "강연우",
@@ -404,7 +404,7 @@ export const DEFAULT_TEAMS: DefaultTeam[] = [
     "code": "S-GVH-148",
     "name": "춘천과 원주",
     "region": "강원",
-    "org": "춘천기계공업고등학교 영재학급",
+    "org": "춘천기계공업고등학교",
     "coach": "이성동",
     "members": [
       "이민수",

@@ -40,12 +40,12 @@ export default function SignView({ match, team, sheet, judgeName, step, onRefSig
       return;
     }
     const name = signer === OTHER ? custom.trim() : signer;
-    if (!name) return toast('대표 이름을 입력해 주세요.');
+    if (!name) return toast('대표 이름을 입력해 주십시오.');
     onFinish({ teamSig: img, teamSigner: name, teamSignedAt: Date.now() });
   };
 
   const finishWithException = () => {
-    if (!reason.trim()) return toast('서명 예외 사유를 입력해 주세요.');
+    if (!reason.trim()) return toast('서명 예외 사유를 입력해 주십시오.');
     onFinish({ signException: reason.trim(), teamSig: undefined, teamSigner: undefined, teamSignedAt: undefined });
   };
 
@@ -63,7 +63,7 @@ export default function SignView({ match, team, sheet, judgeName, step, onRefSig
           <p className="text-sm text-gray-500">{team.id} {team.name} · {match.label ?? `${match.round}차`}</p>
           <p className="my-3 text-6xl font-extrabold">{total}<span className="text-xl">점</span></p>
           <p className="text-sm text-gray-500">
-            {step === 0 ? `${judgeName} 님, 점수를 확인했으면 오른쪽에 서명해 주세요.` : '참가팀 대표 이름을 고르고 서명해 주세요.'}
+            {step === 0 ? `${judgeName} 님, 점수를 확인했으면 오른쪽에 서명해 주십시오.` : '참가팀 대표 이름을 고르고 서명해 주십시오.'}
           </p>
 
           {step === 1 && (
@@ -89,7 +89,7 @@ export default function SignView({ match, team, sheet, judgeName, step, onRefSig
           {exception ? (
             <div className="rounded-2xl border border-error/30 bg-error/5 p-5">
               <p className="font-bold text-error">서명 예외 처리</p>
-              <p className="mt-1 text-sm text-gray-600">참가팀 대표가 서명할 수 없는 경우에만 사용하세요. 사유는 기록에 남습니다.</p>
+              <p className="mt-1 text-sm text-gray-600">참가팀 대표가 서명할 수 없는 경우에만 사용하십시오. 사유는 기록에 남습니다.</p>
               <input className={`${inputCls} mt-3 w-full`} placeholder="사유 (예: 참가팀 대표 부재)" value={reason} onChange={(e) => setReason(e.target.value)} />
               <div className="mt-3 flex gap-2">
                 <button type="button" className={btnGhost} onClick={() => setException(false)}>취소</button>

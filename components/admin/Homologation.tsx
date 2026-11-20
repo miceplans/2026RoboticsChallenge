@@ -37,6 +37,22 @@ const SECTIONS: { title: string; keys: readonly RobotCheck[] }[] = [
   { title: 'C) 동적 검사 (짧은 시연)', keys: DYNAMIC_CHECKS },
 ];
 
+// 승인표 원문의 안내 문구 (HomologationPdf 와 같은 내용)
+const GUIDE: Record<RobotCheck, string> = {
+  label: '시작 전에 모든 로봇에 스티커나 마커로 R1, R2, R3, R4 …(로봇 수만큼)를 분명하게 표시해야 합니다.',
+  startZone: '(로봇 여러 대 허용) 모든 로봇과 부속품이 시작 구역 안에 완전히 들어가야 합니다. 선에 닿는 것은 괜찮지만 넘어가면 안 됩니다.',
+  startMethod: '쉽게 조작할 수 있는 단일 시작 장치 (버튼, 스위치 또는 짧은 조작 순서).',
+  autonomous: '사람의 조종 없이 작동해야 합니다 (리모컨·원격 조작 금지).',
+  safety: '자르거나 찌르는 부분·날카로운 모서리 없음, 풀린 부품(나사·전선) 없음, 배터리는 단단히 고정. 경기장을 손상시키면 안 됩니다.',
+  estop: '비상 정지 장치가 있고, 알아보기 쉽고, 손이 닿는 곳에 있어야 합니다.',
+  dynStart: '시작 구역 안에서 신고한 장치로 한 번만 조작해 출발하고, 추가 조작이나 외부 도움 없이 스스로 시작 구역을 벗어나야 합니다.',
+  dynSafe: '경기판이나 소품을 손상시키지 않고, 경기장 밖으로 나가지 않아야 합니다. 로봇이 여러 대면 서로 위험하게 부딪히거나 일부러 방해하지 않아야 합니다.',
+};
+const NOTES: Record<string, string[]> = {
+  A: ['라벨 변경 금지: 로봇에 붙인 번호(R1, R2 …)는 대회 당일 내내 바꿀 수 없습니다.', '로봇이 R4를 넘어갈 경우, 각 항목 옆 빈칸에 번호를 수기로 적어 작성합니다.'],
+  B: ['합격 기준(정적 상태): 모든 항목을 충족한 로봇은 승인되어 동적 검사로 넘어갑니다.', '하나라도 충족하지 못한 로봇은 실격이며 대회에서 사용할 수 없습니다.'],
+};
+
 export default function Homologation() {
   const toast = useToast();
   const { config } = useContest();
@@ -315,7 +331,7 @@ function Sheet({
                 <SectionRows key={section.title} title={section.title} span={data.robots + 2}>
                   {section.title.startsWith('B') && (
                     <tr className="border-t border-line">
-                      <RowHead label="로봇 장식" hint="모든 로봇에 챌린지 주제 관련 장식 (팀 전체)" />
+                      <RowHead label="로봇 장식" hint="모든 로봇에 챌린지 주제와 관련된 장식 요소가 있어야 합니다. (팀 전체)" />
                       <td colSpan={data.robots + 1} className="px-3 py-2">
                         <div className="inline-flex overflow-hidden whitespace-nowrap rounded-xl border border-line">
                           {(['yes', 'no'] as const).map((v) => (
@@ -334,7 +350,7 @@ function Sheet({
                   )}
                   {section.keys.map((key) => (
                     <tr key={key} className="border-t border-line">
-                      <RowHead label={SHORT_LABEL[key]} />
+                      <RowHead label={SHORT_LABEL[key]} hint={GUIDE[key]} />
                       {robots.map((i) => (
                         <td key={i} className="px-1 py-2 text-center">
                           <input
@@ -351,6 +367,11 @@ function Sheet({
                           {data.checks[key].every(Boolean) ? '해제' : '전체'}
                         </button>
                       </td>
+                    </tr>
+                  ))}
+                  {NOTES[section.title[0]]?.map((note) => (
+                    <tr key={note} className="border-t border-line">
+                      <td colSpan={data.robots + 2} className="bg-surface px-4 py-2 text-xs text-gray-600">{note}</td>
                     </tr>
                   ))}
                 </SectionRows>
@@ -413,7 +434,7 @@ function RowHead({ label, hint }: { label: string; hint?: string }) {
   return (
     <th scope="row" className="sticky left-0 z-10 min-w-[180px] bg-white px-4 py-2 text-left font-medium text-heading">
       {label}
-      {hint && <span className="block text-xs font-normal text-gray-400">{hint}</span>}
+      {hint && <span className="block max-w-sm whitespace-normal text-xs font-normal text-gray-400">{hint}</span>}
     </th>
   );
 }

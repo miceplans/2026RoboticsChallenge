@@ -81,10 +81,13 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
       const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
       toast(res.ok && data?.ok ? `${T_LABEL[g.round]} ${g.gameNo}경기 점수를 제출했습니다. 운영본부가 확정합니다.` : (data?.error ?? `제출 실패 (${res.status})`));
     } catch {
-      toast('서버에 연결할 수 없습니다. 아래 \'다시 제출\'로 보내세요.');
+      toast('서버에 연결할 수 없습니다. 아래 \'다시 제출\'로 보내십시오.');
     }
   };
-  const sheet = match ? (sheets[match.id] ?? newSheet()) : null;
+  // 확정된 경기를 고칠 때의 작업 사본. 뒤로 가면 버리므로 확정 점수는 그대로 남는다.
+  const [draft, setDraft] = useState<Sheet | null>(null);
+  const stored = match ? (sheets[match.id] ?? newSheet()) : null;
+  const sheet = draft ?? stored;
 
   // 서버 제출 상태: 전송 대기 / 서버 저장됨 / 거부됨
   const syncOf = (m: Match) => history.find((h) => scoreKey(h) === scoreKey({ matchId: m.id, teamId: m.team }))?.status;
@@ -98,6 +101,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
     const s = sheets[m.id];
     setOpenId(m.id);
     setPdfSheet(null);
+    setDraft(null);
     setStep(0);
     setMode(s?.status === 'signed' ? 'done' : 'score');
     if (!s) update(m.id, (x) => x);
@@ -106,14 +110,27 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
   const close = () => setOpenId(null);
 
   // 확인·서명 중에 점수를 고치면 작성 중으로 되돌리고, 받아둔 서명은 무효로 한다
-  const edit = (fn: (s: Sheet) => Sheet) =>
-    update(match!.id, (s) => {
-      const next = fn(s);
-      return s.status === 'reviewing' ? { ...next, status: 'draft', refSig: undefined, refSignedAt: undefined, teamSig: undefined } : next;
-    });
+  const invalidate = (s: Sheet, next: Sheet): Sheet =>
+    s.status === 'reviewing' ? { ...next, status: 'draft', refSig: undefined, refSignedAt: undefined, teamSig: undefined } : next;
+  // 수정 중이면 작업 사본을, 아니면 저장된 채점지를 고친다
+  const patch = (fn: (s: Sheet) => Sheet) => (draft ? setDraft((d) => (d ? { ...fn(d), updated: Date.now() } : d)) : update(match!.id, fn));
+  const edit = (fn: (s: Sheet) => Sheet) => patch((s) => invalidate(s, fn(s)));
 
-  const finish = async (patch: Partial<Sheet>) => {
-    const signed: Sheet = { ...sheet!, ...patch, status: 'signed', signedAt: Date.now() };
+  // 확정된 채점을 불러와 수정 시작: 서명은 모두 다시 받는다
+  const revise = () => {
+    setDraft({ ...sheet!, status: 'draft', refSig: undefined, refSignedAt: undefined, teamSig: undefined, teamSigner: undefined, teamSignedAt: undefined, signException: undefined, signedAt: undefined, updated: Date.now() });
+    setStep(0);
+    setMode('score');
+    window.scrollTo(0, 0);
+  };
+  const cancelRevise = () => {
+    setDraft(null);
+    setMode('done');
+    window.scrollTo(0, 0);
+  };
+
+  const finish = async (extra: Partial<Sheet>) => {
+    const signed: Sheet = { ...sheet!, ...extra, status: 'signed', signedAt: Date.now() };
     // 서명 화면을 유지한 채 PDF 전용 영역만 최종 서명 데이터로 다시 그린다.
     flushSync(() => setPdfSheet(signed));
     if (pdfRef.current) {
@@ -124,6 +141,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
       }
     }
     update(match!.id, () => signed);
+    setDraft(null);
     if (isT(match!)) {
       // 토너먼트: 조별 점수 전송 대신, 두 팀이 모두 서명되면 경기 점수로 낸다
       const p = parseT(match!.id);
@@ -145,7 +163,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex-1">
             <h1 className="text-3xl font-extrabold">경기 목록</h1>
-            <p className="mt-2 text-sm text-gray-500">채점을 시작할 경기를 선택하세요.</p>
+            <p className="mt-2 text-sm text-gray-500">채점을 시작할 경기를 선택하십시오.</p>
           </div>
         </div>
 
@@ -259,7 +277,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
             <button
               type="button"
               className={btnGhost}
-              onClick={() => confirm('이 기기에 저장된 모든 점수를 서버로 다시 보냅니다. 서버 데이터를 복구한 뒤에 사용하세요.') && resendAll()}
+              onClick={() => confirm('이 기기에 저장된 모든 점수를 서버로 다시 보냅니다. 서버 데이터를 복구한 뒤에 사용하십시오.') && resendAll()}
             >
               저장된 점수 전체 재전송
             </button>
@@ -276,8 +294,8 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
         <Card title={failed ? '대회 데이터를 불러오지 못했습니다' : '팀 정보를 불러오는 중'}>
           <p className="p-5 text-sm text-gray-500">
             {failed
-              ? '서버에 연결할 수 없거나 로그인이 만료되었을 수 있습니다. 새로고침하거나 다시 로그인하세요.'
-              : '대회 데이터를 서버에서 받아오는 중입니다. 잠시 후 다시 시도하세요.'}
+              ? '서버에 연결할 수 없거나 로그인이 만료되었을 수 있습니다. 새로고침하거나 다시 로그인하십시오.'
+              : '대회 데이터를 서버에서 받아오는 중입니다. 잠시 후 다시 시도하십시오.'}
           </p>
         </Card>
       </main>
@@ -299,7 +317,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
           judgeName={judgeName}
           step={step}
           ruleItems={ruleItems}
-          onRefSigned={(patch) => { update(match.id, (s) => ({ ...s, ...patch })); setStep(1); }}
+          onRefSigned={(p) => { patch((s) => ({ ...s, ...p })); setStep(1); }}
           onFinish={finish}
           onBack={() => setMode('review')}
         />
@@ -315,45 +333,41 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
     return (
       <div className="mx-auto max-w-xl rounded-2xl border border-line bg-white p-10 text-center">
         <div className="text-5xl text-accent">✓</div>
-        <h1 className="mt-4 text-2xl font-extrabold">{otherDone ? '경기 점수를 운영본부에 냈어요' : '채점을 저장했어요'}</h1>
+        <h1 className="mt-4 text-2xl font-extrabold">{otherDone ? '경기 점수를 운영본부에 냈습니다' : '채점을 저장했습니다'}</h1>
         <p className="mt-2 text-sm text-gray-500">{team.id} {team.name} · {match.label} · 총점 <b>{calc(sheet.values, match.cat, ruleItems).total}점</b></p>
-        <p className="mt-1 text-sm text-gray-500">{otherDone ? '두 팀 채점이 끝났어요. 운영본부가 승자를 확정합니다.' : '상대 팀도 채점하고 서명하면 경기 점수가 함께 제출돼요.'}</p>
+        <p className="mt-1 text-sm text-gray-500">{otherDone ? '두 팀 채점이 끝났습니다. 운영본부가 승자를 확정합니다.' : '상대 팀도 채점하고 서명하면 경기 점수가 함께 제출됩니다.'}</p>
         <button type="button" onClick={close} className={`${btnPrimary} mt-6`}>경기 목록으로</button>
       </div>
     );
   }
 
+  // 확정된 경기: 먼저 조회만 하고, 맨 아래 '수정하기'로 기존 채점을 불러와 고친다
   if (mode === 'done') {
     const sync = syncOf(match);
     const [syncText] = syncLabel(match);
     return (
-      <div className="mx-auto max-w-xl rounded-2xl border border-line bg-white p-10 text-center">
-        <div className="text-5xl text-accent">✓</div>
-        <h1 className="mt-4 text-2xl font-extrabold">{sync === 'acked' ? '관리자에게 전달했어요' : sync === 'rejected' ? '서버가 거부했어요' : '이 기기에 저장했어요'}</h1>
-        <p className="mt-2 text-sm text-gray-500">
-          {team.id} {team.name} · {match.round}차 · 총점 <b>{calc(sheet.values, match.cat, ruleItems).total}점</b>
-          {sheet.signException && ` · 서명 예외: ${sheet.signException}`}
-        </p>
-        <p className="mt-1 text-sm text-gray-500">
-          {sync === 'acked' ? syncText : sync === 'rejected' ? '운영본부에 알려주세요' : '연결되면 자동으로 전송돼요 (전송 대기)'}
-        </p>
-        <div className="my-5 flex justify-center gap-6">
-          {sheet.refSig && (
-            <div>
-              <p className="text-xs text-gray-500">심판</p>
-              <img src={sheet.refSig} alt="심판 서명" className="mt-1 h-[70px] rounded-lg border border-line bg-white" />
-            </div>
-          )}
-          {sheet.teamSig && (
-            <div>
-              <p className="text-xs text-gray-500">참가팀 대표 {sheet.teamSigner}</p>
-              <img src={sheet.teamSig} alt="참가팀 대표 서명" className="mt-1 h-[70px] rounded-lg border border-line bg-white" />
-            </div>
-          )}
+      <main className="mx-auto max-w-4xl">
+        <button type="button" onClick={close} className="mb-4 text-sm font-bold">← 경기 목록</button>
+        <div className="rounded-2xl border border-line bg-white p-6 text-center">
+          <div className="text-4xl text-accent">✓</div>
+          <h1 className="mt-2 text-xl font-extrabold">{sync === 'acked' ? '관리자에게 전달했습니다' : sync === 'rejected' ? '서버가 거부했습니다' : '이 기기에 저장했습니다'}</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            {team.id} {team.name} · {match.round}차 · 총점 <b>{calc(sheet.values, match.cat, ruleItems).total}점</b>
+            {sheet.signException && ` · 서명 예외: ${sheet.signException}`}
+          </p>
+          <p className="mt-1 text-sm text-gray-500">
+            {sync === 'acked' ? syncText : sync === 'rejected' ? '운영본부에 알려 주십시오' : '연결되면 자동으로 전송됩니다 (전송 대기)'}
+          </p>
         </div>
-        <p className="text-xs text-gray-500">서명 완료 후에는 심판이 수정할 수 없어요. 정정이 필요하면 운영본부에 요청하세요.</p>
-        <button type="button" onClick={close} className={`${btnPrimary} mt-6`}>다음 경기로</button>
-      </div>
+        <div className="mt-4 overflow-x-auto rounded-2xl border border-line bg-white p-3">
+          <ScoreSheetPdf mode="inline" judgeId={judgeId} judgeName={judgeName} match={match} team={team} sheet={sheet} ruleItems={ruleItems} />
+        </div>
+        <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <button type="button" onClick={close} className="rounded-2xl border border-line px-5 py-3 text-sm font-bold text-gray-600">다음 경기로</button>
+          <button type="button" onClick={revise} className={btnPrimary}>수정하기</button>
+        </div>
+        <p className="mt-3 text-right text-xs text-gray-500">수정하면 심판과 팀 대표의 서명을 다시 받은 뒤 서버에 반영하고 PDF를 새로 저장합니다.</p>
+      </main>
     );
   }
 
@@ -367,9 +381,10 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
         ruleItems={ruleItems}
         judgeName={judgeName}
         edit={edit}
-        onBack={close}
+        onBack={draft ? cancelRevise : close}
+        backLabel={draft ? '← 수정 취소 (기존 점수 유지)' : undefined}
         onReview={() => {
-          update(match.id, (s) => ({ ...s, status: 'reviewing' }));
+          patch((s) => ({ ...s, status: 'reviewing' }));
           setMode('review');
           window.scrollTo(0, 0);
         }}
@@ -378,14 +393,23 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
   );
 }
 
-// 승인된 로봇 번호 앞에 '승인' 글자 대신 체크 표시를 붙인다. 승인 로봇이 없으면 X 표시.
+// 로봇 검차 결과: 승인된 대수와 번호(R1, R2 …)를 보여 준다. 승인 로봇이 없으면 X 표시.
 function ApprovedRobots({ robots }: { robots: string[] }) {
   const ok = robots.length > 0;
   return (
     <>
       {' · '}
       <HomologationBadge teamId="" status={ok ? 'pass' : 'fail'} />
-      {ok ? ` ${robots.join(', ')}` : ' 없음'}
+      {ok ? (
+        <>
+          {` ${robots.length}대 승인 완료 `}
+          {robots.map((r) => (
+            <span key={r} className="ml-1 rounded bg-accent/10 px-1.5 py-0.5 text-xs font-bold text-accent">{r}</span>
+          ))}
+        </>
+      ) : (
+        ' 승인된 로봇 없음'
+      )}
     </>
   );
 }

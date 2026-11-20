@@ -18,7 +18,7 @@ export const CATEGORY_NAMES: Record<Category, string> = { J: '주니어', S: '�
 export const MISSION_NAMES: Record<Mission, string> = {
   M1: '미션 1 — 검체 격리 및 관리',
   M2: '미션 2 — 의료 관리',
-  PEN: '공통 감점',
+  PEN: '일반 벌점',
 };
 
 // 공식 점수표(Robotics for Good Youth Challenge 2026–2027 Score sheet V4)의 행과 1:1로 대응한다.
@@ -91,7 +91,7 @@ export function calc(values: Values, cat: Category, items: Item[] = ITEMS): Calc
     else if (it.type === 'auto') q = autoQty(it.id, values);
     else q = null;
 
-    const sub = it.type === 'manual' ? n(values, it.id) : (q ?? 0) * p;
+    const sub = it.type === 'manual' ? damageTotal(values) : (q ?? 0) * p;
     sum[it.m] += sub;
     if (it.m === 'PEN' && ((q ?? 0) > 0 || (it.type === 'manual' && sub))) penCnt += it.type === 'manual' ? 1 : (q ?? 0);
     lines.push({ it, q, p, sub });
@@ -124,8 +124,8 @@ export function parseTemplate(input: unknown): Item[] | null {
   return ok ? (input as Item[]) : null;
 }
 
-// 공통 감점 카운터. 파손은 횟수(pen_damage_cnt)와 심판 재량 점수(pen_damage)를 따로 기록하고,
-// 실격 두 항목은 점수 대신 횟수가 1 이상이면 실격이다. 예전 채점지의 true 값은 1회로 본다.
+// 일반 벌점 카운터. 파손은 횟수(pen_damage_cnt)와 회차별 심판 재량 점수(pen_damage_pts_N)를 기록하고, 합계는 pen_damage 에 둔다.
+// 실격 두 항목은 NO/YES(0/1)로 기록한다. 예전 채점지의 횟수·true 값도 1 이상이면 실격이다.
 export const DQ_COUNTERS = [
   { id: 'dq_danger', label: '관중 또는 참가자에게 위험' },
   { id: 'dq_breach', label: '규칙 중대 위반' },
@@ -145,6 +145,19 @@ export function penaltyCounters(items: Item[] = ITEMS) {
 }
 
 export const reasonKey = (id: string, i: number) => `why:${id}:${i}`;
+export const damagePtsKey = (i: number) => `pen_damage_pts_${i}`;
+
+// 사유는 '규칙 중대 위반'과 '구조물 또는 게임 요소 파손'에만 적는다.
+export const REASON_IDS: string[] = [DAMAGE_COUNT_ID, 'dq_breach'];
+
+// 파손 회차별 감점(0 이하)을 모두 더한다. 회차별 값이 없는 예전 채점지는 pen_damage 를 그대로 쓴다.
+export const damageTotal = (v: Values) => {
+  const cnt = counterValue(v, DAMAGE_COUNT_ID);
+  if (!Array.from({ length: cnt }, (_, k) => damagePtsKey(k + 1)).some((k) => k in v)) return n(v, 'pen_damage');
+  let sum = 0;
+  for (let i = 1; i <= cnt; i++) sum += Math.min(0, n(v, damagePtsKey(i)));
+  return sum;
+};
 
 // 패널티 1회마다 한 줄 (−1 · 항목 이름 · 사유)
 export function penaltyEntries(values: Values, items: Item[] = ITEMS) {
@@ -156,16 +169,21 @@ export function penaltyEntries(values: Values, items: Item[] = ITEMS) {
 export const penaltyCount = (values: Values, items: Item[] = ITEMS) =>
   penaltyCounters(items).reduce((s, { id }) => s + counterValue(values, id), 0);
 
-// 물리적으로 불가능한 입력 조합 (개수 합계 초과)
-export function validate(values: Values) {
-  const errors: string[] = [];
-  if (n(values, 's_slot') + n(values, 's_out') + n(values, 's_quar') > 3) errors.push('검체 개수 합계가 3개를 넘었어요.');
-  if (values.closed && n(values, 'beam') < 2) errors.push('격리구역 폐쇄는 빔 2개가 모두 서 있어야 인정돼요.');
-  if (values.b_kits && n(values, 'kit') < 10) errors.push('키트 배분 보너스는 의료키트 10개가 모두 H/PCC 안에 있어야 인정돼요.');
-  if (values.b_kits && n(values, 'p_kitzone') > 0) errors.push('키트 배분 보너스와 "키트 없는 구역"을 함께 표시할 수 없어요.');
-  if (n(values, 'red_h') + n(values, 'red_out') > 4) errors.push('빨강 실린더 합계가 4개를 넘었어요.');
-  if (values.b_yel && n(values, 'yel') !== 4) errors.push('노랑 2 + 2 보너스는 PCC 안 노랑 실린더가 4개여야 인정돼요.');
-  if (n(values, 'yel') + n(values, 'yel_out') > 4) errors.push('노랑 실린더 합계가 4개를 넘었어요.');
-  if (n(values, 'grn') + n(values, 'grn_out') > 4) errors.push('초록 실린더 합계가 4개를 넘었어요.');
+// 자동 계산 항목 표시 이름: '보너스: …' → '보너스: … (자동계산)'
+export const autoLabel = (label: string) => `${label} (자동계산)`;
+
+// 물리적으로 불가능한 입력 조합. ids 는 붉게 표시할 채점 항목이다.
+export type Problem = { msg: string; ids: string[] };
+export function validate(values: Values): Problem[] {
+  const errors: Problem[] = [];
+  const bad = (msg: string, ...ids: string[]) => errors.push({ msg, ids });
+  if (n(values, 's_slot') + n(values, 's_out') + n(values, 's_quar') > 3) bad('검체 개수 합계가 3개를 넘었습니다.', 's_slot', 's_out', 's_quar');
+  if (values.closed && n(values, 'beam') < 2) bad('격리구역 폐쇄는 빔 2개가 모두 서 있어야 인정됩니다.', 'closed', 'beam');
+  if (values.b_kits && n(values, 'kit') < 10) bad('키트 배분 보너스는 의료키트 10개가 모두 H/PCC 안에 있어야 인정됩니다.', 'b_kits', 'kit');
+  if (values.b_kits && n(values, 'p_kitzone') > 0) bad('키트 배분 보너스와 "키트 없는 구역"을 함께 표시할 수 없습니다.', 'b_kits', 'p_kitzone');
+  if (n(values, 'red_h') + n(values, 'red_out') > 4) bad('빨강 실린더 합계가 4개를 넘었습니다.', 'red_h', 'red_out');
+  if (values.b_yel && n(values, 'yel') !== 4) bad('노랑 2 + 2 보너스는 PCC 안 노랑 실린더가 4개여야 인정됩니다.', 'b_yel', 'yel');
+  if (n(values, 'yel') + n(values, 'yel_out') > 4) bad('노랑 실린더 합계가 4개를 넘었습니다.', 'yel', 'yel_out');
+  if (n(values, 'grn') + n(values, 'grn_out') > 4) bad('초록 실린더 합계가 4개를 넘었습니다.', 'grn', 'grn_out');
   return errors;
 }

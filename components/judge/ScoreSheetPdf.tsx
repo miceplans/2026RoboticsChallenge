@@ -2,7 +2,7 @@
 
 import { forwardRef, type ReactNode } from 'react';
 import type { Match, Team } from '@/lib/contest';
-import { calc, DAMAGE_COUNT_ID, penaltyCount, penaltyEntries, unitPoints, type Category, type Item } from '@/lib/judge/rules';
+import { calc, DAMAGE_COUNT_ID, damageTotal, penaltyCount, unitPoints, type Category, type Item } from '@/lib/judge/rules';
 import type { Sheet } from '@/lib/judge/sheets';
 
 // 공식 점수표(Robotics for Good Youth Challenge 2026–2027 Score sheet V4)의 항목·배치를 한국어로 옮긴 PDF 양식.
@@ -18,7 +18,7 @@ type Props = {
   mode?: 'capture' | 'inline';
 };
 
-// count: 숫자 마크 / yn: NO·YES 마크 / counter: 횟수(공통 감점) / damage: 횟수 + 심판 재량 감점 / dq: 실격 횟수
+// count: 숫자 마크 / yn: NO·YES 마크 / counter: 횟수(일반 벌점) / damage: 횟수 + 심판 재량 감점 / dq: 실격 횟수
 type RowSpec = { label: string; ids: string[]; kind: 'count' | 'yn' | 'counter' | 'damage' | 'dq'; marks?: number; calcText?: string };
 
 const M1_ROWS = (cat: Category): RowSpec[] => [
@@ -36,14 +36,14 @@ const M1_ROWS = (cat: Category): RowSpec[] => [
 
 const M2_ROWS = (cat: Category): RowSpec[] => [
   { label: 'H 또는 PCC 안의 의료키트', ids: ['kit'], kind: 'count', marks: 10 },
-  { label: '보너스: 6 H + 2 PCC + 2 PCC 배분', ids: ['b_kits'], kind: 'yn' },
+  { label: '보너스: 배분 6 H + 2 PCC + 2 PCC', ids: ['b_kits'], kind: 'yn' },
   ...(cat === 'S' ? ([{ label: '키트가 하나도 없는 H/PCC 구역', ids: ['p_kitzone'], kind: 'count', marks: 3 }] satisfies RowSpec[]) : []),
   { label: 'H 안의 빨강 실린더', ids: ['red_h'], kind: 'count', marks: 4 },
-  { label: '보너스: H 안의 빨강 실린더 4개', ids: ['b_red'], kind: 'yn' },
-  { label: 'PCC 안의 노랑 실린더', ids: ['yel'], kind: 'count', marks: 4 },
-  { label: '보너스: 노랑 2 + 2 분배', ids: ['b_yel'], kind: 'yn' },
+  { label: '보너스: H 안 빨강 실린더 4개', ids: ['b_red'], kind: 'yn' },
+  { label: 'PCC 안의 노란 실린더', ids: ['yel'], kind: 'count', marks: 4 },
+  { label: '보너스: 노란 실린더 2 + 2 분배', ids: ['b_yel'], kind: 'yn' },
   { label: 'RZ 구역 안의 초록 실린더', ids: ['grn'], kind: 'count', marks: 4 },
-  { label: '보너스: RZ 안의 초록 4개', ids: ['b_grn'], kind: 'yn' },
+  { label: '보너스: RZ 안 초록 실린더 4개', ids: ['b_grn'], kind: 'yn' },
   ...(cat === 'S'
     ? ([
         { label: 'H 밖의 빨강 실린더', ids: ['red_out'], kind: 'count', marks: 4 },
@@ -54,13 +54,13 @@ const M2_ROWS = (cat: Category): RowSpec[] => [
 ];
 
 const PEN_ROWS: RowSpec[] = [
-  { label: '라운드 중 로봇 접촉', ids: ['pen_touch'], kind: 'counter' },
-  { label: '경기장 또는 게임 요소 조작', ids: ['pen_field'], kind: 'counter' },
+  { label: '라운드 중 로봇 터치', ids: ['pen_touch'], kind: 'counter' },
+  { label: '경기장 또는 부품 조작', ids: ['pen_field'], kind: 'counter' },
   { label: '프로그램 재시작 또는 수정', ids: ['pen_restart'], kind: 'counter' },
   { label: '로봇이 경기장 밖으로 완전히 이탈', ids: ['pen_out'], kind: 'counter' },
-  { label: '구조물 또는 게임 요소 파손', ids: ['pen_damage'], kind: 'damage', calcText: '심판 재량' },
+  { label: '구조물 또는 부품 파손', ids: ['pen_damage'], kind: 'damage', calcText: '심판 재량' },
   { label: '관중 또는 참가자에게 위험', ids: ['dq_danger'], kind: 'dq', calcText: 'DQ' },
-  { label: '규칙 중대 위반', ids: ['dq_breach'], kind: 'dq', calcText: 'DQ' },
+  { label: '중대한 규칙 위반', ids: ['dq_breach'], kind: 'dq', calcText: 'DQ' },
 ];
 
 const C = {
@@ -91,14 +91,14 @@ export const ScoreSheetPdf = forwardRef<HTMLDivElement, Props>(function ScoreShe
       return { qty: cnt, points: cnt ? '실격' : '', calcText: row.calcText! };
     }
     if (row.kind === 'damage') {
-      const pts = Number(values[row.ids[0]]) || 0;
+      const pts = damageTotal(values);
       return { qty: times(DAMAGE_COUNT_ID) || (pts !== 0 ? 1 : 0), points: String(pts), calcText: row.calcText! };
     }
     const qty = row.ids.reduce((s, id) => s + (lineOf(id)?.q ?? (Number(values[id]) || 0)), 0);
     const pts = row.ids.reduce((s, id) => s + (lineOf(id)?.sub ?? 0), 0);
     const it = itemOf(row.ids[0]);
     const unit = it ? unitPoints(it, cat) : 0;
-    const calcText = row.kind === 'count' || row.kind === 'counter' ? `${row.kind === 'counter' ? '횟수' : '개수'} × ${unit}` : `${unit > 0 ? '+' : ''}${unit}`;
+    const calcText = row.kind === 'count' || row.kind === 'counter' ? `num x ${unit}` : `${unit > 0 ? '+' : ''}${unit}`;
     return { qty, points: String(pts), calcText };
   };
 
@@ -165,25 +165,21 @@ export const ScoreSheetPdf = forwardRef<HTMLDivElement, Props>(function ScoreShe
           resolve={resolve}
           subtotalLabel="미션 2 소계:"
           subtotal={score.sum.M2}
-          note="참고: 노랑은 2 + 2로 남아 있을 때만 보너스를 받습니다. 모두 한 PCC 안에 있으면 오류로 보지 않습니다."
+          note="참고: 노란색은 2 + 2로 나뉘어 있을 때만 보너스를 받습니다. 모두 한 PCC 안에 있으면 오류로 보지 않습니다."
         />
 
         <Section
-          title="공통 감점"
+          title="일반 벌점"
           color={C.pen}
           desc="라운드 중 위반에만 적용합니다. DQ = 실격될 수 있음."
           rows={PEN_ROWS}
           resolve={resolve}
-          subtotalLabel="공통 감점 소계:"
+          subtotalLabel="일반 벌점 소계:"
           subtotal={score.sum.PEN}
           note={cat === 'S' ? '시니어 전용 감점은 해당 미션 소계에 이미 포함되어 있습니다.' : undefined}
-          reasons={(row) => {
-            const id = row.kind === 'damage' ? DAMAGE_COUNT_ID : row.ids[0];
-            return penaltyEntries(values, ruleItems).filter((e) => e.id === id);
-          }}
         />
 
-        {/* 패널티 횟수 (회차별 사유는 각 감점 항목 바로 아래에 적는다) */}
+        {/* 패널티 횟수 (채점표에는 사유를 적지 않는다) */}
         <div className="mt-2 flex items-center justify-between rounded-md px-2 py-[3px] font-bold" style={{ background: C.points }}>
           <span>패널티 횟수</span>
           <span className="font-extrabold tabular-nums">{penaltyCount(values, ruleItems)}회</span>
@@ -193,7 +189,7 @@ export const ScoreSheetPdf = forwardRef<HTMLDivElement, Props>(function ScoreShe
         <div className="mt-4 flex gap-2">
           <SumBox label="미션 1" value={score.sum.M1} width={150} />
           <SumBox label="미션 2" value={score.sum.M2} width={150} />
-          <SumBox label="공통 감점" value={score.sum.PEN} grow />
+          <SumBox label="일반 벌점" value={score.sum.PEN} grow />
           <SumBox label="총점" value={score.dq ? '0 (실격)' : score.total} width={196} dark />
         </div>
 
@@ -248,8 +244,8 @@ function Section({
       <p className="italic" style={{ fontSize: 11 }}>{desc}</p>
 
       <div className="mt-[2px] text-center font-bold" style={{ ...GRID, fontSize: 13 }}>
-        <div className="rounded-md py-[2px]" style={{ background: C.head, marginRight: 10 }}>행동</div>
-        <div className="rounded-md py-[2px]" style={{ background: C.head }}>마크</div>
+        <div className="rounded-md py-[2px]" style={{ background: C.head, marginRight: 10 }}>항목</div>
+        <div className="rounded-md py-[2px]" style={{ background: C.head }}>표시</div>
         <div className="rounded-md py-[2px]" style={{ background: C.head }}>계산</div>
         <div className="rounded-md py-[2px]" style={{ background: C.head }}>점수</div>
       </div>
@@ -291,7 +287,15 @@ function Section({
 }
 
 function MarkCell({ row, qty }: { row: RowSpec; qty: number }) {
-  if (row.kind === 'counter' || row.kind === 'damage' || row.kind === 'dq') {
+  if (row.kind === 'dq') {
+    return (
+      <div className="flex items-center" style={{ gap: 4 }}>
+        <Bubble on={qty === 0} width={44}>아니오</Bubble>
+        <Bubble on={qty !== 0} width={44}>예</Bubble>
+      </div>
+    );
+  }
+  if (row.kind === 'counter' || row.kind === 'damage') {
     return <Bubble on={qty > 0} width={64}>{qty}회</Bubble>;
   }
   if (row.kind === 'count') {
@@ -308,8 +312,8 @@ function MarkCell({ row, qty }: { row: RowSpec; qty: number }) {
   }
   return (
     <div className="flex items-center" style={{ gap: 4 }}>
-      <Bubble on={qty === 0} width={44}>NO</Bubble>
-      <Bubble on={qty !== 0} width={44}>YES</Bubble>
+      <Bubble on={qty === 0} width={44}>아니오</Bubble>
+      <Bubble on={qty !== 0} width={44}>예</Bubble>
     </div>
   );
 }
