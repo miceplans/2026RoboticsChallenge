@@ -14,13 +14,14 @@ type Props = {
   team: Team;
   sheet: Sheet;
   judgeName: string;
+  busy?: boolean;
   step: 0 | 1;
   onRefSigned: (patch: Partial<Sheet>) => void;
   onFinish: (patch: Partial<Sheet>) => void;
   onBack: () => void;
 };
 
-export default function SignView({ match, team, sheet, judgeName, step, onRefSigned, onFinish, onBack }: Props) {
+export default function SignView({ match, team, sheet, judgeName, busy, step, onRefSigned, onFinish, onBack }: Props) {
   const pad = useRef<PadHandle>(null);
   const [hasInk, setHasInk] = useState(false);
   const [signer, setSigner] = useState(team.members[0]);
@@ -104,8 +105,8 @@ export default function SignView({ match, team, sheet, judgeName, step, onRefSig
                 {step === 1 && (
                   <button type="button" className={`${btnGhost} text-error`} onClick={() => { setException(true); setError(''); }}>서명 예외</button>
                 )}
-                <button type="button" className={btnPrimary} disabled={!hasInk} onClick={next}>
-                  {step === 0 ? '다음' : '완료 · 관리자에게 전달'}
+                <button type="button" className={btnPrimary} disabled={!hasInk || busy} onClick={next}>
+                  {busy ? '처리 중…' : step === 0 ? '다음' : '완료 · 관리자에게 전달'}
                 </button>
               </div>
             </>

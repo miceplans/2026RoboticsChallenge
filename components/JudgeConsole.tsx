@@ -42,7 +42,7 @@ export default function JudgeConsole(props: Props) {
   const [busy, setBusy] = useState(false);
   return (
     <>
-      <JudgeConsoleBody {...props} setBusy={setBusy} />
+      <JudgeConsoleBody {...props} busy={busy} setBusy={setBusy} />
       {busy && (
         <div role="status" aria-live="polite" className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 print:hidden">
           <div className="rounded-2xl bg-white px-8 py-6 text-center shadow-lg">
@@ -58,7 +58,7 @@ export default function JudgeConsole(props: Props) {
 const MIN_BUSY_MS = 700;
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-function JudgeConsoleBody({ judgeId, judgeName, setBusy }: Props & { setBusy: (b: boolean) => void }) {
+function JudgeConsoleBody({ judgeId, judgeName, busy, setBusy }: Props & { busy: boolean; setBusy: (b: boolean) => void }) {
   const { status, history, pending, rejected, submitScore, resendAll } = useRealtime();
   const { sheets, update } = useSheets(judgeId);
 
@@ -237,6 +237,7 @@ function JudgeConsoleBody({ judgeId, judgeName, setBusy }: Props & { setBusy: (b
         team={team}
         sheet={sheet}
         judgeName={judgeName}
+        busy={busy}
         step={step}
         onRefSigned={(p) => { patch((s) => ({ ...s, ...p })); setStep(1); }}
         onFinish={finish}
@@ -290,7 +291,7 @@ function JudgeConsoleBody({ judgeId, judgeName, setBusy }: Props & { setBusy: (b
         </div>
         <div className="mt-8 flex flex-col gap-2 sm:flex-row sm:justify-end">
           <button type="button" onClick={close} className={btnGhost}>다음 경기로</button>
-          <button type="button" onClick={printPdf} className={btnGhost}>채점표 PDF 출력</button>
+          <button type="button" onClick={printPdf} className={btnGhost} disabled={busy}>{busy ? '처리 중…' : '채점표 PDF 출력'}</button>
           <button type="button" onClick={revise} className={btnPrimary}>수정하기</button>
         </div>
         <p className="mt-3 text-right text-xs text-gray-500">수정하면 심판과 팀 대표의 서명을 다시 받은 뒤에 서버에 반영합니다.</p>
