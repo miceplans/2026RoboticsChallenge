@@ -62,3 +62,18 @@ export async function apiChangePassword(token: string, current: string, next: st
   }
   return { ok: false, error: 'unavailable' };
 }
+
+export type RenameResult = { ok: true; name: string } | { ok: false; error: 'invalid' | 'unavailable' };
+
+// 심판 본인의 표시 이름을 계정 DB 에 저장한다.
+export async function apiRenameAccount(token: string, name: string): Promise<RenameResult> {
+  try {
+    const res = await call('/auth/name', { method: 'POST', cookie: `session=${token}`, body: JSON.stringify({ name }) });
+    const data = (await res.json()) as { ok: boolean; name?: string };
+    if (res.ok && data.ok && typeof data.name === 'string') return { ok: true, name: data.name };
+    if (res.status === 400 || res.status === 403) return { ok: false, error: 'invalid' };
+  } catch (e) {
+    console.error('실시간 서버 이름 변경 호출 실패:', e);
+  }
+  return { ok: false, error: 'unavailable' };
+}

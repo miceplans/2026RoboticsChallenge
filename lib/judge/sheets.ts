@@ -14,6 +14,7 @@ export type Sheet = {
   updated: number;
   refSig?: string;
   refSignedAt?: number;
+  refName?: string; // 서명 시점의 심판 이름
   teamSig?: string;
   teamSigner?: string;
   teamSignedAt?: number;
@@ -68,6 +69,7 @@ export function sheetPayload(match: Match, sheet: Sheet, ruleItems: Item[] = ITE
     total: c.total,
     refSig: sheet.refSig,
     refSignedAt: sheet.refSignedAt,
+    refName: sheet.refName,
     teamSig: sheet.teamSig,
     teamSigner: sheet.teamSigner,
     teamSignedAt: sheet.teamSignedAt,

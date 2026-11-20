@@ -86,10 +86,10 @@ export const fieldOfSide = (side: Side): '좌' | '우' => (side === 'A' ? '좌' 
 export const slotLabel = (m: Pick<Match, 'cat' | 'table' | 'wave'>, withCat = true) =>
   `${withCat ? `${m.cat === 'J' ? '주니어' : '시니어'} ` : ''}${m.table}조 · ${m.wave}`;
 
-// 당일 진행 순서: 라운드마다 주니어 1조 → 시니어 1조 → 주니어 2조 → … → 시니어 8조 (16경기).
+// 당일 진행 순서: 라운드마다 주니어 1조 → … → 주니어 8조 → 시니어 1조 → … → 시니어 8조 (16경기). 번갈아 진행하지 않는다.
 // 한 경기 = 한 조의 A·B 두 팀이 동시에 치르는 것. game 은 라운드 안의 경기 순서(1~16), seq 는 전체 줄 순번.
 export type ScheduledMatch = Match & { seq: number; game: number };
-export const gameNoOf = (m: Pick<Match, 'cat' | 'table'>) => (m.table - 1) * 2 + (m.cat === 'J' ? 1 : 2);
+export const gameNoOf = (m: Pick<Match, 'cat' | 'table'>) => (m.cat === 'J' ? 0 : GROUPS.length) + m.table;
 export function computeSchedule(matches: Match[]): ScheduledMatch[] {
   return [...matches]
     .sort((a, b) => a.round - b.round || gameNoOf(a) - gameNoOf(b) || a.wave.localeCompare(b.wave) || (a.team < b.team ? -1 : 1))

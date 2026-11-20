@@ -78,6 +78,11 @@ export async function changeOwnPassword(id: string, newPassword: string): Promis
   return (db.prepare('SELECT token_version AS tv FROM users WHERE id = ?').get(id) as { tv: number }).tv;
 }
 
+// 본인 표시 이름 변경 (서명·채점표에 찍히는 이름). 로그인 ID·권한·세션 버전은 그대로 둔다.
+export function renameOwnAccount(id: string, name: string): boolean {
+  return db.prepare('UPDATE users SET name = ? WHERE id = ?').run(name, id).changes > 0;
+}
+
 // 모든 계정의 세션을 한 번에 폐기 — 관리자가 침해 의심이나 대회 전에 사용.
 export function revokeAllSessions(): void {
   db.exec('UPDATE users SET token_version = token_version + 1');

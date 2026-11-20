@@ -11,7 +11,7 @@ import NoticeBanner from './NoticeBanner';
 import { computeSchedule, slotLabel, useContest, withRanks, type Match, type Team } from '@/lib/contest';
 import { useRealtime, useTeamScores } from '@/lib/realtime/useRealtime';
 
-// 관리자 화면과 같은 규칙(주니어 1조 → 시니어 1조 → … 시니어 8조)으로 이 팀의 1R·2R 경기를 구한다
+// 관리자 화면과 같은 규칙(주니어 1조 → … 주니어 8조 → 시니어 1조 → … 시니어 8조)으로 이 팀의 1R·2R 경기를 구한다
 function useMySchedule(team?: Team) {
   const { config } = useContest();
   if (!team || !config) return [];

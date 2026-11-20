@@ -219,3 +219,14 @@ test('소속명 "춘천기계공업고등학교 영재학급"을 "춘천기계�
   assert.equal(db.listTeams().find((t) => t.id === id)?.org, '춘천기계공업고등학교');
   assert.equal(db.migrateTeamOrgNames(), 0);
 });
+
+test('본인 이름을 바꾸면 DB 에 저장되고 ID·세션 버전은 그대로다', async () => {
+  const before = await db.verifyUser('REF01', process.env.DEFAULT_PASSWORD!);
+  assert.ok(before);
+  assert.equal(db.renameOwnAccount('REF01', '김심판'), true);
+  const after = await db.verifyUser('REF01', process.env.DEFAULT_PASSWORD!);
+  assert.equal(after?.name, '김심판');
+  assert.equal(after?.id, 'REF01');
+  assert.equal(after?.tv, before.tv);
+  assert.equal(db.renameOwnAccount('없는계정', 'x'), false);
+});

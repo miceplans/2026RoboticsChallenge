@@ -5,7 +5,7 @@ import { gameNoOf, GROUPS, SIDES, teamName, useContest, type Side } from '@/lib/
 import type { Category } from '@/lib/judge/rules';
 
 // 조별 라운드 경기 순서표 (관리자·로그인 사용자 공용).
-// 한 줄 = 같은 조 번호의 주니어 경기와 시니어 경기. 순서는 주니어 1조 → 시니어 1조 → 주니어 2조 → … 로 고정.
+// 한 줄 = 같은 조 번호의 주니어 경기와 시니어 경기. 순서는 주니어 1조 → … → 주니어 8조 → 시니어 1조 → … → 시니어 8조 로 고정.
 // myTeam 을 주면 그 팀 칸을 강조한다.
 export default function MatchOrder({ myTeam, title = '경기 순서' }: { myTeam?: string; title?: string }) {
   const { config, loaded } = useContest();
@@ -39,7 +39,7 @@ export default function MatchOrder({ myTeam, title = '경기 순서' }: { myTeam
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-3xl font-extrabold">{title}</h1>
-          <p className="mt-1 text-sm text-gray-500">주니어 → 시니어 번갈아 진행합니다. 한 조의 두 팀이 A · B 테이블에서 동시에 경기합니다 (경기당 2분).</p>
+          <p className="mt-1 text-sm text-gray-500">주니어 1~8조가 먼저, 이어서 시니어 1~8조 순서로 진행합니다. 한 조의 두 팀이 A · B 테이블에서 동시에 경기합니다 (경기당 2분).</p>
         </div>
         <div className="flex gap-1 rounded-2xl border border-line bg-white p-1">
           {([1, 2] as const).map((r) => (

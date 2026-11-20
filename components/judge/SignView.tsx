@@ -15,6 +15,7 @@ type Props = {
   team: Team;
   sheet: Sheet;
   judgeName: string;
+  busy?: boolean;
   step: 0 | 1;
   onRefSigned: (patch: Partial<Sheet>) => void;
   onFinish: (patch: Partial<Sheet>) => void;
@@ -22,7 +23,7 @@ type Props = {
   ruleItems?: Item[];
 };
 
-export default function SignView({ match, team, sheet, judgeName, step, onRefSigned, onFinish, onBack, ruleItems = ITEMS }: Props) {
+export default function SignView({ match, team, sheet, judgeName, busy, step, onRefSigned, onFinish, onBack, ruleItems = ITEMS }: Props) {
   const pad = useRef<PadHandle>(null);
   const [hasInk, setHasInk] = useState(false);
   const [signer, setSigner] = useState(team.members[0]); // 명단 첫 번째가 팀장 = 기본 서명자
@@ -36,7 +37,7 @@ export default function SignView({ match, team, sheet, judgeName, step, onRefSig
     const img = pad.current!.toDataURL();
     if (step === 0) {
       setHasInk(false);
-      onRefSigned({ refSig: img, refSignedAt: Date.now() });
+      onRefSigned({ refSig: img, refSignedAt: Date.now(), refName: judgeName });
       return;
     }
     const name = signer === OTHER ? custom.trim() : signer;
@@ -93,7 +94,7 @@ export default function SignView({ match, team, sheet, judgeName, step, onRefSig
               <input className={`${inputCls} mt-3 w-full`} placeholder="사유 (예: 참가팀 대표 부재)" value={reason} onChange={(e) => setReason(e.target.value)} />
               <div className="mt-3 flex gap-2">
                 <button type="button" className={btnGhost} onClick={() => setException(false)}>취소</button>
-                <button type="button" className={`${btnPrimary} bg-error`} onClick={finishWithException}>예외 처리하고 전달</button>
+                <button type="button" className={`${btnPrimary} bg-error`} disabled={busy} onClick={finishWithException}>{busy ? '처리 중…' : '예외 처리하고 전달'}</button>
               </div>
             </div>
           ) : (
@@ -106,8 +107,8 @@ export default function SignView({ match, team, sheet, judgeName, step, onRefSig
                 {step === 1 && (
                   <button type="button" className={`${btnGhost} text-error`} onClick={() => setException(true)}>서명 예외</button>
                 )}
-                <button type="button" className={btnPrimary} disabled={!hasInk} onClick={next}>
-                  {step === 0 ? '다음' : '완료 · 관리자에게 전달'}
+                <button type="button" className={btnPrimary} disabled={!hasInk || busy} onClick={next}>
+                  {busy ? '처리 중…' : step === 0 ? '다음' : '완료 · 관리자에게 전달'}
                 </button>
               </div>
             </>
@@ -115,7 +116,7 @@ export default function SignView({ match, team, sheet, judgeName, step, onRefSig
         </div>
       </div>
 
-      <button type="button" className="mt-6 text-sm font-bold" onClick={onBack}>← 확인 화면으로</button>
+      <button type="button" className="mt-6 text-sm font-bold" disabled={busy} onClick={onBack}>← 확인 화면으로</button>
     </main>
   );
 }
