@@ -179,13 +179,11 @@ export const ScoreSheetPdf = forwardRef<HTMLDivElement, Props>(function ScoreShe
           note={cat === 'S' ? '시니어 전용 감점은 해당 미션 소계에 이미 포함되어 있습니다.' : undefined}
         />
 
-        {/* 패널티 횟수: 화면 미리보기에만 표시하고 PDF 출력에서는 뺀다 */}
-        {mode === 'inline' && (
-          <div className="mt-2 flex items-center justify-between rounded-md px-2 py-[3px] font-bold" style={{ background: C.points }}>
-            <span>패널티 횟수</span>
-            <span className="font-extrabold tabular-nums">{penaltyCount(values, ruleItems)}회</span>
-          </div>
-        )}
+        {/* 패널티 횟수: 화면에서 보거나 확인할 때는 표시하고, PDF 저장·인쇄 출력에서만 뺀다 (data-pdf-hide) */}
+        <div data-pdf-hide className="mt-2 flex items-center justify-between rounded-md px-2 py-[3px] font-bold print:hidden" style={{ background: C.points }}>
+          <span>패널티 횟수</span>
+          <span className="font-extrabold tabular-nums">{penaltyCount(values, ruleItems)}회</span>
+        </div>
 
         {/* 합계 */}
         <div className="mt-4 flex gap-2">
@@ -372,6 +370,11 @@ export async function downloadScoreSheetsPdf(nodes: HTMLDivElement[], fileName: 
   // 양식 자체에 A4 여백이 들어 있으므로 페이지에 꽉 맞춘다 (내용이 길면 비율을 유지해 축소)
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
+  // 화면에는 보이지만 출력물에는 넣지 않는 요소(data-pdf-hide)는 캡처하는 동안만 감춘다. 끝나면 반드시 되돌린다.
+  const hidden = nodes.flatMap((n) => [...n.querySelectorAll<HTMLElement>('[data-pdf-hide]')]);
+  const prev = hidden.map((el) => el.style.display);
+  hidden.forEach((el) => { el.style.display = 'none'; });
+  try {
   for (const [i, node] of nodes.entries()) {
     // 캡처 도중 화면이 바뀌어 노드가 사라질 수 있으므로 크기는 캡처 전에 재고, 비율은 결과 이미지에서 구한다
     const width0 = node.offsetWidth;
@@ -385,6 +388,9 @@ export async function downloadScoreSheetsPdf(nodes: HTMLDivElement[], fileName: 
     const width = Math.min(pageWidth, pageHeight / ratio);
     // 'FAST' = PNG 데이터를 압축해 넣는다 (무압축이면 한 장에 10MB 가까이 된다)
     pdf.addImage(png, 'PNG', (pageWidth - width) / 2, 0, width, width * ratio, undefined, 'FAST');
+  }
+  } finally {
+    hidden.forEach((el, i) => { el.style.display = prev[i]; });
   }
   pdf.save(`${safeFileName(fileName).replace(/\s+/g, '-')}.pdf`);
 }
