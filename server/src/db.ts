@@ -8,6 +8,7 @@ export type ScoreInput = {
   ts: number;
   sheet: string | null; // 채점지 전체(JSON 문자열). 점수만 보내는 경우 null
 };
+export type ScoreRow = { matchId: string; teamId: string; judgeId: string; points: number; ts: number; refName: string | null; signException: string | null };
 export type Standing = { teamId: string; total: number };
 export type RobotApproval = { teamId: string; robotCount: number; approvedRobotIds: string[]; updatedAt: number };
 
@@ -53,6 +54,12 @@ const standings = db.prepare(`
   FROM scores GROUP BY team_id
   ORDER BY total DESC, SUM(points) DESC, team_id
 `);
+// 관리자 채점 목록용. 채점지 전체(서명 이미지 포함)는 보내지 않고 필요한 필드만 뽑는다.
+const scoreList = db.prepare(`
+  SELECT match_id AS matchId, team_id AS teamId, judge_id AS judgeId, points, ts,
+         json_extract(sheet, '$.refName') AS refName, json_extract(sheet, '$.signException') AS signException
+  FROM scores ORDER BY ts DESC
+`);
 const robotApprovalOf = db.prepare('SELECT team_id AS teamId, robot_count AS robotCount, approved_robot_ids AS approvedRobotIds, updated_at AS updatedAt FROM robot_approvals WHERE team_id = ?');
 const saveRobotApprovalStatement = db.prepare(`
   INSERT INTO robot_approvals (team_id, robot_count, approved_robot_ids, updated_at)
@@ -61,6 +68,7 @@ const saveRobotApprovalStatement = db.prepare(`
 `);
 
 export const saveScore = (s: ScoreInput) => upsert.run(s.matchId, s.teamId, s.judgeId, s.points, s.ts, s.sheet);
+export const getScoreList = () => scoreList.all() as ScoreRow[];
 export const getStandings = () => standings.all() as Standing[];
 export const getRobotApproval = (teamId: string): RobotApproval | null => {
   const row = robotApprovalOf.get(teamId) as { teamId: string; robotCount: number; approvedRobotIds: string; updatedAt: number } | undefined;

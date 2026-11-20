@@ -21,7 +21,30 @@ const fixedTable = (judgeId: string) => {
   return t ? Number(t) : null;
 };
 
-export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; judgeName: string }) {
+type Props = { judgeId: string; judgeName: string };
+
+// 저장·PDF 출력처럼 잠깐 걸리는 작업 동안 승인표 화면과 같은 '처리중' 표시를 띄운다.
+export default function JudgeConsole(props: Props) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <>
+      <JudgeConsoleBody {...props} setBusy={setBusy} />
+      {busy && (
+        <div role="status" aria-live="polite" className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 print:hidden">
+          <div className="rounded-2xl bg-white px-8 py-6 text-center shadow-lg">
+            <div className="mx-auto size-8 animate-spin rounded-full border-4 border-line border-t-accent" />
+            <p className="mt-3 font-bold">처리중</p>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+const MIN_BUSY_MS = 700;
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function JudgeConsoleBody({ judgeId, judgeName, setBusy }: Props & { setBusy: (b: boolean) => void }) {
   const { status, history, pending, rejected, submitScore, resendAll } = useRealtime();
   const { sheets, update } = useSheets(judgeId);
 
@@ -65,7 +88,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
   const close = () => setOpenId(null);
 
   // 확인·서명 중에 점수를 고치면 작성 중으로 되돌리고, 받아둔 서명은 무효로 한다
-  const invalidate = (s: Sheet): Sheet => (s.status === 'reviewing' ? { ...s, status: 'draft', refSig: undefined, refSignedAt: undefined, teamSig: undefined } : s);
+  const invalidate = (s: Sheet): Sheet => (s.status === 'reviewing' ? { ...s, status: 'draft', refSig: undefined, refSignedAt: undefined, refName: undefined, teamSig: undefined } : s);
 
   // 수정 중이면 작업 사본을, 아니면 저장된 채점지를 고친다
   const patch = (fn: (s: Sheet) => Sheet) => (draft ? setDraft((d) => (d ? { ...fn(d), updated: Date.now() } : d)) : update(match!.id, fn));
@@ -73,7 +96,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
 
   // 확정된 채점을 불러와 수정 시작: 서명은 모두 다시 받는다
   const revise = () => {
-    setDraft({ ...sheet!, status: 'draft', refSig: undefined, refSignedAt: undefined, teamSig: undefined, teamSigner: undefined, teamSignedAt: undefined, signException: undefined, signedAt: undefined, updated: Date.now() });
+    setDraft({ ...sheet!, status: 'draft', refSig: undefined, refSignedAt: undefined, refName: undefined, teamSig: undefined, teamSigner: undefined, teamSignedAt: undefined, signException: undefined, signedAt: undefined, updated: Date.now() });
     setStep(0);
     setMode('score');
     window.scrollTo(0, 0);
@@ -84,13 +107,27 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
     window.scrollTo(0, 0);
   };
 
-  const finish = (p: Partial<Sheet>) => {
-    const signed: Sheet = { ...sheet!, ...p, status: 'signed', signedAt: Date.now() };
-    update(match!.id, () => signed);
-    setDraft(null);
-    submitScore(match!.id, match!.team, calc(signed.values, match!.cat).total, sheetPayload(match!, signed));
-    setMode('done');
-    window.scrollTo(0, 0);
+  const finish = async (p: Partial<Sheet>) => {
+    setBusy(true);
+    try {
+      const signed: Sheet = { ...sheet!, ...p, status: 'signed', signedAt: Date.now() };
+      update(match!.id, () => signed);
+      submitScore(match!.id, match!.team, calc(signed.values, match!.cat).total, sheetPayload(match!, signed));
+      await wait(MIN_BUSY_MS);
+      setDraft(null);
+      setMode('done');
+      window.scrollTo(0, 0);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const printPdf = async () => {
+    setBusy(true);
+    await wait(MIN_BUSY_MS);
+    setBusy(false);
+    await wait(50); // 오버레이가 사라진 뒤에 인쇄 창을 연다
+    window.print();
   };
 
   if (!match || !sheet) {
@@ -224,7 +261,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
             <div className="mt-4 flex gap-6">
               {sheet.refSig && (
                 <div>
-                  <p className="text-xs text-gray-500">심판</p>
+                  <p className="text-xs text-gray-500">심판 {sheet.refName ?? judgeName}</p>
                   <img src={sheet.refSig} alt="심판 서명" className="mt-1 h-[70px] rounded-lg border border-line bg-white" />
                 </div>
               )}
@@ -239,7 +276,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
         </div>
         <div className="mt-8 flex flex-col gap-2 sm:flex-row sm:justify-end">
           <button type="button" onClick={close} className={btnGhost}>다음 경기로</button>
-          <button type="button" onClick={() => window.print()} className={btnGhost}>채점표 PDF 출력</button>
+          <button type="button" onClick={printPdf} className={btnGhost}>채점표 PDF 출력</button>
           <button type="button" onClick={revise} className={btnPrimary}>수정하기</button>
         </div>
         <p className="mt-3 text-right text-xs text-gray-500">수정하면 심판과 팀 대표의 서명을 다시 받은 뒤에 서버에 반영합니다.</p>

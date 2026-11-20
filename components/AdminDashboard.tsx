@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
 import { TEAMS, teamOf } from '@/lib/judge/data';
+import { byRoundOrder, describe, useScoreList } from '@/lib/judge/scoreList';
 import { saveRobotApproval, useRobotApproval, type RobotId } from '@/lib/judge/robotApproval';
 
 type Tab = 'dashboard' | 'scores' | 'template' | 'robotApproval' | 'draw' | 'teams' | 'settings';
@@ -134,20 +135,14 @@ function Dashboard() {
 
 function ScoreList() {
   const [filter, setFilter] = useState('전체');
-  const scores = [
-    ['2차', '테이블 A', '07 · 미라클 메이커스', '주니어', '94', '확정 대기'],
-    ['2차', '테이블 C', '12 · 쿼크', '시니어', '88', '확정 대기'],
-    ['1차', '테이블 B', '03 · 레인보우', '주니어', '91', '확정'],
-    ['1차', '테이블 A', '15 · 오로라', '시니어', '86', '수정됨'],
-  ];
+  const { rows, state } = useScoreList();
+  const shown = rows.filter((r) => filter === '전체' || describe(r).cat === filter).sort(byRoundOrder);
   return (
     <section className={`${card} p-6`}>
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-extrabold text-heading">채점 목록</h1>
-        <button className={btn}>CSV 내보내기</button>
-      </div>
+      <h1 className="text-3xl font-extrabold text-heading">채점 목록</h1>
+      <p className="mt-2 text-sm text-gray-500">심판이 서명을 마치고 서버에 제출한 점수만 표시됩니다.</p>
       <div className="mt-5 flex gap-2">
-        {['전체', '확정 대기', '확정', '수정됨'].map(x => (
+        {['전체', '주니어', '시니어'].map(x => (
           <button key={x} onClick={() => setFilter(x)} className={`rounded-2xl border px-3 py-1.5 text-sm ${filter === x ? 'border-accent bg-accent text-white' : 'border-line text-gray-600 hover:border-line-hover'}`}>{x}</button>
         ))}
       </div>
@@ -159,23 +154,29 @@ function ScoreList() {
               <th className="px-4 py-3 font-semibold">테이블</th>
               <th className="px-4 py-3 font-semibold">참가팀</th>
               <th className="px-4 py-3 font-semibold">부문</th>
+              <th className="px-4 py-3 font-semibold">심판</th>
               <th className="px-4 py-3 text-right font-semibold">총점</th>
-              <th className="px-4 py-3 font-semibold">상태</th>
-              <th className="px-4 py-3" />
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
-            {scores.filter(x => filter === '전체' || x[5] === filter).map(s => (
-              <tr key={s[2]}>
-                <td className="px-4 py-3">{s[0]}</td>
-                <td className="px-4 py-3">{s[1]}</td>
-                <td className="px-4 py-3 font-medium">{s[2]}</td>
-                <td className="px-4 py-3">{s[3]}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{s[4]}</td>
-                <td className="px-4 py-3 text-gray-600">{s[5]}</td>
-                <td className="px-4 py-3 text-right"><button className={`${btn} !py-1`}>상세</button></td>
-              </tr>
-            ))}
+            {shown.map((r) => {
+              const d = describe(r);
+              return (
+                <tr key={`${r.matchId}:${r.teamId}:${r.judgeId}`}>
+                  <td className="px-4 py-3">{d.round ? `${d.round}차 · ${d.wave}조` : '-'}</td>
+                  <td className="px-4 py-3">{d.table}</td>
+                  <td className="px-4 py-3 font-medium">{d.team}</td>
+                  <td className="px-4 py-3">{d.cat}</td>
+                  <td className="px-4 py-3">{r.refName ?? r.judgeId}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{r.points}{r.signException && <span className="ml-2 text-xs text-error">서명 예외</span>}</td>
+                </tr>
+              );
+            })}
+            {shown.length === 0 && (
+              <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-500">
+                {state === 'loading' ? '불러오는 중입니다.' : state === 'error' ? '서버에서 채점 목록을 불러오지 못했습니다. 서버 연결과 관리자 로그인을 확인해 주십시오.' : '제출된 채점 결과가 없습니다.'}
+              </td></tr>
+            )}
           </tbody>
         </table>
       </div>

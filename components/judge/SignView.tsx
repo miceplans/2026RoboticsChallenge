@@ -34,7 +34,7 @@ export default function SignView({ match, team, sheet, judgeName, step, onRefSig
     const img = pad.current!.toDataURL();
     if (step === 0) {
       setHasInk(false);
-      onRefSigned({ refSig: img, refSignedAt: Date.now() });
+      onRefSigned({ refSig: img, refSignedAt: Date.now(), refName: judgeName });
       return;
     }
     const name = signer === OTHER ? custom.trim() : signer;
@@ -75,7 +75,7 @@ export default function SignView({ match, team, sheet, judgeName, step, onRefSig
               )}
               {sheet.refSig && (
                 <div className="mt-4">
-                  <p className="text-xs text-gray-500">심판 서명 완료</p>
+                  <p className="text-xs text-gray-500">심판 {sheet.refName ?? judgeName} 서명 완료</p>
                   <img src={sheet.refSig} alt="심판 서명" className="mt-1 h-[70px] rounded-lg border border-line bg-white" />
                 </div>
               )}

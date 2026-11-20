@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { Server } from 'socket.io';
-import { getRobotApproval, getStandings, saveRobotApproval, saveScore } from './db.ts';
+import { getRobotApproval, getScoreList, getStandings, saveRobotApproval, saveScore } from './db.ts';
 import { sessionFromCookie, type Session } from './session.ts';
 
 const PORT = Number(process.env.PORT ?? 4000);
@@ -69,6 +69,12 @@ const httpServer = createServer((req, res) => {
     if (!session) return json(401, { ok: false, error: 'unauthorized' });
     if (!teamId || teamId.length > 64) return json(400, { ok: false, error: 'invalid' });
     return void res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ approval: getRobotApproval(teamId) }));
+  }
+  if (url.pathname === '/scores' && req.method === 'GET') {
+    const session = sessionFromCookie(req.headers.cookie);
+    if (!session) return json(401, { ok: false, error: 'unauthorized' });
+    if (session.role !== 'admin') return json(403, { ok: false, error: 'forbidden' });
+    return void res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ scores: getScoreList() }));
   }
   if (url.pathname !== '/score' && url.pathname !== '/robot-approval') return void res.writeHead(404).end();
   if (req.method === 'OPTIONS') return void res.writeHead(204).end();

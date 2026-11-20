@@ -5,6 +5,8 @@ export type Role = 'user' | 'judge' | 'admin';
 export type Session = { id: string; name: string; role: Role; exp: number };
 
 const SESSION_COOKIE = 'session';
+// 운영(NODE_ENV=production)에서 AUTH_SECRET 이 없으면 기동 자체를 막는다.
+if (!process.env.AUTH_SECRET && process.env.NODE_ENV === 'production') throw new Error('AUTH_SECRET 환경변수가 필요합니다.');
 const secret = process.env.AUTH_SECRET ?? 'dev-only-secret-change-me';
 
 export function sessionFromCookie(cookieHeader: string | undefined): Session | null {

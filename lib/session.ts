@@ -5,7 +5,13 @@ export type Session = { id: string; name: string; role: Role; exp: number };
 export const SESSION_COOKIE = 'session';
 export const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
 
-const secret = process.env.AUTH_SECRET ?? 'dev-only-secret-change-me';
+// 운영에서 AUTH_SECRET 이 없으면 위조 가능한 기본값을 쓰지 않고 실패시킨다 (빌드 시점이 아니라 사용 시점에 검사).
+const getSecret = () => {
+  const s = process.env.AUTH_SECRET;
+  if (s) return s;
+  if (process.env.NODE_ENV === 'production') throw new Error('AUTH_SECRET 환경변수가 필요합니다.');
+  return 'dev-only-secret-change-me';
+};
 const enc = new TextEncoder();
 
 const toB64Url = (buf: ArrayBuffer | Uint8Array) =>
@@ -16,7 +22,7 @@ const fromB64Url = (s: string) => {
   return atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4));
 };
 
-const hmacKey = () => crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+const hmacKey = () => crypto.subtle.importKey('raw', enc.encode(getSecret()), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
 
 const sign = async (data: string) => toB64Url(await crypto.subtle.sign('HMAC', await hmacKey(), enc.encode(data)));
 

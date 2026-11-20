@@ -38,7 +38,7 @@ export default function ScoreTable({ values, cat }: { values: Values; cat: Categ
               );
             })}
             <tr className="bg-surface">
-              <td colSpan={2} className="px-4 py-3 font-bold">{g === 'PEN' ? `일반 벌점 소계 · 패널티 ${c.penCnt}회` : `${g === 'M1' ? '미션 1' : '미션 2'} 소계`}</td>
+              <td colSpan={2} className="px-4 py-3 font-bold">{g === 'PEN' ? <>일반 벌점 소계<span className="print:hidden"> · 패널티 {c.penCnt}회</span></> : `${g === 'M1' ? '미션 1' : '미션 2'} 소계`}</td>
               <td className="px-4 py-3 text-right font-bold tabular-nums">{c.sum[g]}</td>
             </tr>
           </tbody>
