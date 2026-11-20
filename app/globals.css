@@ -27,3 +27,9 @@
 body {
   -webkit-font-smoothing: antialiased;
 }
+
+@media print {
+  body * { visibility: hidden; }
+  [data-score-print], [data-score-print] * { visibility: visible; }
+  [data-score-print] { position: absolute; inset: 0; width: 100%; }
+}

@@ -12,8 +12,9 @@ export type Match = {
   team: string; // Team.id (서버로 보내는 teamId)
 };
 
-const TEAM_NAMES = ['메디봇', '세이프가드', '라이프라인', '큐어러', '헬스온', '펄스', '닥터윙', '케어링', '레스큐원', '바이탈', '힐링기어', '에이드봇', '트리아지', '모빌케어', '클린존', '하트비트', '로보메딕', '스카이힐', '메디무버', '가디언즈', '올케어', '프론트라인', '캡슐', '온콜', '리커버리', '세이버', '메디플로우', '핸즈온', '큐브힐', '패스파인더', '에코케어', '브릿지'];
+const TEAM_NAMES = ['춘천과 원주', '춘천 닭갈비', '라이프라인', '큐어러', '헬스온', '펄스', '닥터윙', '케어링', '레스큐원', '바이탈', '힐링기어', '에이드봇', '트리아지', '모빌케어', '클린존', '하트비트', '로보메딕', '스카이힐', '메디무버', '가디언즈', '올케어', '프론트라인', '캡슐', '온콜', '리커버리', '세이버', '메디플로우', '핸즈온', '큐브힐', '패스파인더', '에코케어', '브릿지'];
 const MEMBERS = ['김OO', '이OO', '박OO', '최OO', '정OO'];
+const CHUNCHEON_TEAMS = new Set(['춘천과 원주', '춘천 닭갈비']);
 
 export const TABLES = [1, 2, 3, 4, 5, 6, 7, 8];
 
@@ -22,7 +23,8 @@ export const TEAMS: Team[] = (['J', 'S'] as const).flatMap((cat, ci) =>
     id: cat + String(i + 1).padStart(2, '0'),
     cat,
     name: TEAM_NAMES[ci * 16 + i],
-    org: '샘플학교 ' + String.fromCharCode(65 + (i % 10)),
+    // QA 수정: 해당 두 팀의 소속은 '영재학급' 없이 학교명만 표시한다.
+    org: CHUNCHEON_TEAMS.has(TEAM_NAMES[ci * 16 + i]) ? '춘천기계공업고등학교' : '샘플학교 ' + String.fromCharCode(65 + (i % 10)),
     members: MEMBERS.slice(0, 2 + (i % 3)),
   })),
 );

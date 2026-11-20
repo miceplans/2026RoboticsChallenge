@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { Server } from 'socket.io';
-import { getStandings, saveScore } from './db.ts';
+import { getRobotApproval, getStandings, saveRobotApproval, saveScore } from './db.ts';
 import { sessionFromCookie, type Session } from './session.ts';
 
 const PORT = Number(process.env.PORT ?? 4000);
@@ -10,6 +10,7 @@ const BROADCAST_MS = 500;
 
 type SubmitPayload = { matchId: unknown; teamId: unknown; points: unknown; ts: unknown; sheet?: unknown };
 type Result = { ok: true } | { ok: false; error: string };
+type RobotApprovalPayload = { teamId: unknown; approvedRobotIds: unknown };
 
 // 채점지(서명 이미지 포함) 상한. 초과분은 거부한다.
 const MAX_SHEET_BYTES = 400 * 1024;
@@ -38,6 +39,16 @@ function submitScore(session: Session, p: SubmitPayload | undefined): Result {
   return { ok: true };
 }
 
+function parseRobotApproval(session: Session, payload: RobotApprovalPayload | undefined) {
+  if (session.role !== 'admin') return { error: 'forbidden' as const };
+  const { teamId, approvedRobotIds } = payload ?? {};
+  const robotIds = ['R1', 'R2', 'R3', 'R4', 'R5'];
+  if (typeof teamId !== 'string' || !teamId || teamId.length > 64 || !Array.isArray(approvedRobotIds) || approvedRobotIds.some((id) => typeof id !== 'string' || !robotIds.includes(id))) {
+    return { error: 'invalid' as const };
+  }
+  return { approval: { teamId, approvedRobotIds: [...new Set(approvedRobotIds)], updatedAt: Date.now() } };
+}
+
 // WebSocket 이 막히거나 불안정할 때 클라이언트가 쓰는 폴백: POST /score
 const httpServer = createServer((req, res) => {
   const origin = req.headers.origin;
@@ -52,7 +63,15 @@ const httpServer = createServer((req, res) => {
   };
 
   if (req.url === '/health') return void res.end('ok');
-  if (req.url !== '/score') return void res.writeHead(404).end();
+  const url = new URL(req.url ?? '/', 'http://localhost');
+  if (url.pathname === '/robot-approval' && req.method === 'GET') {
+    const session = sessionFromCookie(req.headers.cookie);
+    const teamId = url.searchParams.get('teamId');
+    if (!session) return json(401, { ok: false, error: 'unauthorized' });
+    if (!teamId || teamId.length > 64) return json(400, { ok: false, error: 'invalid' });
+    return void res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ approval: getRobotApproval(teamId) }));
+  }
+  if (url.pathname !== '/score' && url.pathname !== '/robot-approval') return void res.writeHead(404).end();
   if (req.method === 'OPTIONS') return void res.writeHead(204).end();
   if (req.method !== 'POST') return void res.writeHead(405).end();
 
@@ -73,13 +92,20 @@ const httpServer = createServer((req, res) => {
   });
   req.on('end', () => {
     if (tooLarge) return json(413, { ok: false, error: 'too_large' });
-    let payload: SubmitPayload | undefined;
+    let payload: SubmitPayload | RobotApprovalPayload | undefined;
     try {
       payload = JSON.parse(body);
     } catch {
       return json(400, { ok: false, error: 'invalid' });
     }
-    const result = submitScore(session, payload);
+    if (url.pathname === '/robot-approval') {
+      const parsed = parseRobotApproval(session, payload as RobotApprovalPayload);
+      if ('error' in parsed) return json(parsed.error === 'forbidden' ? 403 : 400, { ok: false, error: parsed.error });
+      saveRobotApproval(parsed.approval);
+      io.emit('robot-approval', parsed.approval);
+      return void res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ approval: parsed.approval }));
+    }
+    const result = submitScore(session, payload as SubmitPayload);
     json(result.ok ? 200 : result.error === 'forbidden' ? 403 : 400, result);
   });
 });
@@ -117,6 +143,14 @@ io.on('connection', (socket) => {
   socket.on('score:submit', (p: SubmitPayload, ack?: (res: Result) => void) => {
     const result = submitScore(session, p);
     ack?.(result);
+  });
+
+  socket.on('robot-approval:save', (p: RobotApprovalPayload, ack?: (res: Result & { approval?: unknown }) => void) => {
+    const parsed = parseRobotApproval(session, p);
+    if ('error' in parsed) return ack?.({ ok: false, error: parsed.error });
+    saveRobotApproval(parsed.approval);
+    io.emit('robot-approval', parsed.approval);
+    ack?.({ ok: true, approval: parsed.approval });
   });
 });
 

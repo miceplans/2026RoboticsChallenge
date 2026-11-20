@@ -2,13 +2,16 @@
 
 import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
+import { TEAMS, teamOf } from '@/lib/judge/data';
+import { ROBOT_IDS, saveRobotApproval, useRobotApproval, type RobotId } from '@/lib/judge/robotApproval';
 
-type Tab = 'dashboard' | 'scores' | 'template' | 'draw' | 'teams' | 'settings';
+type Tab = 'dashboard' | 'scores' | 'template' | 'robotApproval' | 'draw' | 'teams' | 'settings';
 
 const nav: { id: Tab; label: string; icon: string }[] = [
   { id: 'dashboard', label: '대시보드', icon: 'dashboard' },
   { id: 'scores', label: '채점 목록', icon: 'fact_check' },
   { id: 'template', label: '채점표 템플릿', icon: 'table_chart' },
+  { id: 'robotApproval', label: '로봇 승인', icon: 'smart_toy' },
   { id: 'draw', label: '대진 추첨', icon: 'shuffle' },
   { id: 'teams', label: '팀 · 계정', icon: 'group' },
   { id: 'settings', label: '설정', icon: 'settings' },
@@ -217,6 +220,63 @@ function Template() {
   );
 }
 
+const robotGuide = [
+  ['A) 사전 식별 (필수)', '로봇 라벨링'],
+  ['B) 정적 검사 (로봇을 멈춘 상태에서)', '로봇 장식, 로봇 시작 구역, 명확한 시작 방식, 자율 작동 신고, 안전성·완성도, 비상 정지'],
+  ['C) 동적 검사 (짧은 시연)', '시작 및 시작 구역 이탈, 안전하고 통제된 움직임'],
+] as const;
+
+function RobotApprovalPanel() {
+  const [teamId, setTeamId] = useState(TEAMS[0].id);
+  const [selected, setSelected] = useState<RobotId[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const { approval, loading, refresh } = useRobotApproval(teamId);
+  const team = teamOf(teamId);
+
+  useEffect(() => { setSelected(approval?.approvedRobotIds ?? []); }, [approval]);
+  const toggle = (robot: RobotId) => setSelected((current) => current.includes(robot) ? current.filter((id) => id !== robot) : [...current, robot]);
+  const save = async () => {
+    setSaving(true);
+    setMessage(null);
+    try {
+      await saveRobotApproval(teamId, selected);
+      await refresh();
+      setMessage(`승인 결과를 저장했습니다. 승인 완료 ${selected.length}대`);
+    } catch {
+      setMessage('승인 결과를 저장하지 못했습니다. 서버 연결과 관리자 로그인을 확인해 주십시오.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className={`${card} max-w-4xl p-6`}>
+      <h1 className="text-3xl font-extrabold text-heading">로봇 승인</h1>
+      <p className="mt-2 text-sm text-gray-500">승인한 로봇만 심판 채점 화면에 표시됩니다.</p>
+      <label className="mt-6 block text-sm font-medium">
+        참가팀
+        <select value={teamId} onChange={(e) => setTeamId(e.target.value)} className="mt-2 block w-full rounded-lg border border-line bg-white px-3 py-2">
+          {TEAMS.map((item) => <option key={item.id} value={item.id}>{item.id} · {item.name} · {item.org}</option>)}
+        </select>
+      </label>
+      <div className="mt-6 rounded-xl border border-line">
+        <div className="border-b border-line bg-surface-secondary px-4 py-3 text-sm font-bold">{team.id} {team.name} 검차 가이드</div>
+        {robotGuide.map(([title, content]) => <div key={title} className="border-b border-line px-4 py-3 last:border-0"><b className="block text-sm">{title}</b><p className="mt-1 text-sm text-gray-600">{content}</p></div>)}
+      </div>
+      <div className="mt-6 overflow-hidden rounded-xl border border-line">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-accent text-white"><tr><th className="px-4 py-3">로봇</th><th className="px-4 py-3">정적 검사</th><th className="px-4 py-3">출전 승인</th></tr></thead>
+          <tbody className="divide-y divide-line">
+            {ROBOT_IDS.map((robot) => <tr key={robot}><td className="px-4 py-3 font-bold">{robot}</td><td className="px-4 py-3">검사 통과</td><td className="px-4 py-3"><label className="inline-flex cursor-pointer items-center gap-2"><input type="checkbox" checked={selected.includes(robot)} onChange={() => toggle(robot)} className="size-4 accent-accent" />승인</label></td></tr>)}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-5 flex items-center gap-3"><button type="button" disabled={saving || loading} onClick={save} className={`${btnPrimary} disabled:opacity-40`}>{saving ? '저장 중' : '승인 결과 저장'}</button>{message && <p className={`text-sm ${message.startsWith('승인 결과를 저장했습니다') ? 'text-accent' : 'text-error'}`}>{message}</p>}</div>
+    </section>
+  );
+}
+
 function Dropdown({ value, onChange, disabledFor }: { value: number | null; onChange: (n: number) => void; disabledFor: (n: number) => boolean }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -324,6 +384,7 @@ export default function AdminDashboard({ name }: { name: string }) {
   const content =
     tab === 'scores' ? <ScoreList /> :
     tab === 'template' ? <Template /> :
+    tab === 'robotApproval' ? <RobotApprovalPanel /> :
     tab === 'draw' ? <Draw /> :
     tab === 'teams' ? <Teams /> :
     tab === 'settings' ? <Settings notice={notice} setNotice={setNotice} /> :

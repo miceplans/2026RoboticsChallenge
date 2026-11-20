@@ -213,7 +213,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
             {sync === 'acked' ? syncText : sync === 'rejected' ? '운영본부에 알려 주십시오' : '연결되면 자동으로 전송됩니다 (전송 대기)'}
           </p>
         </div>
-        <div className="mt-6 grid gap-5 sm:grid-cols-2">
+        <div className="mt-6 grid gap-5 sm:grid-cols-2" data-score-print>
           <ScoreTable values={sheet.values} cat={match.cat} />
           <div>
             <div className="rounded-2xl bg-accent/10 p-6 text-center">
@@ -239,6 +239,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
         </div>
         <div className="mt-8 flex flex-col gap-2 sm:flex-row sm:justify-end">
           <button type="button" onClick={close} className={btnGhost}>다음 경기로</button>
+          <button type="button" onClick={() => window.print()} className={btnGhost}>채점표 PDF 출력</button>
           <button type="button" onClick={revise} className={btnPrimary}>수정하기</button>
         </div>
         <p className="mt-3 text-right text-xs text-gray-500">수정하면 심판과 팀 대표의 서명을 다시 받은 뒤에 서버에 반영합니다.</p>

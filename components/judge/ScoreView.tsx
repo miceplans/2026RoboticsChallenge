@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react';
 import type { Match, Team } from '@/lib/judge/data';
 import { autoLabel, calc, CATEGORY_NAMES, damagePtsKey, damageWhyKey, ITEMS, inputItems, MISSION_NAMES, PRE_CHECKS, unitPoints, validate, type Mission } from '@/lib/judge/rules';
 import type { Sheet } from '@/lib/judge/sheets';
+import { useRobotApproval } from '@/lib/judge/robotApproval';
 import { btnGhost, btnPrimary, Card, Chip, inputCls } from './ui';
 
 const Row = ({ label, children }: { label: ReactNode; children?: ReactNode }) => (
@@ -47,6 +48,7 @@ export default function ScoreView({ match, team, sheet, edit, onBack, backLabel 
   const c = calc(v, match.cat);
   const errors = validate(v);
   const bad = new Set(errors.flatMap((e) => e.ids));
+  const { approval, loading: robotApprovalLoading } = useRobotApproval(team.id);
 
   const setValue = (k: string, val: number | boolean | string) => edit((s) => ({ ...s, values: { ...s.values, [k]: val } }));
   const bump = (k: string, d: number, max = 99) =>
@@ -64,6 +66,21 @@ export default function ScoreView({ match, team, sheet, edit, onBack, backLabel 
           {team.org} · {match.round}차 조별 · 테이블 {match.table} {match.field} · {match.wave}조
         </span>
       </header>
+
+      <Card title="로봇 검차 결과">
+        <div className="px-5 py-4">
+          {robotApprovalLoading ? (
+            <p className="text-sm text-gray-500">승인 결과를 조회하고 있습니다.</p>
+          ) : approval && approval.approvedRobotIds.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <b className="text-accent">승인 완료 {approval.approvedRobotIds.length}대</b>
+              {approval.approvedRobotIds.map((robot) => <span key={robot} className="rounded-full bg-accent/10 px-3 py-1 font-bold text-accent">{robot}</span>)}
+            </div>
+          ) : (
+            <p className="text-sm text-error">승인된 로봇이 없습니다. 관리자에게 검차 결과를 확인해 주십시오.</p>
+          )}
+        </div>
+      </Card>
 
       <Card title="경기 전 확인">
         {PRE_CHECKS.map(([k, label]) => (
