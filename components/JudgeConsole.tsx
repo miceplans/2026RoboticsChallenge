@@ -10,6 +10,7 @@ import { StatusBadge } from '@/components/LiveLeaderboard';
 import { MATCHES, matchesOfTable, TABLES, teamOf, type Match } from '@/lib/judge/data';
 import { calc, CATEGORY_NAMES } from '@/lib/judge/rules';
 import { newSheet, sheetPayload, useSheets, type Sheet } from '@/lib/judge/sheets';
+import { useRobotApproval } from '@/lib/judge/robotApproval';
 import { scoreKey } from '@/lib/realtime/outbox';
 import { useRealtime } from '@/lib/realtime/useRealtime';
 
@@ -22,6 +23,19 @@ const fixedTable = (judgeId: string) => {
 };
 
 type Props = { judgeId: string; judgeName: string };
+
+// 경기 목록 행에 관리자가 승인한 로봇을 보여준다. 채점표에는 넣지 않는다.
+function ApprovalBadge({ teamId }: { teamId: string }) {
+  const { approval } = useRobotApproval(teamId);
+  const ids = approval?.approvedRobotIds ?? [];
+  if (ids.length === 0) return null;
+  return (
+    <span className="ml-1 inline-flex flex-wrap items-center gap-1 align-middle">
+      <b className="text-accent">✓ {ids.length}대 승인 완료</b>
+      {ids.map((id) => <span key={id} className="rounded-full bg-accent/10 px-2 py-0.5 text-xs font-bold text-accent">{id}</span>)}
+    </span>
+  );
+}
 
 // 저장·PDF 출력처럼 잠깐 걸리는 작업 동안 승인표 화면과 같은 '처리중' 표시를 띄운다.
 export default function JudgeConsole(props: Props) {
@@ -177,7 +191,7 @@ function JudgeConsoleBody({ judgeId, judgeName, setBusy }: Props & { setBusy: (b
                       <Chip tone={m.cat === 'S' ? 'info' : 'neutral'}>{CATEGORY_NAMES[m.cat]}</Chip>
                       <span className="flex-1">
                         <b className="block">{m.wave}조 · {m.field}</b>
-                        <small className="text-gray-500">{t.id} {t.name} · {t.org}</small>
+                        <small className="text-gray-500">{t.id} {t.name} · {t.org}{' '}<ApprovalBadge teamId={t.id} /></small>
                       </span>
                       {s?.status === 'signed' && <b>{calc(s.values, m.cat).total}점</b>}
                       <Chip tone={tone}>{text}</Chip>
