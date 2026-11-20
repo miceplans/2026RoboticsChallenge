@@ -177,7 +177,7 @@ export default function GroupDraw() {
           );
         })}
       </div>
-      <p className="mt-2 text-xs text-gray-500">진행 순서는 주니어 1조 → 시니어 1조 → 주니어 2조 → … → 시니어 8조로 고정이며, 1차·2차 모두 같은 조·같은 순서로 진행합니다.</p>
+      <p className="mt-2 text-xs text-gray-500">진행 순서는 주니어 1조 → … → 주니어 8조 → 시니어 1조 → … → 시니어 8조로 고정이며, 1차·2차 모두 같은 조·같은 순서로 진행합니다.</p>
     </div>
   );
 }
