@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from 'react';
 import type { Match, Team } from '@/lib/judge/data';
-import { calc, CATEGORY_NAMES, inputItems, MISSION_NAMES, PRE_CHECKS, unitPoints, validate, type Mission } from '@/lib/judge/rules';
+import { autoLabel, calc, CATEGORY_NAMES, damagePtsKey, damageWhyKey, ITEMS, inputItems, MISSION_NAMES, PRE_CHECKS, unitPoints, validate, type Mission } from '@/lib/judge/rules';
 import type { Sheet } from '@/lib/judge/sheets';
 import { btnGhost, btnPrimary, Card, Chip, inputCls } from './ui';
 
@@ -37,14 +37,16 @@ type Props = {
   sheet: Sheet;
   edit: (fn: (s: Sheet) => Sheet) => void;
   onBack: () => void;
+  backLabel?: string;
   onReview: () => void;
 };
 
-export default function ScoreView({ match, team, sheet, edit, onBack, onReview }: Props) {
+export default function ScoreView({ match, team, sheet, edit, onBack, backLabel = '← 담당 경기 목록', onReview }: Props) {
   const [savedFlash, setSavedFlash] = useState(false);
   const v = sheet.values;
   const c = calc(v, match.cat);
   const errors = validate(v);
+  const bad = new Set(errors.flatMap((e) => e.ids));
 
   const setValue = (k: string, val: number | boolean | string) => edit((s) => ({ ...s, values: { ...s.values, [k]: val } }));
   const bump = (k: string, d: number, max = 99) =>
@@ -53,7 +55,7 @@ export default function ScoreView({ match, team, sheet, edit, onBack, onReview }
 
   return (
     <main className="mx-auto max-w-4xl pb-28">
-      <button type="button" onClick={onBack} className="mb-4 text-sm font-bold">← 담당 경기 목록</button>
+      <button type="button" onClick={onBack} className="mb-4 text-sm font-bold">{backLabel}</button>
 
       <header className="flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-white p-5">
         <Chip tone={match.cat === 'S' ? 'info' : 'neutral'}>{CATEGORY_NAMES[match.cat]}</Chip>
@@ -72,63 +74,83 @@ export default function ScoreView({ match, team, sheet, edit, onBack, onReview }
       </Card>
 
       {(['M1', 'M2', 'PEN'] as Mission[]).map((g) => {
-        const items = inputItems(match.cat).filter((i) => i.m === g);
-        if (!items.length) return null;
-        const autos = c.lines.filter((l) => l.it.m === g && l.it.type === 'auto' && l.sub !== 0);
+        const inputs = inputItems(match.cat).filter((i) => i.m === g);
+        if (!inputs.length) return null;
+        // 입력 항목 사이에 자동계산 항목을 채점표 순서대로 끼워 넣는다 (입력 불가, 흐리게 표시)
+        const autos = c.lines.filter((l) => l.it.m === g && l.it.type === 'auto');
+        const rows = [...inputs, ...autos.map((l) => l.it)].sort((x, y) => ITEMS.indexOf(x) - ITEMS.indexOf(y));
         return (
           <Card key={g} title={MISSION_NAMES[g]}>
-            {items.map((it) => {
+            {rows.map((it) => {
               const p = unitPoints(it, match.cat);
-              const sub = c.lines.find((l) => l.it.id === it.id)?.sub ?? 0;
+              const line = c.lines.find((l) => l.it.id === it.id);
+              const sub = line?.sub ?? 0;
+              const count = num(it.id);
+
+              if (it.type === 'auto') {
+                return (
+                  <Row key={it.id} label={<><b className="block font-medium text-gray-400">{autoLabel(it.label)}</b><span className="text-xs text-gray-400">{p > 0 ? '+' : ''}{p}점 · 입력값으로 자동 계산</span></>}>
+                    <b className={`w-16 text-right tabular-nums ${sub < 0 ? 'text-error/60' : 'text-gray-400'}`}>{sub > 0 ? '+' : ''}{sub}</b>
+                  </Row>
+                );
+              }
+
               const hint =
-                it.type === 'manual' ? '감점을 음수로 입력' : `${p > 0 ? '+' : ''}${p}점${it.type === 'count' ? ` / 개 · 최대 ${it.max}` : ''}`;
+                it.type === 'manual' ? '회마다 감점 점수를 직접 입력'
+                : it.type === 'dq' ? '예이면 경기 0점'
+                : `${p > 0 ? '+' : ''}${p}점${it.type === 'count' ? ` / 개 · 최대 ${it.max}` : ''}`;
               return (
-                <Row key={it.id} label={<><b className="block font-medium">{it.label}</b><span className="text-xs text-gray-500">{hint}</span></>}>
-                  {it.type === 'count' && <Stepper value={num(it.id)} down={() => bump(it.id, -1)} up={() => bump(it.id, 1, it.max)} />}
-                  {it.type === 'bool' && <Toggle on={!!v[it.id]} onText="예" offText="아니오" onClick={() => setValue(it.id, !v[it.id])} />}
-                  {it.type === 'manual' && (
-                    <input
-                      type="number"
-                      step={1}
-                      max={0}
-                      className={`${inputCls} w-28 text-right`}
-                      defaultValue={num(it.id)}
-                      onChange={(e) => setValue(it.id, Number(e.target.value) || 0)}
-                    />
+                <div key={it.id} className={bad.has(it.id) ? 'bg-error/10' : ''}>
+                  <Row label={<><b className="block font-medium">{it.label}</b><span className="text-xs text-gray-500">{hint}</span></>}>
+                    {(it.type === 'count' || it.type === 'manual') && <Stepper value={count} down={() => bump(it.id, -1)} up={() => bump(it.id, 1, it.max)} />}
+                    {it.type === 'bool' && <Toggle on={!!v[it.id]} onText="예" offText="아니오" onClick={() => setValue(it.id, !v[it.id])} />}
+                    {it.type === 'dq' && <Toggle danger on={!!v[it.id]} onText="예" offText="아니오" onClick={() => setValue(it.id, !v[it.id])} />}
+                    {it.type !== 'dq' && (
+                      <b className={`w-16 text-right tabular-nums ${sub < 0 ? 'text-error' : sub > 0 ? '' : 'text-gray-400'}`}>
+                        {sub > 0 ? '+' : ''}{sub}
+                      </b>
+                    )}
+                  </Row>
+                  {/* 구조물·게임요소 파손: 회마다 점수와 사유를 따로 적는다 */}
+                  {it.type === 'manual' &&
+                    Array.from({ length: count }, (_, k) => k + 1).map((i) => (
+                      <div key={i} className="flex items-center gap-3 px-5 pb-3">
+                        <b className="w-8 text-sm text-error">{i}회</b>
+                        <input
+                          type="number"
+                          step={1}
+                          className={`${inputCls} w-24 text-right`}
+                          placeholder="-점수"
+                          defaultValue={v[damagePtsKey(i)] === undefined ? '' : String(v[damagePtsKey(i)])}
+                          onChange={(e) => setValue(damagePtsKey(i), e.target.value === '' ? '' : Number(e.target.value))}
+                        />
+                        <input
+                          className={`${inputCls} min-w-0 flex-1`}
+                          placeholder="사유"
+                          defaultValue={String(v[damageWhyKey(i)] ?? '')}
+                          onChange={(e) => setValue(damageWhyKey(i), e.target.value)}
+                        />
+                      </div>
+                    ))}
+                  {/* 규칙 중대 위반: 예일 때만 사유 */}
+                  {it.type === 'dq' && it.reason && !!v[it.id] && (
+                    <div className="px-5 pb-3">
+                      <input
+                        className={`${inputCls} w-full`}
+                        placeholder="사유"
+                        defaultValue={String(v[`${it.id}_why`] ?? '')}
+                        onChange={(e) => setValue(`${it.id}_why`, e.target.value)}
+                      />
+                    </div>
                   )}
-                  <b className={`w-16 text-right tabular-nums ${sub < 0 ? 'text-error' : sub > 0 ? '' : 'text-gray-400'}`}>
-                    {sub > 0 ? '+' : ''}{sub}
-                  </b>
-                </Row>
+                </div>
               );
             })}
-            {autos.length > 0 && (
-              <p className="px-5 py-3 text-xs text-gray-500">
-                자동 계산: {autos.map((l) => `${l.it.label.replace(/ \(.+\)/, '')} ${l.sub > 0 ? '+' : ''}${l.sub}`).join(' · ')}
-              </p>
-            )}
           </Card>
         );
       })}
 
       <Card title="기록">
-        <Row label={<><b className="block font-medium">리셋 요청 횟수</b><span className="text-xs text-gray-500">타이머는 재시작하지 않음</span></>}>
-          <Stepper value={num('resets')} down={() => bump('resets', -1)} up={() => bump('resets', 1, 9)} />
-        </Row>
-        <Row label={<><b className="block font-medium">종료 시각(초)</b><span className="text-xs text-gray-500">조기 종료 선언 시, 미선언은 120</span></>}>
-          <input
-            type="number"
-            min={0}
-            max={120}
-            placeholder="120"
-            className={`${inputCls} w-28 text-right`}
-            defaultValue={v.endTime === undefined ? '' : String(v.endTime)}
-            onChange={(e) => setValue('endTime', e.target.value === '' ? '' : Number(e.target.value))}
-          />
-        </Row>
-        <Row label={<><b className="block font-medium">실격</b><span className="text-xs text-gray-500">안전 위험·중대 위반 시 경기 0점</span></>}>
-          <Toggle danger on={!!v.dq} onText="실격" offText="해당 없음" onClick={() => setValue('dq', !v.dq)} />
-        </Row>
         <div className="px-5 py-3">
           <input
             className={`${inputCls} w-full`}
@@ -143,9 +165,9 @@ export default function ScoreView({ match, team, sheet, edit, onBack, onReview }
         <div className="mx-auto flex max-w-4xl items-center gap-3">
           <div className="mr-auto min-w-0 text-sm">
             {errors.length > 0 ? (
-              <span className="text-error">{errors[0]}</span>
+              <span className="text-error">{errors[0].msg}</span>
             ) : (
-              <span className="text-gray-500">미션1 {c.sum.M1} · 미션2 {c.sum.M2} · 감점 {c.sum.PEN}</span>
+              <span className="text-gray-500">미션1 {c.sum.M1} · 미션2 {c.sum.M2} · 일반 벌점 {c.sum.PEN}</span>
             )}
             <b className="ml-2 text-3xl">{c.total}점</b>
           </div>

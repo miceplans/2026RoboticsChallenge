@@ -5,9 +5,12 @@ export type Item = {
   id: string;
   m: Mission;
   label: string;
-  // count: 개수 입력 / bool: 여부 / auto: 다른 입력값으로 자동 계산 / manual: 심판이 점수를 직접 입력
-  type: 'count' | 'bool' | 'auto' | 'manual';
+  // count: 개수 입력 / bool: 여부 / auto: 다른 입력값으로 자동 계산
+  // manual: 횟수를 입력하고 회마다 심판이 점수를 직접 입력 / dq: 아니오·예 (예이면 실격)
+  type: 'count' | 'bool' | 'auto' | 'manual' | 'dq';
   max?: number;
+  // 사유를 받는 항목 (규칙 중대 위반, 구조물·게임요소 파손에만 쓴다)
+  reason?: boolean;
   pj: number; // 주니어 배점
   ps: number; // 시니어 배점
 };
@@ -18,7 +21,7 @@ export const CATEGORY_NAMES: Record<Category, string> = { J: '주니어', S: '�
 export const MISSION_NAMES: Record<Mission, string> = {
   M1: '미션 1 · 오염물질 및 샘플 관리',
   M2: '미션 2 · 보건의료 관리',
-  PEN: '공통 감점',
+  PEN: '일반 벌점',
 };
 
 export const ITEMS: Item[] = [
@@ -45,7 +48,9 @@ export const ITEMS: Item[] = [
   { id: 'pen_field', m: 'PEN', label: '경기장·게임요소 조작', type: 'count', max: 9, pj: -20, ps: -20 },
   { id: 'pen_restart', m: 'PEN', label: '무단 재시작·프로그램 변경', type: 'count', max: 9, pj: -20, ps: -20 },
   { id: 'pen_out', m: 'PEN', label: '로봇이 경기장 밖으로 완전 이탈', type: 'count', max: 9, pj: -20, ps: -20 },
-  { id: 'pen_damage', m: 'PEN', label: '구조물·요소 파손 (심판 재량, 점수 직접 입력)', type: 'manual', pj: 1, ps: 1 },
+  { id: 'pen_damage', m: 'PEN', label: '구조물 또는 게임요소 파손 (심판 재량)', type: 'manual', max: 9, reason: true, pj: 1, ps: 1 },
+  { id: 'dq_danger', m: 'PEN', label: '관중 또는 참가자에게 위험 (실격)', type: 'dq', pj: 0, ps: 0 },
+  { id: 'dq_rule', m: 'PEN', label: '규칙 중대 위반 (실격)', type: 'dq', reason: true, pj: 0, ps: 0 },
 ];
 
 export const PRE_CHECKS = [
@@ -55,6 +60,18 @@ export const PRE_CHECKS = [
 ] as const;
 
 const n = (v: Values, k: string) => Number(v[k]) || 0;
+
+// 구조물·게임요소 파손은 회마다 점수가 달라 회차별 키로 저장한다. 입력 부호와 관계없이 감점으로 계산한다.
+export const damagePtsKey = (i: number) => `pen_damage_pts_${i}`;
+export const damageWhyKey = (i: number) => `pen_damage_why_${i}`;
+const damageSum = (v: Values) => {
+  let sum = 0;
+  for (let i = 1; i <= n(v, 'pen_damage'); i++) sum -= Math.abs(n(v, damagePtsKey(i)));
+  return sum;
+};
+
+// 자동 계상 항목 표시: '(보너스·자동)' → '(보너스 · 자동계산)'
+export const autoLabel = (label: string) => label.replace(/\((보너스·)?자동\)/, (_, b) => (b ? '(보너스 · 자동계산)' : '(자동계산)'));
 
 function autoQty(id: string, v: Values) {
   switch (id) {
@@ -73,7 +90,7 @@ export const unitPoints = (it: Item, cat: Category) => (cat === 'J' ? it.pj : it
 
 // 심판이 직접 입력하는 항목 (해당 카테고리에서 배점이 0인 항목은 숨긴다)
 export const inputItems = (cat: Category) =>
-  ITEMS.filter((it) => it.type !== 'auto' && (it.type === 'manual' || unitPoints(it, cat) !== 0));
+  ITEMS.filter((it) => it.type !== 'auto' && (it.type === 'manual' || it.type === 'dq' || unitPoints(it, cat) !== 0));
 
 export type Line = { it: Item; q: number | null; p: number; sub: number };
 export type Calc = { lines: Line[]; sum: Record<Mission, number>; total: number; penCnt: number; dq: boolean };
@@ -85,29 +102,33 @@ export function calc(values: Values, cat: Category): Calc {
 
   for (const it of ITEMS) {
     const p = unitPoints(it, cat);
-    if (it.type !== 'manual' && p === 0) continue;
+    if (it.type !== 'manual' && it.type !== 'dq' && p === 0) continue;
 
     let q: number | null;
     if (it.type === 'count') q = n(values, it.id);
     else if (it.type === 'bool') q = values[it.id] ? 1 : 0;
     else if (it.type === 'auto') q = autoQty(it.id, values);
-    else q = null;
+    else if (it.type === 'dq') q = values[it.id] ? 1 : 0;
+    else q = n(values, it.id);
 
-    const sub = it.type === 'manual' ? n(values, it.id) : (q ?? 0) * p;
+    const sub = it.type === 'manual' ? damageSum(values) : it.type === 'dq' ? 0 : (q ?? 0) * p;
     sum[it.m] += sub;
-    if (it.m === 'PEN' && ((q ?? 0) > 0 || (it.type === 'manual' && sub))) penCnt += it.type === 'manual' ? 1 : (q ?? 0);
+    if (it.m === 'PEN' && it.type !== 'dq') penCnt += q ?? 0;
     lines.push({ it, q, p, sub });
   }
 
-  const dq = !!values.dq;
+  const dq = !!(values.dq_danger || values.dq_rule || values.dq);
   return { lines, sum, total: dq ? 0 : sum.M1 + sum.M2 + sum.PEN, penCnt, dq };
 }
 
-// 물리적으로 불가능한 입력 조합 (개수 합계 초과)
-export function validate(values: Values) {
-  const errors: string[] = [];
-  if (n(values, 's_slot') + n(values, 's_out') + n(values, 's_quar') > 3) errors.push('샘플 개수 합계가 3개를 넘었어요.');
-  if (n(values, 'kit_h') + n(values, 'kit_l') + n(values, 'kit_r') > 10) errors.push('의료키트 합계가 10개를 넘었어요.');
-  if (n(values, 'yel_l') + n(values, 'yel_r') > 4) errors.push('노랑 실린더 합계가 4개를 넘었어요.');
+// 물리적으로 불가능한 입력 조합 (개수 합계 초과). ids 는 문제가 되는 채점 항목이다.
+export type Problem = { msg: string; ids: string[] };
+export function validate(values: Values): Problem[] {
+  const errors: Problem[] = [];
+  if (n(values, 's_slot') + n(values, 's_out') + n(values, 's_quar') > 3)
+    errors.push({ msg: '샘플 개수 합계가 3개를 넘었습니다.', ids: ['s_slot', 's_out', 's_quar'] });
+  if (n(values, 'kit_h') + n(values, 'kit_l') + n(values, 'kit_r') > 10)
+    errors.push({ msg: '의료키트 합계가 10개를 넘었습니다.', ids: ['kit_h', 'kit_l', 'kit_r'] });
+  if (n(values, 'yel_l') + n(values, 'yel_r') > 4) errors.push({ msg: '노랑 실린더 합계가 4개를 넘었습니다.', ids: ['yel_l', 'yel_r'] });
   return errors;
 }

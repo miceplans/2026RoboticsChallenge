@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import ReviewView from '@/components/judge/ReviewView';
+import ScoreTable from '@/components/judge/ScoreTable';
 import ScoreView from '@/components/judge/ScoreView';
 import SignView from '@/components/judge/SignView';
-import { btnPrimary, Card, Chip, inputCls, type Tone } from '@/components/judge/ui';
+import { btnGhost, btnPrimary, Card, Chip, inputCls, type Tone } from '@/components/judge/ui';
 import { StatusBadge } from '@/components/LiveLeaderboard';
 import { MATCHES, matchesOfTable, TABLES, teamOf, type Match } from '@/lib/judge/data';
 import { calc, CATEGORY_NAMES } from '@/lib/judge/rules';
@@ -38,8 +39,12 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
   const [mode, setMode] = useState<Mode>('score');
   const [step, setStep] = useState<0 | 1>(0);
 
+  // 확정된 경기를 고칠 때의 작업 사본. 뒤로 가면 버리므로 확정 점수는 그대로 남는다.
+  const [draft, setDraft] = useState<Sheet | null>(null);
+
   const match = MATCHES.find((m) => m.id === openId) ?? null;
-  const sheet = match ? (sheets[match.id] ?? newSheet()) : null;
+  const stored = match ? (sheets[match.id] ?? newSheet()) : null;
+  const sheet = draft ?? stored;
 
   // 서버 제출 상태: 전송 대기 / 서버 저장됨 / 거부됨
   const syncOf = (m: Match) => history.find((h) => scoreKey(h) === scoreKey({ matchId: m.id, teamId: m.team }))?.status;
@@ -52,6 +57,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
     const s = sheets[m.id];
     setOpenId(m.id);
     setStep(0);
+    setDraft(null);
     setMode(s?.status === 'signed' ? 'done' : 'score');
     if (!s) update(m.id, (x) => x);
     window.scrollTo(0, 0);
@@ -59,15 +65,29 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
   const close = () => setOpenId(null);
 
   // 확인·서명 중에 점수를 고치면 작성 중으로 되돌리고, 받아둔 서명은 무효로 한다
-  const edit = (fn: (s: Sheet) => Sheet) =>
-    update(match!.id, (s) => {
-      const next = fn(s);
-      return s.status === 'reviewing' ? { ...next, status: 'draft', refSig: undefined, refSignedAt: undefined, teamSig: undefined } : next;
-    });
+  const invalidate = (s: Sheet): Sheet => (s.status === 'reviewing' ? { ...s, status: 'draft', refSig: undefined, refSignedAt: undefined, teamSig: undefined } : s);
 
-  const finish = (patch: Partial<Sheet>) => {
-    const signed: Sheet = { ...sheet!, ...patch, status: 'signed', signedAt: Date.now() };
+  // 수정 중이면 작업 사본을, 아니면 저장된 채점지를 고친다
+  const patch = (fn: (s: Sheet) => Sheet) => (draft ? setDraft((d) => (d ? { ...fn(d), updated: Date.now() } : d)) : update(match!.id, fn));
+  const edit = (fn: (s: Sheet) => Sheet) => patch((s) => invalidate(fn(s)));
+
+  // 확정된 채점을 불러와 수정 시작: 서명은 모두 다시 받는다
+  const revise = () => {
+    setDraft({ ...sheet!, status: 'draft', refSig: undefined, refSignedAt: undefined, teamSig: undefined, teamSigner: undefined, teamSignedAt: undefined, signException: undefined, signedAt: undefined, updated: Date.now() });
+    setStep(0);
+    setMode('score');
+    window.scrollTo(0, 0);
+  };
+  const cancelRevise = () => {
+    setDraft(null);
+    setMode('done');
+    window.scrollTo(0, 0);
+  };
+
+  const finish = (p: Partial<Sheet>) => {
+    const signed: Sheet = { ...sheet!, ...p, status: 'signed', signedAt: Date.now() };
     update(match!.id, () => signed);
+    setDraft(null);
     submitScore(match!.id, match!.team, calc(signed.values, match!.cat).total, sheetPayload(match!, signed));
     setMode('done');
     window.scrollTo(0, 0);
@@ -80,7 +100,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
           <div className="flex-1">
             <p className="text-sm font-bold text-accent">테이블 {table}</p>
             <h1 className="mt-1 text-3xl font-extrabold">담당 경기</h1>
-            <p className="mt-2 text-sm text-gray-500">채점을 시작할 경기를 선택하세요.</p>
+            <p className="mt-2 text-sm text-gray-500">채점을 시작할 경기를 선택하십시오.</p>
           </div>
           {fixed === null && (
             <label className="text-sm text-gray-500">
@@ -143,7 +163,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
             <button
               type="button"
               className="text-gray-600 underline"
-              onClick={() => confirm('이 기기에 저장된 모든 점수를 서버로 다시 보냅니다. 서버 데이터를 복구한 뒤에 사용하세요.') && resendAll()}
+              onClick={() => confirm('이 기기에 저장된 모든 점수를 서버로 다시 보냅니다. 서버 데이터를 복구한 뒤에 사용하십시오.') && resendAll()}
             >
               저장된 점수 전체 재전송
             </button>
@@ -167,44 +187,62 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
         sheet={sheet}
         judgeName={judgeName}
         step={step}
-        onRefSigned={(patch) => { update(match.id, (s) => ({ ...s, ...patch })); setStep(1); }}
+        onRefSigned={(p) => { patch((s) => ({ ...s, ...p })); setStep(1); }}
         onFinish={finish}
         onBack={() => setMode('review')}
       />
     );
   }
 
+  // 확정된 경기: 먼저 조회만 하고, 맨 아래 '수정하기'로 기존 채점을 불러와 고친다
   if (mode === 'done') {
     const sync = syncOf(match);
     const [syncText] = syncLabel(match);
+    const c = calc(sheet.values, match.cat);
     return (
-      <div className="mx-auto max-w-xl rounded-2xl border border-line bg-white p-10 text-center">
-        <div className="text-5xl text-accent">✓</div>
-        <h1 className="mt-4 text-2xl font-extrabold">{sync === 'acked' ? '관리자에게 전달했어요' : sync === 'rejected' ? '서버가 거부했어요' : '이 기기에 저장했어요'}</h1>
-        <p className="mt-2 text-sm text-gray-500">
-          {team.id} {team.name} · {match.round}차 · 총점 <b>{calc(sheet.values, match.cat).total}점</b>
-          {sheet.signException && ` · 서명 예외: ${sheet.signException}`}
-        </p>
-        <p className="mt-1 text-sm text-gray-500">
-          {sync === 'acked' ? syncText : sync === 'rejected' ? '운영본부에 알려주세요' : '연결되면 자동으로 전송돼요 (전송 대기)'}
-        </p>
-        <div className="my-5 flex justify-center gap-6">
-          {sheet.refSig && (
-            <div>
-              <p className="text-xs text-gray-500">심판</p>
-              <img src={sheet.refSig} alt="심판 서명" className="mt-1 h-[70px] rounded-lg border border-line bg-white" />
-            </div>
-          )}
-          {sheet.teamSig && (
-            <div>
-              <p className="text-xs text-gray-500">참가팀 대표 {sheet.teamSigner}</p>
-              <img src={sheet.teamSig} alt="참가팀 대표 서명" className="mt-1 h-[70px] rounded-lg border border-line bg-white" />
-            </div>
-          )}
+      <main className="mx-auto max-w-3xl rounded-2xl border border-line bg-white p-6">
+        <button type="button" onClick={close} className="mb-4 text-sm font-bold">← 담당 경기 목록</button>
+        <div className="text-center">
+          <div className="text-5xl text-accent">✓</div>
+          <h1 className="mt-4 text-2xl font-extrabold">{sync === 'acked' ? '관리자에게 전달했습니다' : sync === 'rejected' ? '서버가 거부했습니다' : '이 기기에 저장했습니다'}</h1>
+          <p className="mt-2 text-sm text-gray-500">
+            {team.id} {team.name} · {match.round}차 · 총점 <b>{c.total}점</b>
+            {sheet.signException && ` · 서명 예외: ${sheet.signException}`}
+          </p>
+          <p className="mt-1 text-sm text-gray-500">
+            {sync === 'acked' ? syncText : sync === 'rejected' ? '운영본부에 알려 주십시오' : '연결되면 자동으로 전송됩니다 (전송 대기)'}
+          </p>
         </div>
-        <p className="text-xs text-gray-500">서명 완료 후에는 심판이 수정할 수 없어요. 정정이 필요하면 운영본부에 요청하세요.</p>
-        <button type="button" onClick={close} className={`${btnPrimary} mt-6`}>다음 경기로</button>
-      </div>
+        <div className="mt-6 grid gap-5 sm:grid-cols-2">
+          <ScoreTable values={sheet.values} cat={match.cat} />
+          <div>
+            <div className="rounded-2xl bg-accent/10 p-6 text-center">
+              <small className="text-gray-600">총점</small>
+              <p className="mt-2 text-6xl font-extrabold text-accent">{c.total}</p>
+              <p className="mt-3 text-xs text-gray-600">미션1 {c.sum.M1} · 미션2 {c.sum.M2} · 일반 벌점 {c.sum.PEN}</p>
+            </div>
+            <div className="mt-4 flex gap-6">
+              {sheet.refSig && (
+                <div>
+                  <p className="text-xs text-gray-500">심판</p>
+                  <img src={sheet.refSig} alt="심판 서명" className="mt-1 h-[70px] rounded-lg border border-line bg-white" />
+                </div>
+              )}
+              {sheet.teamSig && (
+                <div>
+                  <p className="text-xs text-gray-500">참가팀 대표 {sheet.teamSigner}</p>
+                  <img src={sheet.teamSig} alt="참가팀 대표 서명" className="mt-1 h-[70px] rounded-lg border border-line bg-white" />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="mt-8 flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <button type="button" onClick={close} className={btnGhost}>다음 경기로</button>
+          <button type="button" onClick={revise} className={btnPrimary}>수정하기</button>
+        </div>
+        <p className="mt-3 text-right text-xs text-gray-500">수정하면 심판과 팀 대표의 서명을 다시 받은 뒤에 서버에 반영합니다.</p>
+      </main>
     );
   }
 
@@ -214,8 +252,9 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
       team={team}
       sheet={sheet}
       edit={edit}
-      onBack={close}
-      onReview={() => { update(match.id, (s) => ({ ...s, status: 'reviewing' })); setMode('review'); window.scrollTo(0, 0); }}
+      onBack={draft ? cancelRevise : close}
+      backLabel={draft ? '← 수정 취소 (기존 점수 유지)' : undefined}
+      onReview={() => { patch((s) => ({ ...s, status: 'reviewing' })); setMode('review'); window.scrollTo(0, 0); }}
     />
   );
 }
