@@ -2,12 +2,12 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Match, Team } from '@/lib/contest';
-import { calc, CATEGORY_NAMES, DAMAGE_COUNT_ID, DQ_COUNTERS, ITEMS, MISSION_NAMES, penaltyCount, penaltyEntries, PRE_CHECKS, reasonKey, validate, type Item, type Mission } from '@/lib/judge/rules';
+import { autoLabel, calc, CATEGORY_NAMES, DAMAGE_COUNT_ID, damagePtsKey, damageTotal, DQ_COUNTERS, ITEMS, MISSION_NAMES, penaltyCount, penaltyEntries, PRE_CHECKS, reasonKey, REASON_IDS, validate, type Item, type Mission } from '@/lib/judge/rules';
 import type { Sheet } from '@/lib/judge/sheets';
 import { btnGhost, btnPrimary, Card, inputCls } from './ui';
 
 // 공식 점수표(Robotics for Good Youth Challenge 2026–2027 Score sheet V4)를 그대로 옮긴 채점 화면.
-// 머리말 → 경기 정보 → 미션 1 → 미션 2 → 공통 감점 → 합계 순서, 각 표는 행동 / 마크 / 계산 / 점수 4열이다.
+// 머리말 → 경기 정보 → 미션 1 → 미션 2 → 일반 벌점 → 합계 순서, 각 표는 행동 / 마크 / 계산 / 점수 4열이다.
 
 const Row = ({ label, children }: { label: ReactNode; children?: ReactNode }) => (
   <div className="flex items-center gap-3 border-b border-line px-5 py-3 last:border-0">
@@ -47,7 +47,7 @@ const SECTION: Record<Mission, { band: string; desc: string; note?: (cat: Match[
     note: (cat) => (cat === 'S' ? '시니어 전용 감점은 해당 미션 소계에 이미 포함되어 있습니다.' : null),
   },
 };
-const SUBTOTAL: Record<Mission, string> = { M1: '미션 1 소계:', M2: '미션 2 소계:', PEN: '공통 감점 소계:' };
+const SUBTOTAL: Record<Mission, string> = { M1: '미션 1 소계:', M2: '미션 2 소계:', PEN: '일반 벌점 소계:' };
 
 // 4열 표: 행동 / 마크 / 계산 / 점수 (좁은 화면에서는 마크가 아래 줄로 내려간다)
 const GRID = 'grid grid-cols-[1fr_auto] items-center gap-x-2 gap-y-1.5 sm:grid-cols-[minmax(0,1fr)_22rem_6rem_5rem]';
@@ -78,16 +78,16 @@ function Marks<T extends string | number>({ options, value, onPick, readOnly, da
   );
 }
 
-const ActionCell = ({ children }: { children: ReactNode }) => (
-  <span className="flex min-h-11 items-center rounded-md bg-[#e9e9e9] px-3 text-sm">{children}</span>
+const ActionCell = ({ children, muted, bad }: { children: ReactNode; muted?: boolean; bad?: boolean }) => (
+  <span className={`flex min-h-11 items-center rounded-md px-3 text-sm ${bad ? 'bg-error/15 text-error' : 'bg-[#e9e9e9]'} ${muted ? 'text-gray-400' : ''}`}>{children}</span>
 );
 const CalcCell = ({ children }: { children: ReactNode }) => (
   <span className="hidden text-center text-sm font-bold sm:block">{children}</span>
 );
-const PointsCell = ({ value, text }: { value?: number; text?: string }) => (
+const PointsCell = ({ value, text, muted }: { value?: number; text?: string; muted?: boolean }) => (
   <b
     className={`flex min-h-11 items-center justify-end rounded-md bg-[#f3f3f3] px-3 tabular-nums ${
-      text ? 'text-error' : value === undefined ? '' : value < 0 ? 'text-error' : value > 0 ? '' : 'text-gray-400'
+      muted ? 'font-medium text-gray-400' : text ? 'text-error' : value === undefined ? '' : value < 0 ? 'text-error' : value > 0 ? '' : 'text-gray-400'
     }`}
   >
     {text ?? value}
@@ -109,29 +109,38 @@ type Props = {
   sheet: Sheet;
   edit: (fn: (s: Sheet) => Sheet) => void;
   onBack: () => void;
+  backLabel?: string;
   onReview: () => void;
   ruleItems?: Item[];
   judgeName?: string;
 };
 
-export default function ScoreView({ match, team, sheet, edit, onBack, onReview, ruleItems = ITEMS, judgeName }: Props) {
+export default function ScoreView({ match, team, sheet, edit, onBack, backLabel = '← 경기 목록', onReview, ruleItems = ITEMS, judgeName }: Props) {
   const [savedFlash, setSavedFlash] = useState(false);
   const v = sheet.values;
   const c = calc(v, match.cat, ruleItems);
   const errors = validate(v);
-  const firstError = errors[0];
+  const firstError = errors[0]?.msg;
+  const badIds = new Set(errors.flatMap((e) => e.ids));
   const isTournament = !!match.label;
 
   const setValue = (k: string, val: number | boolean | string) => edit((s) => ({ ...s, values: { ...s.values, [k]: val } }));
   const num = (k: string) => (v[k] === true ? 1 : Number(v[k]) || 0);
-  // 공통 감점 카운터: 횟수를 줄이면 사라진 회차의 사유도 함께 지운다
+  // 일반 벌점 카운터: 횟수를 줄이면 사라진 회차의 사유도 함께 지운다
   const setCounter = (k: string, next: number, max = 9) =>
     edit((s) => {
       const cur = s.values[k] === true ? 1 : Number(s.values[k]) || 0;
       const to = Math.max(0, Math.min(max, next));
       const values = { ...s.values, [k]: to };
-      for (let i = to + 1; i <= cur; i++) delete values[reasonKey(k, i)];
-      if (k === DAMAGE_COUNT_ID && to === 0) values.pen_damage = 0;
+      for (let i = to + 1; i <= cur; i++) {
+        delete values[reasonKey(k, i)];
+        if (k === DAMAGE_COUNT_ID) delete values[damagePtsKey(i)];
+      }
+      if (k === DAMAGE_COUNT_ID) {
+        // 회차별 점수 칸을 항상 만들어 두어 예전 pen_damage 값이 남지 않게 한다
+        for (let i = 1; i <= to; i++) if (!(damagePtsKey(i) in values)) values[damagePtsKey(i)] = 0;
+        values.pen_damage = to === 0 ? 0 : damageTotal(values);
+      }
       return { ...s, values };
     });
   const counter = (k: string, max = 9) => (
@@ -139,7 +148,15 @@ export default function ScoreView({ match, team, sheet, edit, onBack, onReview, 
       <Stepper value={num(k)} down={() => setCounter(k, num(k) - 1, max)} up={() => setCounter(k, num(k) + 1, max)} />
     </div>
   );
-  const entries = penaltyEntries(v, ruleItems);
+  // 파손은 회차마다 점수를 따로 적고, 합계를 pen_damage 에 둔다
+  const setDamagePts = (i: number, pts: number) =>
+    edit((s) => {
+      const values = { ...s.values, [damagePtsKey(i)]: Math.min(0, pts) };
+      values.pen_damage = damageTotal(values);
+      return { ...s, values };
+    });
+  // 사유는 '규칙 중대 위반'과 '구조물 또는 게임 요소 파손'에만 받는다
+  const entries = penaltyEntries(v, ruleItems).filter((e) => REASON_IDS.includes(e.id));
   // 감점 항목 한 줄 + 그 바로 아래 회차별 사유 줄을 한 묶음으로 보여 준다 (사유 줄은 행동·마크 열 너비에 맞춘다)
   const penaltyGroup = (key: string, row: ReactNode, id: string) => {
     const list = entries.filter((e) => e.id === id);
@@ -152,6 +169,18 @@ export default function ScoreView({ match, team, sheet, edit, onBack, onReview, 
             <li key={e.key} className={GRID}>
               <div className="col-span-2 flex items-center gap-2 sm:col-span-2">
                 <span className="w-12 shrink-0 text-center text-sm font-bold tabular-nums text-error">{i + 1}회</span>
+                {id === DAMAGE_COUNT_ID && (
+                  <input
+                    type="number"
+                    step={1}
+                    max={0}
+                    aria-label={`파손 ${i + 1}회 감점`}
+                    className={`${inputCls} w-24 shrink-0 text-right`}
+                    defaultValue={Number(v[damagePtsKey(i + 1)]) || ''}
+                    placeholder="-점수"
+                    onChange={(e) => setDamagePts(i + 1, Number(e.target.value) || 0)}
+                  />
+                )}
                 <ReasonInput value={e.reason} onSave={(text) => setValue(e.key, text)} />
               </div>
             </li>
@@ -163,7 +192,7 @@ export default function ScoreView({ match, team, sheet, edit, onBack, onReview, 
 
   return (
     <main className="mx-auto max-w-5xl pb-28">
-      <button type="button" onClick={onBack} className="mb-4 text-sm font-bold">← 경기 목록</button>
+      <button type="button" onClick={onBack} className="mb-4 text-sm font-bold">{backLabel}</button>
 
       <Card title="경기 전 확인">
         {PRE_CHECKS.map(([k, label]) => (
@@ -219,35 +248,19 @@ export default function ScoreView({ match, team, sheet, edit, onBack, onReview, 
               <div className="mt-1.5 space-y-1.5">
                 {lines.map(({ it, p, sub }) => {
                   const max = it.max ?? (it.m === 'PEN' ? 3 : 0);
+                  const auto = it.type === 'auto';
                   const row = (
                     <div className={GRID}>
-                      <ActionCell>{it.label}</ActionCell>
-                      <div className="order-last col-span-2 sm:order-none sm:col-span-1">
+                      <ActionCell muted={auto} bad={badIds.has(it.id)}>{auto ? autoLabel(it.label) : it.label}</ActionCell>
+                      <div className={`order-last col-span-2 sm:order-none sm:col-span-1 ${auto ? 'opacity-40' : ''}`}>
                         {g === 'PEN' && it.type === 'count' && counter(it.id, it.max ?? 9)}
-                        {g === 'PEN' && it.type === 'manual' && (
-                          <div className="flex items-center justify-center gap-2">
-                            {counter(DAMAGE_COUNT_ID)}
-                            {num(DAMAGE_COUNT_ID) > 0 && (
-                              <input
-                                type="number"
-                                step={1}
-                                max={0}
-                                aria-label="파손 감점 (심판 재량)"
-                                className={`${inputCls} h-[52px] w-20 text-right`}
-                                defaultValue={num(it.id) || ''}
-                                placeholder="-점수"
-                                onChange={(e) => setValue(it.id, Math.min(0, Number(e.target.value) || 0))}
-                              />
-                            )}
-                          </div>
-                        )}
+                        {g === 'PEN' && it.type === 'manual' && counter(DAMAGE_COUNT_ID)}
                         {g !== 'PEN' && it.type === 'count' && <Marks options={Array.from({ length: max + 1 }, (_, i) => i)} value={num(it.id)} onPick={(n) => setValue(it.id, n)} />}
                         {it.type === 'bool' && <Marks options={['NO', 'YES']} value={v[it.id] ? 'YES' : 'NO'} onPick={(n) => setValue(it.id, n === 'YES')} />}
                         {it.type === 'auto' && <Marks options={['NO', 'YES']} value={sub !== 0 ? 'YES' : 'NO'} readOnly />}
-                        {g !== 'PEN' && it.type === 'manual' && <DamageMark value={num(it.id)} onChange={(n) => setValue(it.id, n)} />}
                       </div>
                       <CalcCell>{it.type === 'manual' ? '심판 재량' : it.type === 'count' ? `개수 × ${p}` : `${p > 0 ? '+' : ''}${p}`}</CalcCell>
-                      <PointsCell value={sub} />
+                      <PointsCell value={sub} muted={auto} />
                     </div>
                   );
                   if (g !== 'PEN') return <div key={it.id}>{row}</div>;
@@ -260,7 +273,9 @@ export default function ScoreView({ match, team, sheet, edit, onBack, onReview, 
                       id,
                       <div className={GRID}>
                         <ActionCell>{label}</ActionCell>
-                        <div className="order-last col-span-2 sm:order-none sm:col-span-1">{counter(id)}</div>
+                        <div className="order-last col-span-2 sm:order-none sm:col-span-1">
+                          <Marks options={['NO', 'YES']} value={num(id) ? 'YES' : 'NO'} danger onPick={(o) => setCounter(id, o === 'YES' ? 1 : 0, 1)} />
+                        </div>
                         <CalcCell>DQ</CalcCell>
                         <PointsCell text={num(id) ? '실격' : ''} />
                       </div>,
@@ -280,7 +295,7 @@ export default function ScoreView({ match, team, sheet, edit, onBack, onReview, 
                 </div>
               )}
               {note && <p className="mt-1 text-xs italic">{note}</p>}
-              {g === 'PEN' && entries.length > 0 && <p className="mt-1 text-xs text-gray-500">사유는 입력 후 칸을 벗어나면 저장돼요.</p>}
+              {g === 'PEN' && entries.length > 0 && <p className="mt-1 text-xs text-gray-500">사유는 입력 후 칸을 벗어나면 저장됩니다.</p>}
             </section>
           );
         })}
@@ -288,7 +303,7 @@ export default function ScoreView({ match, team, sheet, edit, onBack, onReview, 
         <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-[1fr_1fr_1.3fr_1.4fr]">
           <SumBox label="미션 1" value={c.sum.M1} />
           <SumBox label="미션 2" value={c.sum.M2} />
-          <SumBox label="공통 감점" value={c.sum.PEN} />
+          <SumBox label="일반 벌점" value={c.sum.PEN} />
           <SumBox label="총점" value={c.dq ? '0 (실격)' : c.total} dark />
         </div>
         <div className="mt-2 grid grid-cols-2 gap-3">
@@ -298,17 +313,6 @@ export default function ScoreView({ match, team, sheet, edit, onBack, onReview, 
       </article>
 
       <Card title="기록">
-        <Row label={<><b className="block font-medium">종료 시각(초)</b><span className="text-xs text-gray-500">조기 종료 선언 시, 미선언은 120</span></>}>
-          <input
-            type="number"
-            min={0}
-            max={120}
-            placeholder="120"
-            className={`${inputCls} w-28 text-right`}
-            defaultValue={v.endTime === undefined ? '' : String(v.endTime)}
-            onChange={(e) => setValue('endTime', e.target.value === '' ? '' : Number(e.target.value))}
-          />
-        </Row>
         <div className="px-5 py-3">
           <input
             className={`${inputCls} w-full`}
@@ -325,7 +329,7 @@ export default function ScoreView({ match, team, sheet, edit, onBack, onReview, 
           {firstError && <p role="alert" className="pb-2 text-center text-xs font-semibold text-error">{firstError}</p>}
           <div className="flex items-center gap-3">
             <div className="mr-auto min-w-0 text-sm">
-              <span className="text-gray-500">미션1 {c.sum.M1} · 미션2 {c.sum.M2} · 감점 {c.sum.PEN}</span>
+              <span className="text-gray-500">미션1 {c.sum.M1} · 미션2 {c.sum.M2} · 일반 벌점 {c.sum.PEN}</span>
               <b className="ml-2 text-3xl">{c.dq ? '실격' : `${c.total}점`}</b>
             </div>
             {/* 입력은 바로바로 이 기기에 저장되므로 버튼은 확인용이다 */}
@@ -378,35 +382,6 @@ function ReasonInput({ value, onSave }: { value: string; onSave: (text: string) 
         onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
       />
       {saved && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-accent">저장됨</span>}
-    </div>
-  );
-}
-
-// 파손: 공식 양식처럼 NO/YES 로 표시하고, YES 면 심판이 감점(0 이하)을 직접 적는다.
-function DamageMark({ value, onChange }: { value: number; onChange: (n: number) => void }) {
-  const [open, setOpen] = useState(value !== 0);
-  return (
-    <div className="flex items-center justify-center gap-2">
-      <Marks
-        options={['NO', 'YES']}
-        value={open ? 'YES' : 'NO'}
-        onPick={(o) => {
-          setOpen(o === 'YES');
-          if (o === 'NO') onChange(0);
-        }}
-      />
-      {open && (
-        <input
-          type="number"
-          step={1}
-          max={0}
-          aria-label="파손 감점"
-          className={`${inputCls} h-11 w-20 text-right`}
-          defaultValue={value || ''}
-          placeholder="-점수"
-          onChange={(e) => onChange(Math.min(0, Number(e.target.value) || 0))}
-        />
-      )}
     </div>
   );
 }

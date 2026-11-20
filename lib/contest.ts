@@ -96,7 +96,7 @@ export function computeSchedule(matches: Match[]): ScheduledMatch[] {
     .map((m, i) => ({ ...m, seq: i + 1, game: gameNoOf(m) }));
 }
 
-// 부문 순위. 동점 = 최고점(total)이 같음 → 같은 순위 번호를 공유하고, 다음 순위는 건너뛰지 않는다 (1,2,2,3,4…).
+// 부문 순위. 동점 = 최고점(total)이 같음 → 같은 순위 번호를 공유하고, 다음 순위는 동점 팀 수만큼 건너뛴다 (1,2,2,4,5,5,5,8).
 // 동점 팀끼리의 표시 순서는 1차+2차 점수 합이 큰 팀이 위 → 감점 적은 순 → 팀 ID.
 export type RankedStanding = Standing & { rank: number; tied: boolean };
 
@@ -111,7 +111,7 @@ export function compareStandings(a: Standing, b: Standing) {
 export function assignRanks<T extends Standing>(rows: T[]): (T & { rank: number; tied: boolean })[] {
   let rank = 0;
   return rows.map((s, i) => {
-    if (i === 0 || rows[i - 1].total !== s.total) rank += 1;
+    if (i === 0 || rows[i - 1].total !== s.total) rank = i + 1;
     const tied = (i > 0 && rows[i - 1].total === s.total) || (i + 1 < rows.length && rows[i + 1].total === s.total);
     return { ...s, rank, tied };
   });

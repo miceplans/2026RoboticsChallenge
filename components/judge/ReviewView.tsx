@@ -1,16 +1,19 @@
 import type { Match, Team } from '@/lib/contest';
-import { calc, ITEMS, penaltyCount, penaltyEntries, type Item } from '@/lib/judge/rules';
+import { autoLabel, calc, ITEMS, penaltyCount, penaltyEntries, REASON_IDS, validate, type Item } from '@/lib/judge/rules';
 import type { Sheet } from '@/lib/judge/sheets';
 import { btnGhost, btnPrimary } from './ui';
 
 export default function ReviewView({ match, team, sheet, onEdit, onSign, ruleItems = ITEMS }: { match: Match; team: Team; sheet: Sheet; onEdit: () => void; onSign: () => void; ruleItems?: Item[] }) {
   const c = calc(sheet.values, match.cat, ruleItems);
+  const problems = validate(sheet.values);
+  const badIds = new Set(problems.flatMap((p) => p.ids));
+  const reasons = penaltyEntries(sheet.values, ruleItems).filter((e) => REASON_IDS.includes(e.id));
   // 점수가 있거나 개수형(감점 제외)인 항목만 보여준다
   const rows = c.lines.filter((l) => l.sub !== 0 || (l.it.type === 'count' && l.it.m !== 'PEN'));
 
   return (
     <main className="mx-auto max-w-3xl rounded-2xl border border-line bg-white p-6">
-      <p className="font-bold text-accent">심판과 참가팀 대표가 함께 확인해 주세요</p>
+      <p className="font-bold text-accent">심판과 참가팀 대표가 함께 확인해 주십시오</p>
       <h1 className="mt-2 text-2xl font-extrabold">{team.id} {team.name} · {match.label ?? `${match.round}차 조별 라운드`}</h1>
 
       <div className="mt-6 grid gap-5 sm:grid-cols-2">
@@ -25,8 +28,8 @@ export default function ReviewView({ match, team, sheet, onEdit, onSign, ruleIte
           </thead>
           <tbody className="divide-y divide-line">
             {rows.map((l) => (
-              <tr key={l.it.id}>
-                <td className="px-4 py-3">{l.it.label}</td>
+              <tr key={l.it.id} className={badIds.has(l.it.id) ? 'bg-error/10 text-error' : l.it.type === 'auto' ? 'text-gray-400' : ''}>
+                <td className="px-4 py-3">{l.it.type === 'auto' ? autoLabel(l.it.label) : l.it.label}</td>
                 <td className="px-4 py-3 text-right">{l.it.type === 'manual' ? '-' : l.it.type === 'bool' ? (l.q ? '예' : '아니오') : l.q}</td>
                 <td className={`px-4 py-3 text-right font-bold tabular-nums ${l.sub < 0 ? 'text-error' : ''}`}>
                   {l.sub > 0 ? '+' : ''}{l.sub}
@@ -47,16 +50,16 @@ export default function ReviewView({ match, team, sheet, onEdit, onSign, ruleIte
             <small className="text-gray-600">총점</small>
             <p className="mt-2 text-6xl font-extrabold text-accent">{c.total}</p>
             <p className="mt-3 text-xs text-gray-600">
-              미션1 {c.sum.M1} · 미션2 {c.sum.M2} · 감점 {c.sum.PEN}
+              미션1 {c.sum.M1} · 미션2 {c.sum.M2} · 일반 벌점 {c.sum.PEN}
               <br />
-              패널티 {penaltyCount(sheet.values, ruleItems)}회 · 종료 {sheet.values.endTime || 120}초
+              패널티 {penaltyCount(sheet.values, ruleItems)}회
             </p>
           </div>
-          {penaltyEntries(sheet.values, ruleItems).length > 0 && (
+          {problems.length > 0 && <p role="alert" className="mt-3 text-sm font-bold text-error">{problems[0].msg}</p>}
+          {reasons.length > 0 && (
             <ul className="mt-4 space-y-1 rounded-2xl border border-line p-4 text-sm">
-              {penaltyEntries(sheet.values, ruleItems).map((e) => (
+              {reasons.map((e) => (
                 <li key={e.key} className="flex gap-2">
-                  <b className="shrink-0 text-error">-1</b>
                   <span className="shrink-0">{e.label}</span>
                   <span className="min-w-0 truncate text-gray-500">{e.reason || '사유 없음'}</span>
                 </li>
@@ -65,7 +68,7 @@ export default function ReviewView({ match, team, sheet, onEdit, onSign, ruleIte
           )}
           <div className="mt-4 flex flex-col gap-2">
             <button type="button" className={btnGhost} onClick={onEdit}>← 수정하기</button>
-            <button type="button" className={`${btnPrimary} py-4 text-lg`} onClick={onSign}>서명하기</button>
+            <button type="button" className={`${btnPrimary} py-4 text-lg`} onClick={onSign} disabled={problems.length > 0}>서명하기</button>
           </div>
         </div>
       </div>

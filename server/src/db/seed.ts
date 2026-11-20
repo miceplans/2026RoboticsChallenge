@@ -47,6 +47,17 @@ export function migrateAutoConfirmOn(): void {
   }
 }
 
+// 소속명 정정: '춘천기계공업고등학교 영재학급' → '춘천기계공업고등학교'. 이미 운영 중인 DB 도 부팅 때 고친다 (고칠 게 없으면 아무 일도 하지 않는다).
+export function migrateTeamOrgNames(): number {
+  const r = db.prepare("UPDATE teams SET org = REPLACE(org, '춘천기계공업고등학교 영재학급', '춘천기계공업고등학교') WHERE org LIKE '%춘천기계공업고등학교 영재학급%'").run();
+  const n = Number(r.changes);
+  if (n) {
+    logAudit('system', 'settings', 'teams', 'org-rename', { migration: 'org_rename_chuncheon', changed: n });
+    console.log(`[migrate] 소속명 '춘천기계공업고등학교 영재학급' → '춘천기계공업고등학교' (${n}팀)`);
+  }
+  return n;
+}
+
 // 테스트·데모 DB 전용: 부문마다 명단 순서대로 1조 A, 1조 B, 2조 A … 8조 B 로 1R·2R 대진을 채운다.
 // matches.table_no = 조 번호, wave = A/B 테이블, field 는 A→좌·B→우. 이미 대진이 있으면 아무것도 하지 않는다.
 export function seedDefaultMatches(): void {
