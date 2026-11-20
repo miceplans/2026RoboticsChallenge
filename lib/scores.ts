@@ -1,7 +1,7 @@
 'use client';
 
 import { useRealtime } from '@/lib/realtime/useRealtime';
-import { useContest, withRanks, type RankedStanding, type Standing } from '@/lib/contest';
+import { assignRanks, useContest, withRanks, type RankedStanding, type Standing } from '@/lib/contest';
 import type { Category } from '@/lib/judge/rules';
 
 // 팀 점수의 단일 출처: 서버가 심판 확정 점수(confirmed/modified)로 집계한 순위표(standings).
@@ -31,7 +31,8 @@ export function useTeamScores() {
       ...order.map((id) => byTeam.get(id)).filter((row): row is RankedStanding => row !== undefined),
       ...calculated.filter((row) => !order.includes(row.teamId)),
     ];
-    return ordered.map((row, index) => ({ ...row, rank: index + 1, tied: false }));
+    // 표시 순서는 관리자가 정한 대로 두되, 순위 번호는 점수가 같으면 같은 번호를 준다 (1,2,2,4…)
+    return assignRanks(ordered);
   };
   return { standings, standingsAt, status, scoreOf, ranked };
 }
