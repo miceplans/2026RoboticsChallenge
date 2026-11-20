@@ -48,6 +48,8 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
   const [step, setStep] = useState<0 | 1>(0);
   const pdfRef = useRef<HTMLDivElement>(null);
   const [pdfSheet, setPdfSheet] = useState<Sheet | null>(null);
+  // 서명 후 채점표 저장(PDF 생성·서버 전송) 중. 승인표 페이지처럼 '처리 중'을 보여 주고 중복 제출을 막는다.
+  const [saving, setSaving] = useState(false);
 
   // 심판에게 조 배정은 없다: 모든 심판이 전체 경기를 보고 어느 경기든 채점한다.
   // 부문별 진행 단계 (1차 → 2차 → 토너먼트). 서버가 잠그고 화면은 그대로 보여준다.
@@ -130,6 +132,16 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
   };
 
   const finish = async (extra: Partial<Sheet>) => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await finishSigned(extra);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const finishSigned = async (extra: Partial<Sheet>) => {
     const signed: Sheet = { ...sheet!, ...extra, status: 'signed', signedAt: Date.now() };
     // 서명 화면을 유지한 채 PDF 전용 영역만 최종 서명 데이터로 다시 그린다.
     flushSync(() => setPdfSheet(signed));
@@ -315,6 +327,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
           team={team}
           sheet={sheet}
           judgeName={judgeName}
+          busy={saving}
           step={step}
           ruleItems={ruleItems}
           onRefSigned={(p) => { patch((s) => ({ ...s, ...p })); setStep(1); }}

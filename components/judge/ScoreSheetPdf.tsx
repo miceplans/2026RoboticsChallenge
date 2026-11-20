@@ -179,11 +179,13 @@ export const ScoreSheetPdf = forwardRef<HTMLDivElement, Props>(function ScoreShe
           note={cat === 'S' ? '시니어 전용 감점은 해당 미션 소계에 이미 포함되어 있습니다.' : undefined}
         />
 
-        {/* 패널티 횟수 (채점표에는 사유를 적지 않는다) */}
-        <div className="mt-2 flex items-center justify-between rounded-md px-2 py-[3px] font-bold" style={{ background: C.points }}>
-          <span>패널티 횟수</span>
-          <span className="font-extrabold tabular-nums">{penaltyCount(values, ruleItems)}회</span>
-        </div>
+        {/* 패널티 횟수: 화면 미리보기에만 표시하고 PDF 출력에서는 뺀다 */}
+        {mode === 'inline' && (
+          <div className="mt-2 flex items-center justify-between rounded-md px-2 py-[3px] font-bold" style={{ background: C.points }}>
+            <span>패널티 횟수</span>
+            <span className="font-extrabold tabular-nums">{penaltyCount(values, ruleItems)}회</span>
+          </div>
+        )}
 
         {/* 합계 */}
         <div className="mt-4 flex gap-2">
