@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useToast } from '@/components/Toast';
 import { downloadScoreSheetPdf, downloadScoreSheetsPdf } from '@/components/judge/ScoreSheetPdf';
 import { officialSheetProps, OfficialScoreSheet, type SheetRow } from '@/components/judge/OfficialScoreSheet';
-import { teamName, useContest, type TournamentRound } from '@/lib/contest';
+import { teamName, useContest, type TournamentGame, type TournamentRound } from '@/lib/contest';
 import { ITEMS, parseTemplate, type Item } from '@/lib/judge/rules';
 import { adminFetch, btn, btnPrimary, card, downloadCsv, Icon, STATUS_LABEL, timeAgo } from './shared';
 
@@ -60,6 +60,87 @@ function ForceEditModal({ score, onClose, onSaved }: { score: ScoreRow; onClose:
           </label>
         </div>
         <p className="mt-3 text-xs text-amber-700">원본 서명 채점지는 변경되지 않으며, 수정된 총점은 즉시 순위에 반영됩니다.</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" className={btn} onClick={onClose} disabled={busy}>취소</button>
+          <button type="submit" className={`${btnPrimary} disabled:opacity-50`} disabled={busy}>{busy ? '수정 중…' : '강제 수정'}</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// 본선 경기 점수 강제 수정: 두 팀 점수를 직접 입력해 확정한다. 동점이면 올라갈 팀을 고른다.
+function TournamentEditModal({ game, teams, onClose }: { game: { cat: 'J' | 'S'; round: TournamentRound; gameNo: number; teamA: string | null; teamB: string | null; scoreA: number | null; scoreB: number | null }; teams: { id: string; name: string }[]; onClose: () => void }) {
+  const toast = useToast();
+  const [scoreA, setScoreA] = useState(game.scoreA != null ? String(game.scoreA) : '');
+  const [scoreB, setScoreB] = useState(game.scoreB != null ? String(game.scoreB) : '');
+  const [winner, setWinner] = useState<'A' | 'B' | ''>('');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const a = Number(scoreA);
+  const b = Number(scoreB);
+  const tie = scoreA !== '' && scoreB !== '' && a === b;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !busy && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [busy, onClose]);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!Number.isFinite(a) || !Number.isFinite(b) || scoreA === '' || scoreB === '') return toast('두 팀 점수를 입력해 주세요.');
+    if (tie && !winner) return toast('동점입니다. 올라갈 팀을 선택해 주세요.');
+    if (!reason.trim()) return toast('강제 수정 사유를 입력해 주세요.');
+    setBusy(true);
+    try {
+      await adminFetch('/admin/tournament/modify', {
+        method: 'POST',
+        body: { cat: game.cat, round: game.round, gameNo: game.gameNo, scoreA: a, scoreB: b, winner: tie ? winner : undefined, reason: reason.trim() },
+      });
+      toast('점수를 수정하고 확정했습니다.');
+      onClose();
+    } catch (err) {
+      toast((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const nameOf = (id: string | null) => (id ? `${id} · ${teamName(teams as never, id)}` : '-');
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !busy && onClose()}>
+      <form role="dialog" aria-modal="true" aria-label="본선 점수 강제 수정" className={`${card} w-full max-w-md p-6`} onSubmit={save} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-xl font-extrabold text-heading">본선 점수 강제 수정</h2>
+          <button type="button" className="rounded-full p-1 text-gray-500 hover:bg-gray-100 disabled:opacity-50" onClick={onClose} disabled={busy} aria-label="닫기"><Icon name="close" /></button>
+        </div>
+        <p className="mt-2 text-sm text-gray-500">{game.cat === 'J' ? '주니어' : '시니어'} · {game.gameNo}경기 · {game.round}</p>
+        <div className="mt-5 space-y-4">
+          <label className="block text-sm font-semibold text-gray-700">
+            팀 A · {nameOf(game.teamA)}
+            <input type="number" min={0} step="any" value={scoreA} onChange={(e) => setScoreA(e.target.value)} autoFocus required className="mt-1 w-full rounded-xl border border-line px-3 py-2 font-normal tabular-nums" />
+          </label>
+          <label className="block text-sm font-semibold text-gray-700">
+            팀 B · {nameOf(game.teamB)}
+            <input type="number" min={0} step="any" value={scoreB} onChange={(e) => setScoreB(e.target.value)} required className="mt-1 w-full rounded-xl border border-line px-3 py-2 font-normal tabular-nums" />
+          </label>
+          {tie && (
+            <label className="block text-sm font-semibold text-gray-700">
+              동점 — 올라갈 팀
+              <select value={winner} onChange={(e) => setWinner(e.target.value as 'A' | 'B' | '')} className="mt-1 w-full rounded-xl border border-line px-3 py-2 font-normal">
+                <option value="">선택</option>
+                <option value="A">팀 A · {nameOf(game.teamA)}</option>
+                <option value="B">팀 B · {nameOf(game.teamB)}</option>
+              </select>
+            </label>
+          )}
+          <label className="block text-sm font-semibold text-gray-700">
+            수정 사유 <span className="text-red-500">*</span>
+            <textarea value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} rows={3} required placeholder="수정 사유를 입력하세요 (감사 로그에 기록됩니다)" className="mt-1 w-full resize-none rounded-xl border border-line px-3 py-2 font-normal" />
+          </label>
+        </div>
+        <p className="mt-3 text-xs text-amber-700">저장하면 바로 확정됩니다. 승자가 바뀌면 이미 올라간 뒤 라운드 결과는 지워집니다.</p>
         <div className="mt-5 flex justify-end gap-2">
           <button type="button" className={btn} onClick={onClose} disabled={busy}>취소</button>
           <button type="submit" className={`${btnPrimary} disabled:opacity-50`} disabled={busy}>{busy ? '수정 중…' : '강제 수정'}</button>
@@ -336,6 +417,7 @@ export default function ScoreList() {
   const sideScore = (game: { cat: 'J' | 'S'; round: TournamentRound; gameNo: number }, side: 'A' | 'B') =>
     config?.tournament.sideScores?.find((x) => x.cat === game.cat && x.round === game.round && x.gameNo === game.gameNo && x.side === side);
 
+  const [editingGame, setEditingGame] = useState<TournamentGame | null>(null);
   const [resetBusy, setResetBusy] = useState<string | null>(null);
   const resetGame = async (game: { cat: 'J' | 'S'; round: TournamentRound; gameNo: number; status: string }) => {
     const later = game.round === 'QF' ? ' 이 경기 승자·패자가 이미 올라간 4강·결승·3·4위전 결과도 함께 지워집니다.' : game.round === 'SF' ? ' 이미 정해진 결승·3·4위전 결과도 함께 지워집니다.' : '';
@@ -559,8 +641,13 @@ export default function ScoreList() {
                     <td className={`px-4 py-3 ${game.status === 'done' ? 'text-accent' : 'text-gray-600'}`}>{game.status === 'done' ? '확정' : '미확정'}</td>
                     <td className="px-4 py-3 text-xs text-gray-400">{submission ? timeAgo(submission.ts) : '-'}</td>
                     <td className="px-4 py-3 text-center">
-                      {(game.status === 'done' || submission || sideScore(game, 'A') || sideScore(game, 'B')) ? (
-                        <button type="button" className={btn} disabled={resetBusy === `${game.cat}/${game.round}/${game.gameNo}`} onClick={() => void resetGame(game)}>재채점</button>
+                      {game.teamA && game.teamB ? (
+                        <div className="flex justify-center gap-1">
+                          <button type="button" className={btn} onClick={() => setEditingGame(game)}>점수 수정</button>
+                          {(game.status === 'done' || submission || sideScore(game, 'A') || sideScore(game, 'B')) && (
+                            <button type="button" className={btn} disabled={resetBusy === `${game.cat}/${game.round}/${game.gameNo}`} onClick={() => void resetGame(game)}>재채점</button>
+                          )}
+                        </div>
                       ) : '-'}
                     </td>
                   </tr>
@@ -618,6 +705,7 @@ export default function ScoreList() {
         </div>
       )}
       {teamOpen && <TeamResultsModal teamId={teamOpen} items={items} onClose={() => setTeamOpen(null)} />}
+      {editingGame && <TournamentEditModal game={editingGame} teams={teams} onClose={() => setEditingGame(null)} />}
       {selected && <ScoreSheetModal score={selected} items={items} onClose={() => setSelected(null)} />}
       {editing && (
         <ForceEditModal

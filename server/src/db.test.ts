@@ -236,6 +236,34 @@ test('토너먼트: 재채점은 그 경기와 이미 올라간 뒤 경기의 �
   assert.equal(db.resetTournamentGame('S', 'QF', 99), false);
 });
 
+test('토너먼트: 관리자 강제 수정은 확정된 경기 점수를 고치고, 승자가 바뀔 때만 뒤 라운드를 지운다', () => {
+  const game = (round: string, no: number) => db.getTournament().games.find((g) => g.cat === 'S' && g.round === round && g.gameNo === no)!;
+  // 앞 테스트 끝: 8강 1~4 확정, 4강 2 확정, 4강 1·결승·3·4위전은 예정. 4강 1을 다시 치러 확정해 둔다.
+  const sf1 = game('SF', 1);
+  assert.ok(sf1.teamA && sf1.teamB);
+  assert.equal(db.saveTournamentSheet('T:S:SF:1:A', sf1.teamA!, 'REF01', 9, Date.now() + 5000, JSON.stringify({ signedAt: Date.now() + 5000 })), null);
+  assert.equal(db.saveTournamentSheet('T:S:SF:1:B', sf1.teamB!, 'REF02', 2, Date.now() + 5001, JSON.stringify({ signedAt: Date.now() + 5001 })), null);
+  assert.equal(game('SF', 1).status, 'done');
+  // 8강 2 점수만 고치고 승자는 그대로(B) → 4강 1은 유지
+  const qf2 = game('QF', 2);
+  const winnerBefore = qf2.winner;
+  db.forceTournamentScore('S', 'QF', 2, 1, 7, undefined, 'admin');
+  assert.equal(game('QF', 2).scoreA, 1);
+  assert.equal(game('QF', 2).scoreB, 7);
+  assert.equal(game('QF', 2).winner, winnerBefore);
+  assert.equal(game('SF', 1).status, 'done');
+  assert.equal(db.getTournament().submissions.find((x) => x.cat === 'S' && x.round === 'QF' && x.gameNo === 2)?.scoreB, 7);
+  // 승자가 바뀌면(A 승) 이 경기 승자가 올라간 4강 1은 지워지고, 관련 없는 4강 2는 유지
+  db.forceTournamentScore('S', 'QF', 2, 9, 3, undefined, 'admin');
+  assert.notEqual(game('QF', 2).winner, winnerBefore);
+  assert.equal(game('SF', 1).status, 'scheduled');
+  assert.equal(game('SF', 2).status, 'done');
+  // 동점 + 승자 지정(B)
+  db.forceTournamentScore('S', 'QF', 2, 5, 5, 'B', 'admin');
+  assert.equal(game('QF', 2).status, 'done');
+  assert.equal(game('QF', 2).winner, game('QF', 2).teamB);
+});
+
 test('FK: 없는 심판·다른 팀 점수·없는 팀 슬롯은 DB 가 거부한다', () => {
   const conn = (db as unknown as { db: import('node:sqlite').DatabaseSync }).db;
   const ins = (m: string, t: string, j: string) => conn.prepare('INSERT INTO scores (match_id, team_id, judge_id, points, ts) VALUES (?, ?, ?, 1, 1)').run(m, t, j);
