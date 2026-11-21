@@ -134,6 +134,18 @@ export const T_SUBS_DDL = (n = 'tournament_submissions') => `
     PRIMARY KEY (cat, round, game_no)
   );`;
 
+// 토너먼트 팀별 채점지(서명 포함). 가상 경기 ID(T:부문:라운드:경기번호:A|B)는 matches 에 없어 scores FK 를 쓸 수 없으므로 따로 둔다.
+export const T_SHEETS_DDL = `
+  CREATE TABLE IF NOT EXISTS tournament_sheets (
+    match_id TEXT NOT NULL,
+    team_id  TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    judge_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    points   REAL NOT NULL,
+    ts       INTEGER NOT NULL,
+    sheet    TEXT,
+    PRIMARY KEY (match_id, team_id, judge_id)
+  );`;
+
 // 부모 → 자식 순서. 마이그레이션이 이 순서로 옮긴다.
 export const MIGRATED_TABLES: { name: string; ddl: (n: string) => string; cols: string }[] = [
   { name: 'teams', ddl: TEAMS_DDL, cols: 'id, cat, code, name, region, org, coach, members' },

@@ -43,6 +43,7 @@ export function saveTournamentSlots(cat: 'J' | 'S', teamIds: (string | null)[]):
   try {
     db.prepare('DELETE FROM tournament_slots WHERE cat = ?').run(cat);
     db.prepare('DELETE FROM tournament_submissions WHERE cat = ?').run(cat);
+    db.prepare('DELETE FROM tournament_sheets WHERE match_id LIKE ?').run(`T:${cat}:%`);
     const ins = db.prepare('INSERT INTO tournament_slots (cat, slot_no, team_id) VALUES (?, ?, ?)');
     teamIds.forEach((teamId, i) => ins.run(cat, i + 1, teamId));
     rebuildTournament(cat, new Map());
@@ -76,6 +77,7 @@ export function saveTournamentResult(cat: 'J' | 'S', round: TournamentRound, gam
     rebuildTournament(cat, results);
     // 바뀐 대진으로 다시 치러야 하는 하위 라운드의 심판 제출은 무효
     for (const r of ROUND_ORDER.slice(keepIdx + 1)) db.prepare('DELETE FROM tournament_submissions WHERE cat = ? AND round = ?').run(cat, r);
+    for (const r of ROUND_ORDER.slice(keepIdx + 1)) db.prepare('DELETE FROM tournament_sheets WHERE match_id LIKE ?').run(`T:${cat}:${r}:%`);
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
@@ -91,6 +93,27 @@ export function submitTournamentScore(cat: 'J' | 'S', round: TournamentRound, ga
   if (g.status === 'done') throw new Error('이미 확정된 경기입니다. 운영본부에 변경을 요청하세요.');
   db.prepare(`INSERT INTO tournament_submissions (cat, round, game_no, score_a, score_b, judge_id, ts) VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (cat, round, game_no) DO UPDATE SET score_a = excluded.score_a, score_b = excluded.score_b, judge_id = excluded.judge_id, ts = excluded.ts`).run(cat, round, gameNo, scoreA, scoreB, judgeId, Date.now());
+}
+
+const T_MATCH_RE = /^T:([JS]):(QF|SF|F|3P):(\d+):([AB])$/;
+
+// 토너먼트 가상 경기 ID 를 풀어 본다. 형식이 아니면 null.
+export function parseTournamentMatchId(id: string): { cat: 'J' | 'S'; round: TournamentRound; gameNo: number; side: 'A' | 'B' } | null {
+  const m = T_MATCH_RE.exec(id);
+  return m ? { cat: m[1] as 'J' | 'S', round: m[2] as TournamentRound, gameNo: Number(m[3]), side: m[4] as 'A' | 'B' } : null;
+}
+
+// 심판이 낸 토너먼트 팀별 채점지 저장. 실제 경기·팀과 대조하고, 확정된 경기는 받지 않는다. 더 오래된 ts 는 무시(멱등).
+export function saveTournamentSheet(matchId: string, teamId: string, judgeId: string, points: number, ts: number, sheet: string | null): string | null {
+  const p = parseTournamentMatchId(matchId);
+  if (!p) return 'unknown_match';
+  const g = db.prepare('SELECT team_a, team_b, status FROM tournament_games WHERE cat = ? AND round = ? AND game_no = ?').get(p.cat, p.round, p.gameNo) as { team_a: string | null; team_b: string | null; status: string } | undefined;
+  if (!g || !g.team_a || !g.team_b) return 'unknown_match';
+  if ((p.side === 'A' ? g.team_a : g.team_b) !== teamId) return 'team_mismatch';
+  if (g.status === 'done') return 'game_done';
+  db.prepare(`INSERT INTO tournament_sheets (match_id, team_id, judge_id, points, ts, sheet) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT (match_id, team_id, judge_id) DO UPDATE SET points = excluded.points, ts = excluded.ts, sheet = excluded.sheet WHERE excluded.ts > tournament_sheets.ts`).run(matchId, teamId, judgeId, points, ts, sheet);
+  return null;
 }
 
 // 슬롯 배정 + 입력된 결과들로 경기 테이블 전체를 재구축한다.
