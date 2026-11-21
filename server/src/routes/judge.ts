@@ -24,7 +24,7 @@ const tournamentScoreBody = obj({
 export function createJudgeRoutes(hooks: { broadcastConfig: () => void }): Router {
   const r = new Router();
 
-  // 심판의 토너먼트 경기 점수 제출. 결과로 저장되는 건 관리자가 칸별로 '확정' 할 때다.
+  // 심판의 토너먼트 경기 점수 제출. 동점이 아니면 제출 즉시 결과로 확정되고, 동점은 관리자가 승자를 골라 확정한다.
   r.post('/judge/tournament/score', judgeOnly, body(tournamentScoreBody, 4096), (ctx) => {
     const { cat, round, gameNo, scoreA, scoreB } = ctx.body as ReturnType<typeof tournamentScoreBody>;
     if (!getProgress()[cat].tournamentOpen) return void json(ctx.res, 409, { ok: false, error: '예선이 끝나야 토너먼트 점수를 입력할 수 있습니다.' });

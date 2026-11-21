@@ -93,6 +93,8 @@ export function submitTournamentScore(cat: 'J' | 'S', round: TournamentRound, ga
   if (g.status === 'done') throw new Error('이미 확정된 경기입니다. 운영본부에 변경을 요청하세요.');
   db.prepare(`INSERT INTO tournament_submissions (cat, round, game_no, score_a, score_b, judge_id, ts) VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (cat, round, game_no) DO UPDATE SET score_a = excluded.score_a, score_b = excluded.score_b, judge_id = excluded.judge_id, ts = excluded.ts`).run(cat, round, gameNo, scoreA, scoreB, judgeId, Date.now());
+  // 심판이 낸 점수는 그대로 확정한다. 동점은 승자를 정해야 하므로 관리자가 확정할 때까지 미확정으로 둔다.
+  if (scoreA !== scoreB) saveTournamentResult(cat, round, gameNo, scoreA, scoreB);
 }
 
 const T_MATCH_RE = /^T:([JS]):(QF|SF|F|3P):(\d+):([AB])$/;

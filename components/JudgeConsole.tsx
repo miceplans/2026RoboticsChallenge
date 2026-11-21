@@ -81,7 +81,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
         body: JSON.stringify({ cat: g.cat, round: g.round, gameNo: g.gameNo, scoreA: totalOf(a, sa), scoreB: totalOf(b, sb) }),
       });
       const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
-      toast(res.ok && data?.ok ? `${T_LABEL[g.round]} ${g.gameNo}경기 점수를 제출했습니다. 운영본부가 확정합니다.` : (data?.error ?? `제출 실패 (${res.status})`));
+      toast(res.ok && data?.ok ? `${T_LABEL[g.round]} ${g.gameNo}경기 점수를 제출했습니다. 동점이면 운영본부가 승자를 확정합니다.` : (data?.error ?? `제출 실패 (${res.status})`));
     } catch {
       toast('서버에 연결할 수 없습니다. 아래 \'다시 제출\'로 보내십시오.');
     }
@@ -351,7 +351,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
         <div className="text-5xl text-accent">✓</div>
         <h1 className="mt-4 text-2xl font-extrabold">{otherDone ? '경기 점수를 운영본부에 냈습니다' : '채점을 저장했습니다'}</h1>
         <p className="mt-2 text-sm text-gray-500">{team.id} {team.name} · {match.label} · 총점 <b>{calc(sheet.values, match.cat, ruleItems).total}점</b></p>
-        <p className="mt-1 text-sm text-gray-500">{otherDone ? '두 팀 채점이 끝났습니다. 운영본부가 승자를 확정합니다.' : '상대 팀도 채점하고 서명하면 경기 점수가 함께 제출됩니다.'}</p>
+        <p className="mt-1 text-sm text-gray-500">{otherDone ? '두 팀 채점이 끝나 점수가 확정됩니다. (동점이면 운영본부가 승자를 확정합니다.)' : '상대 팀도 채점하고 서명하면 경기 점수가 함께 제출됩니다.'}</p>
         <button type="button" onClick={close} className={`${btnPrimary} mt-6`}>경기 목록으로</button>
       </div>
     );
