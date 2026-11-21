@@ -42,14 +42,14 @@ export function Slot({ box, game, preview, out, theme, title }: { box: Box; game
     if (prev.current !== null && confirmedWinner && confirmedWinner !== prev.current) fireConfetti(ref.current);
     prev.current = confirmedWinner;
   }, [confirmedWinner]);
-  const result = preview ?? (game?.status === 'done' && game.winner ? { winner: game.winner, scoreA: game.scoreA, scoreB: game.scoreB } : undefined);
+  const result = preview ?? (game?.status === 'done' && game.winner ? { winner: game.winner, winnerScore: game.winner === game.teamA ? game.scoreA : game.scoreB, loserScore: game.winner === game.teamA ? game.scoreB : game.scoreA } : undefined);
   const style: CSSProperties = title
     ? { borderColor: theme.main, backgroundColor: theme.soft }
     : { borderColor: preview ? theme.main : theme.border, backgroundColor: preview ? theme.tint : '#fff' };
   return (
     <BracketBox box={box} out={out} boxRef={ref} style={style} className={title ? 'justify-start pt-[0.8cqw]' : ''}>
       {title && <span style={{ color: theme.main }} className="text-[1.9cqw] font-extrabold leading-tight">{title}</span>}
-      {result && <TeamCell teamId={result.winner} strong sub={<span className="tabular-nums">{result.scoreA} : {result.scoreB}</span>} />}
+      {result && <TeamCell teamId={result.winner} strong sub={<span className="tabular-nums">{result.winnerScore} : {result.loserScore}</span>} />}
     </BracketBox>
   );
 }
