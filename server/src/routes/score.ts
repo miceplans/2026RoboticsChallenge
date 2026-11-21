@@ -1,4 +1,4 @@
-import { getMatch, getProgress, saveScore } from '../db.ts';
+import { getMatch, getProgress, parseTournamentMatchId, saveScore, saveTournamentSheet } from '../db.ts';
 import type { Session } from '../session.ts';
 import { Router, body, requireSession } from '../router.ts';
 import { json } from '../http.ts';
@@ -50,6 +50,13 @@ export function submitScore(session: Session, p: unknown): Result {
 
   // 클라이언트 시계 오류(미래)로 이후 제출이 잠기는 것을 막는다
   if (ts > Date.now() + 5 * 60_000) return { ok: false, error: 'invalid_ts' };
+
+  // 토너먼트 팀별 채점지: 경기 점수(/judge/tournament/score)와 별개로 서명 포함 채점지를 보관한다
+  if (parseTournamentMatchId(matchId)) {
+    if (!getProgress()[parseTournamentMatchId(matchId)!.cat].tournamentOpen) return { ok: false, error: 'round_locked' };
+    const err = saveTournamentSheet(matchId, teamId, session.id, points, ts, sheetJson);
+    return err ? { ok: false, error: err } : { ok: true };
+  }
 
   const match = getMatch(matchId);
   if (!match) return { ok: false, error: 'unknown_match' };

@@ -218,9 +218,34 @@ export function listSheets(filter: { cat?: 'J' | 'S'; round?: 1 | 2; matchId?: s
     WHERE ${where.join(' AND ')}
     ORDER BY m.round, t.cat, s.match_id, s.team_id, s.judge_id
     LIMIT 2000`).all(...args) as (Omit<ScoreSheetRow, 'members' | 'sheet'> & { members: string | null; sheet: string })[];
-  return rows.map((r) => ({
+  const base = rows.map((r) => ({
     ...r,
     members: JSON.parse(r.members ?? '[]') as string[],
     sheet: JSON.parse(r.sheet) as Record<string, unknown>,
   }));
+  // 토너먼트 팀별 채점지(가상 경기 T:...)는 별도 테이블에 있다. 1·2차 필터가 걸리면 해당 없음.
+  if (filter.round) return base;
+  const tw = ['s.sheet IS NOT NULL'];
+  const ta: (string | number)[] = [];
+  if (filter.matchId) { tw.push('s.match_id = ?'); ta.push(filter.matchId); }
+  if (filter.teamId) { tw.push('s.team_id = ?'); ta.push(filter.teamId); }
+  if (filter.judgeId) { tw.push('s.judge_id = ?'); ta.push(filter.judgeId); }
+  if (filter.cat) { tw.push('t.cat = ?'); ta.push(filter.cat); }
+  const trows = db.prepare(`
+    SELECT s.match_id AS matchId, s.team_id AS teamId, t.name AS teamName, t.members,
+           s.judge_id AS judgeId, u.name AS judgeName, t.cat AS cat, s.points, s.ts, s.sheet
+    FROM tournament_sheets s
+    LEFT JOIN teams t ON t.id = s.team_id
+    LEFT JOIN users u ON u.id = s.judge_id
+    WHERE ${tw.join(' AND ')}
+    ORDER BY s.match_id, s.team_id, s.judge_id
+    LIMIT 2000`).all(...ta) as { matchId: string; teamId: string; teamName: string | null; members: string | null; judgeId: string; judgeName: string | null; cat: 'J' | 'S' | null; points: number; ts: number; sheet: string }[];
+  const tsheets: ScoreSheetRow[] = trows.map((r) => {
+    const side = r.matchId.slice(-1);
+    return {
+      ...r, members: JSON.parse(r.members ?? '[]') as string[], sheet: JSON.parse(r.sheet) as Record<string, unknown>,
+      round: 2, wave: 'A', table: 0, field: side === 'A' ? '좌' : '우', status: 'pending',
+    };
+  });
+  return [...base, ...tsheets];
 }

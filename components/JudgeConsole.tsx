@@ -158,6 +158,9 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
       // 토너먼트: 조별 점수 전송 대신, 두 팀이 모두 서명되면 경기 점수로 낸다
       const p = parseT(match!.id);
       const g = tGames.find((x) => x.cat === p.cat && x.round === p.round && x.gameNo === p.gameNo);
+      // 서명 포함 채점지는 팀별로 보내 관리자가 확인서를 볼 수 있게 한다 (경기 점수는 아래 postGame)
+      const tc = calc(signed.values, match!.cat, ruleItems);
+      submitScore(match!.id, match!.team, tc.total, sheetPayload(match!, signed, ruleItems), tc.penCnt);
       if (g) void postGame(g, { [match!.id]: signed });
       setMode('done');
       window.scrollTo(0, 0);
