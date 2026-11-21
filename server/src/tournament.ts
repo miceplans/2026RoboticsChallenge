@@ -77,15 +77,24 @@ export function saveTournamentResult(cat: 'J' | 'S', round: TournamentRound, gam
   db.exec('BEGIN');
   try {
     const keepIdx = ROUND_ORDER.indexOf(round);
+    // 이 경기의 승자가 바뀔 때만 뒤 라운드가 무효가 된다. 처음 확정하거나 승자가 그대로면 이미 끝난 다른 경기는 그대로 둔다
+    // (여러 태블릿에서 경기를 동시에 채점하므로 4강이 8강의 다른 경기보다 먼저 확정될 수 있다).
+    const g = db.prepare('SELECT team_a, team_b, winner FROM tournament_games WHERE cat = ? AND round = ? AND game_no = ?').get(cat, round, gameNo) as { team_a: string | null; team_b: string | null; winner: string | null } | undefined;
+    const newWinner = !g ? null : scoreA === scoreB ? (tb === 'A' ? g.team_a : tb === 'B' ? g.team_b : null) : scoreA > scoreB ? g.team_a : g.team_b;
+    const winnerChanged = !!g?.winner && g.winner !== newWinner;
     const results = new Map<string, GameResult>();
     for (const [key, r] of savedResults(cat)) {
-      if (ROUND_ORDER.indexOf(key.split('-')[0] as TournamentRound) <= keepIdx) results.set(key, r);
+      if (!winnerChanged || ROUND_ORDER.indexOf(key.split('-')[0] as TournamentRound) <= keepIdx) results.set(key, r);
     }
     results.set(`${round}-${gameNo}`, { scoreA, scoreB, tb: scoreA === scoreB ? tb : undefined });
     rebuildTournament(cat, results);
-    // 바뀐 대진으로 다시 치러야 하는 하위 라운드의 심판 제출은 무효
-    for (const r of ROUND_ORDER.slice(keepIdx + 1)) db.prepare('DELETE FROM tournament_submissions WHERE cat = ? AND round = ?').run(cat, r);
-    for (const r of ROUND_ORDER.slice(keepIdx + 1)) db.prepare('DELETE FROM tournament_sheets WHERE match_id LIKE ?').run(`T:${cat}:${r}:%`);
+    if (winnerChanged) {
+      // 바뀐 대진으로 다시 치러야 하는 하위 라운드의 심판 제출은 무효
+      for (const r of ROUND_ORDER.slice(keepIdx + 1)) {
+        db.prepare('DELETE FROM tournament_submissions WHERE cat = ? AND round = ?').run(cat, r);
+        db.prepare('DELETE FROM tournament_sheets WHERE match_id LIKE ?').run(`T:${cat}:${r}:%`);
+      }
+    }
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
