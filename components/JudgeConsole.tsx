@@ -35,7 +35,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
   const approvedRobotsOf = (teamId: string) => config?.homologationRobots?.[teamId] ?? [];
   // 관리자가 저장한 채점표 템플릿이 있으면 그것을 쓰고, 없거나 형식이 이상하면 기본 규칙 항목표를 쓴다
   const ruleItems = useMemo<Item[]>(() => parseTemplate(config?.template) ?? ITEMS, [config?.template]);
-  const { sheets, update } = useSheets(judgeId);
+  const { sheets, ready, update } = useSheets(judgeId);
   const toast = useToast();
 
   // 서버가 점수를 거부한 사유는 화면에 적지 않고 토스트로 알린다
@@ -63,29 +63,24 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
     .sort((a, b) => a.cat.localeCompare(b.cat) || T_ORDER.indexOf(a.round) - T_ORDER.indexOf(b.round) || a.gameNo - b.gameNo);
   const tMatch = (g: TournamentGame, side: 'A' | 'B'): Match => ({ id: `T:${g.cat}:${g.round}:${g.gameNo}:${side}`, round: 2, cat: g.cat, wave: 'A', table: 0, field: side === 'A' ? '좌' : '우', team: (side === 'A' ? g.teamA : g.teamB)!, label: `${T_LABEL[g.round]} ${g.gameNo}경기` });
   const match = [...matches, ...tGames.flatMap((g) => [tMatch(g, 'A'), tMatch(g, 'B')])].find((m) => m.id === openId) ?? null;
-  const tSubs = config?.tournament.submissions ?? [];
-  const tSubOf = (g: TournamentGame) => tSubs.find((x) => x.cat === g.cat && x.round === g.round && x.gameNo === g.gameNo);
-  const totalOf = (m: Match, s: Sheet) => calc(s.values, m.cat, ruleItems).total;
-  // 두 팀 채점이 모두 서명되면 점수를 서버에 낸다 (운영본부가 확정). 서명된 시트는 로컬에 남아 있다.
-  const postGame = async (g: TournamentGame, overrides?: Record<string, Sheet>) => {
-    const a = tMatch(g, 'A');
-    const b = tMatch(g, 'B');
-    const sa = overrides?.[a.id] ?? sheets[a.id];
-    const sb = overrides?.[b.id] ?? sheets[b.id];
-    if (sa?.status !== 'signed' || sb?.status !== 'signed') return;
-    try {
-      const res = await fetch(`${serverUrl()}/judge/tournament/score`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ cat: g.cat, round: g.round, gameNo: g.gameNo, scoreA: totalOf(a, sa), scoreB: totalOf(b, sb) }),
-      });
-      const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
-      toast(res.ok && data?.ok ? `${T_LABEL[g.round]} ${g.gameNo}경기 점수를 제출했습니다. 동점이면 운영본부가 승자를 확정합니다.` : (data?.error ?? `제출 실패 (${res.status})`));
-    } catch {
-      toast('서버에 연결할 수 없습니다. 아래 \'다시 제출\'로 보내십시오.');
+  // 이전에 서명만 해 두고 서버에 못 보낸 8강 이후 채점지를 이 기기에서 자동으로 다시 보낸다 (서버는 같은 채점지를 덮어쓰기만 한다).
+  // 확정되지 않은 경기만 대상이며, 한 번 보낸 채점지는 이 화면에서 다시 보내지 않는다.
+  const resentT = useRef(new Set<string>());
+  useEffect(() => {
+    if (!ready || !config) return;
+    for (const g of tGames) {
+      for (const side of ['A', 'B'] as const) {
+        const m = tMatch(g, side);
+        const sh = sheets[m.id];
+        if (sh?.status !== 'signed' || resentT.current.has(m.id)) continue;
+        resentT.current.add(m.id);
+        const c = calc(sh.values, m.cat, ruleItems);
+        submitScore(m.id, m.team, c.total, sheetPayload(m, sh, ruleItems), c.penCnt);
+      }
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, config, sheets]);
+  const totalOf = (m: Match, s: Sheet) => calc(s.values, m.cat, ruleItems).total;
   // 확정된 경기를 고칠 때의 작업 사본. 뒤로 가면 버리므로 확정 점수는 그대로 남는다.
   const [draft, setDraft] = useState<Sheet | null>(null);
   const stored = match ? (sheets[match.id] ?? newSheet()) : null;
@@ -156,12 +151,9 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
     setDraft(null);
     if (isT(match!)) {
       // 토너먼트: 조별 점수 전송 대신, 두 팀이 모두 서명되면 경기 점수로 낸다
-      const p = parseT(match!.id);
-      const g = tGames.find((x) => x.cat === p.cat && x.round === p.round && x.gameNo === p.gameNo);
-      // 서명 포함 채점지는 팀별로 보내 관리자가 확인서를 볼 수 있게 한다 (경기 점수는 아래 postGame)
+      // 팀별로 바로 서버에 낸다. 심판마다 다른 기기에서 한 팀씩 채점하므로 상대 팀을 기다리지 않는다 (경기 점수는 서버가 두 팀이 모이면 만든다)
       const tc = calc(signed.values, match!.cat, ruleItems);
       submitScore(match!.id, match!.team, tc.total, sheetPayload(match!, signed, ruleItems), tc.penCnt);
-      if (g) void postGame(g, { [match!.id]: signed });
       setMode('done');
       window.scrollTo(0, 0);
       return;
@@ -244,19 +236,16 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
             ) : (
               <div className="divide-y divide-line">
                 {tGames.map((g) => {
-                  const sub = tSubOf(g);
                   const ms = [tMatch(g, 'A'), tMatch(g, 'B')];
-                  const bothSigned = ms.every((m) => sheets[m.id]?.status === 'signed');
                   return (
                     <div key={`${g.cat}-${g.round}-${g.gameNo}`} className="space-y-1 p-3">
                       <div className="flex items-center gap-2 px-3 pt-1">
                         <b>{tCats.length > 1 ? `${CATEGORY_NAMES[g.cat]} ` : ''}{T_LABEL[g.round]} {g.gameNo}경기</b>
-                        {sub && <Chip tone="info">제출됨 · 확정 대기</Chip>}
                       </div>
                       {ms.map((m) => {
                         const t = teamOf(teams, m.team);
                         const s = sheets[m.id];
-                        const [text, tone]: [string, Tone] = !s ? ['미입력', 'neutral'] : s.status === 'draft' ? ['작성 중', 'warn'] : s.status === 'reviewing' ? ['확인·서명 중', 'warn'] : ['서명 완료', 'info'];
+                        const [text, tone]: [string, Tone] = !s ? ['미입력', 'neutral'] : s.status === 'draft' ? ['작성 중', 'warn'] : s.status === 'reviewing' ? ['확인·서명 중', 'warn'] : syncOf(m) === 'acked' ? ['제출됨', 'info'] : syncOf(m) === 'rejected' ? ['서버 거부', 'bad'] : ['서명 완료 · 전송 대기', 'warn'];
                         return (
                           <button key={m.id} type="button" onClick={() => open(m)} className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-surface">
                             <span className="flex-1">
@@ -269,11 +258,6 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
                           </button>
                         );
                       })}
-                      {bothSigned && !sub && (
-                        <div className="flex gap-2 px-3 pb-1 pt-1">
-                          <button type="button" className={`${btnPrimary} !px-4 !py-2`} onClick={() => void postGame(g)}>다시 제출</button>
-                        </div>
-                      )}
                     </div>
                   );
                 })}
@@ -342,16 +326,12 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
   }
 
   if (mode === 'done' && isT(match)) {
-    const p = parseT(match.id);
-    const g = tGames.find((x) => x.cat === p.cat && x.round === p.round && x.gameNo === p.gameNo);
-    const other = g ? tMatch(g, p.side === 'A' ? 'B' : 'A') : null;
-    const otherDone = other ? sheets[other.id]?.status === 'signed' : false;
     return (
       <div className="mx-auto max-w-xl rounded-2xl border border-line bg-white p-10 text-center">
         <div className="text-5xl text-accent">✓</div>
         <h1 className="mt-4 text-2xl font-extrabold">채점 점수를 운영본부에 제출했습니다</h1>
         <p className="mt-2 text-sm text-gray-500">{team.id} {team.name} · {match.label} · 총점 <b>{calc(sheet.values, match.cat, ruleItems).total}점</b></p>
-        <p className="mt-1 text-sm text-gray-500">{otherDone ? '두 팀 채점이 끝나 점수가 확정됩니다. (동점이면 운영본부가 승자를 확정합니다.)' : '이 팀 점수는 운영본부에 제출됐습니다. 상대 팀은 다른 심판이 채점합니다.'}</p>
+        <p className="mt-1 text-sm text-gray-500">이 팀 점수는 운영본부에 제출됐습니다. 상대 팀은 다른 심판이 채점하고, 두 팀이 모이면 자동으로 확정됩니다. (동점이면 운영본부가 승자를 확정합니다.)</p>
         <button type="button" onClick={close} className={`${btnPrimary} mt-6`}>경기 목록으로</button>
       </div>
     );
