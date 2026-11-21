@@ -113,6 +113,12 @@ export function saveTournamentSheet(matchId: string, teamId: string, judgeId: st
   if (g.status === 'done') return 'game_done';
   db.prepare(`INSERT INTO tournament_sheets (match_id, team_id, judge_id, points, ts, sheet) VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT (match_id, team_id, judge_id) DO UPDATE SET points = excluded.points, ts = excluded.ts, sheet = excluded.sheet WHERE excluded.ts > tournament_sheets.ts`).run(matchId, teamId, judgeId, points, ts, sheet);
+  // 심판 두 명이 팀을 나눠 채점하면 한 기기에서 두 팀이 모두 서명되지 않아 경기 점수가 제출되지 않는다.
+  // 양쪽 팀의 채점지가 서버에 모이면 (팀별 가장 최근 것) 경기 점수를 여기서 만든다.
+  const latest = (side: 'A' | 'B') => db.prepare('SELECT points FROM tournament_sheets WHERE match_id = ? ORDER BY ts DESC LIMIT 1').get(`T:${p.cat}:${p.round}:${p.gameNo}:${side}`) as { points: number } | undefined;
+  const a = latest('A');
+  const b = latest('B');
+  if (a && b) submitTournamentScore(p.cat, p.round, p.gameNo, a.points, b.points, judgeId);
   return null;
 }
 
