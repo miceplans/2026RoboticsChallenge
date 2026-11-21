@@ -29,7 +29,8 @@ export function useRanking(cat: Category) {
 }
 
 // 8강 경기 점수를 입력하는 중(저장 전)에 4강 자리에 미리 보여주는 승자
-export type QfPreview = { winner: string; loser: string; scoreA: number; scoreB: number };
+// winnerScore / loserScore: 승자·패자 각자의 경기 점수 (칸에는 '승자 : 패자' 순서로 보인다)
+export type QfPreview = { winner: string; loser: string; winnerScore: number; loserScore: number };
 
 // BracketCanvas 박스 순서(8강 4칸 → 준결승 2칸 → 결승 → 3·4위전)와 같은 경기 키. 관리자 화면과 공개 대진표가 함께 쓴다.
 export const GAME_KEYS: { round: TournamentRound; no: number }[] = [
@@ -43,6 +44,6 @@ export function confirmedPreview(games: TournamentGame[], cat: Category): (QfPre
     const g = games.find((x) => x.cat === cat && x.round === round && x.gameNo === no);
     if (!g || g.status !== 'done' || !g.teamA || !g.teamB || g.scoreA == null || g.scoreB == null || !g.winner) return undefined;
     const aWon = g.winner === g.teamA;
-    return { winner: g.winner, loser: aWon ? g.teamB : g.teamA, scoreA: g.scoreA, scoreB: g.scoreB };
+    return { winner: g.winner, loser: aWon ? g.teamB : g.teamA, winnerScore: aWon ? g.scoreA : g.scoreB, loserScore: aWon ? g.scoreB : g.scoreA };
   });
 }

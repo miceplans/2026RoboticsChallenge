@@ -62,7 +62,7 @@ export default function Draw() {
     // 동점이면 관리자가 고른 팀(확정된 경기는 저장된 승자)이 이긴 것으로 본다
     const side = sc.a === sc.b ? (done ? (g.winner === g.teamA ? 'A' : 'B') : tieWinner[`${cat}-${k}`]) : sc.a > sc.b ? 'A' : 'B';
     if (!side) return undefined;
-    return { winner: side === 'A' ? g.teamA : g.teamB, loser: side === 'A' ? g.teamB : g.teamA, scoreA: sc.a, scoreB: sc.b };
+    return { winner: side === 'A' ? g.teamA : g.teamB, loser: side === 'A' ? g.teamB : g.teamA, winnerScore: side === 'A' ? sc.a : sc.b, loserScore: side === 'A' ? sc.b : sc.a };
   });
   // 확정: 심판이 낸 점수(이미 확정된 경기는 저장된 점수)로 결과를 저장한다. 동점이면 고른 승자를 함께 보낸다.
   const confirmGame = async (k: number) => {
