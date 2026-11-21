@@ -77,24 +77,20 @@ function savedResults(cat: 'J' | 'S'): Map<string, GameResult> {
 export function saveTournamentResult(cat: 'J' | 'S', round: TournamentRound, gameNo: number, scoreA: number, scoreB: number, tb?: 'A' | 'B'): void {
   db.exec('BEGIN');
   try {
-    const keepIdx = ROUND_ORDER.indexOf(round);
     // 이 경기의 승자가 바뀔 때만 뒤 라운드가 무효가 된다. 처음 확정하거나 승자가 그대로면 이미 끝난 다른 경기는 그대로 둔다
     // (여러 태블릿에서 경기를 동시에 채점하므로 4강이 8강의 다른 경기보다 먼저 확정될 수 있다).
     const g = db.prepare('SELECT team_a, team_b, winner FROM tournament_games WHERE cat = ? AND round = ? AND game_no = ?').get(cat, round, gameNo) as { team_a: string | null; team_b: string | null; winner: string | null } | undefined;
     const newWinner = !g ? null : scoreA === scoreB ? (tb === 'A' ? g.team_a : tb === 'B' ? g.team_b : null) : scoreA > scoreB ? g.team_a : g.team_b;
     const winnerChanged = !!g?.winner && g.winner !== newWinner;
-    const results = new Map<string, GameResult>();
-    for (const [key, r] of savedResults(cat)) {
-      if (!winnerChanged || ROUND_ORDER.indexOf(key.split('-')[0] as TournamentRound) <= keepIdx) results.set(key, r);
-    }
+    const results = savedResults(cat);
+    // 승자가 바뀌면 이 경기의 승자·패자가 들어가는 뒤 경기만 다시 치른다 (관련 없는 경기는 그대로)
+    const affected = winnerChanged ? downstreamGames(round, gameNo) : [];
+    for (const t of affected) results.delete(`${t.round}-${t.gameNo}`);
     results.set(`${round}-${gameNo}`, { scoreA, scoreB, tb: scoreA === scoreB ? tb : undefined });
     rebuildTournament(cat, results);
-    if (winnerChanged) {
-      // 바뀐 대진으로 다시 치러야 하는 하위 라운드의 심판 제출은 무효
-      for (const r of ROUND_ORDER.slice(keepIdx + 1)) {
-        db.prepare('DELETE FROM tournament_submissions WHERE cat = ? AND round = ?').run(cat, r);
-        db.prepare('DELETE FROM tournament_sheets WHERE match_id LIKE ?').run(`T:${cat}:${r}:%`);
-      }
+    for (const t of affected) {
+      db.prepare('DELETE FROM tournament_submissions WHERE cat = ? AND round = ? AND game_no = ?').run(cat, t.round, t.gameNo);
+      db.prepare('DELETE FROM tournament_sheets WHERE match_id LIKE ?').run(`T:${cat}:${t.round}:${t.gameNo}:%`);
     }
     db.exec('COMMIT');
   } catch (e) {
@@ -108,6 +104,13 @@ function downstreamGames(round: TournamentRound, gameNo: number): { round: Tourn
   if (round === 'QF') return [{ round: 'SF', gameNo: Math.ceil(gameNo / 2) }, { round: 'F', gameNo: 1 }, { round: '3P', gameNo: 1 }];
   if (round === 'SF') return [{ round: 'F', gameNo: 1 }, { round: '3P', gameNo: 1 }];
   return [];
+}
+
+// 관리자 강제 수정: 심판 제출과 무관하게 점수를 정해 확정한다 (확정된 경기도 가능). 심판 제출 기록도 같은 값으로 맞춘다.
+export function forceTournamentScore(cat: 'J' | 'S', round: TournamentRound, gameNo: number, scoreA: number, scoreB: number, tb: 'A' | 'B' | undefined, adminId: string): void {
+  saveTournamentResult(cat, round, gameNo, scoreA, scoreB, tb);
+  db.prepare(`INSERT INTO tournament_submissions (cat, round, game_no, score_a, score_b, judge_id, ts) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (cat, round, game_no) DO UPDATE SET score_a = excluded.score_a, score_b = excluded.score_b, judge_id = excluded.judge_id, ts = excluded.ts`).run(cat, round, gameNo, scoreA, scoreB, adminId, Date.now());
 }
 
 // 관리자 재채점: 한 경기의 확정 결과·심판 제출·팀별 채점지를 지워 심판이 다시 채점하게 한다.

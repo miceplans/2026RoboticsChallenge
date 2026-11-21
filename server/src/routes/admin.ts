@@ -34,6 +34,8 @@ import {
   MAX_ROBOTS,
   saveHomologation,
   revokeAllSessions,
+  forceTournamentScore,
+  getTournament,
   resetTournamentGame,
   saveTournamentResult,
   saveTournamentSlots,
@@ -104,6 +106,16 @@ const tournamentResultBody = obj({
   round: tournamentRound,
   gameNo: num({ int: true }),
   winner: opt(oneOf('A', 'B')),
+});
+
+const tournamentModifyBody = obj({
+  cat,
+  round: tournamentRound,
+  gameNo: num({ int: true }),
+  scoreA: num({ min: 0, max: 9999 }),
+  scoreB: num({ min: 0, max: 9999 }),
+  winner: opt(oneOf('A', 'B')),
+  reason: str({ min: 1, max: 500 }),
 });
 
 const tournamentResetBody = obj({
@@ -252,6 +264,25 @@ export function createAdminRoutes(hooks: AdminHooks): Router {
       return void json(ctx.res, 400, { ok: false, error: (e as Error).message });
     }
     logAudit(ctx.session!.id, 'tournament', 'tournament', `${c} ${round}-${gameNo}`, { scoreA, scoreB, winner });
+    hooks.broadcastConfig();
+    json(ctx.res, 200, { ok: true });
+  });
+
+  // 강제 수정: 확정된 경기(또는 아직 확정 전인 경기)의 점수를 관리자가 직접 고쳐 확정한다. 동점이면 승자를 골라야 한다.
+  // 승자가 바뀌면 그 승자·패자가 이미 올라간 뒤 라운드 결과는 지워진다. 심판 제출 점수도 같은 값으로 맞춘다.
+  r.post('/tournament/modify', body(tournamentModifyBody, MAX_ADMIN_BODY_BYTES), (ctx) => {
+    const { cat: c, round, gameNo, scoreA, scoreB, winner, reason } = ctx.body as ReturnType<typeof tournamentModifyBody>;
+    if (!reason.trim()) return void json(ctx.res, 400, { ok: false, error: '수정 사유를 입력해 주세요.' });
+    if (scoreA === scoreB && !winner) return void json(ctx.res, 409, { ok: false, error: '동점입니다. 올라갈 팀(승자)을 선택해야 합니다.' });
+    const prev = getTournament().games.find((g) => g.cat === c && g.round === round && g.gameNo === gameNo);
+    if (!prev) return void json(ctx.res, 404, { ok: false, error: 'game_not_found' });
+    if (!prev.teamA || !prev.teamB) return void json(ctx.res, 409, { ok: false, error: '아직 두 팀이 정해지지 않은 경기입니다.' });
+    try {
+      forceTournamentScore(c, round as TournamentRound, gameNo, scoreA, scoreB, winner, ctx.session!.id);
+    } catch (e) {
+      return void json(ctx.res, 400, { ok: false, error: (e as Error).message });
+    }
+    logAudit(ctx.session!.id, 'modify', 'tournament', `${c} ${round}-${gameNo}`, { prev: { scoreA: prev.scoreA, scoreB: prev.scoreB, winner: prev.winner, status: prev.status }, scoreA, scoreB, winner, reason: reason.trim() });
     hooks.broadcastConfig();
     json(ctx.res, 200, { ok: true });
   });
