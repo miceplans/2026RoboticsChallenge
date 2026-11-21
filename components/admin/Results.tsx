@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useToast } from '@/components/Toast';
-import { useContest, type Team, type TournamentGame, type TournamentRound } from '@/lib/contest';
+import { useContest, type Team, type TournamentGame, type TournamentRound, type TournamentSideScore } from '@/lib/contest';
 import { CATEGORY_NAMES, type Category } from '@/lib/judge/rules';
 import { adminFetch, btn, card, downloadCsv, Icon } from './shared';
 
@@ -27,8 +27,12 @@ const FINAL_COLUMNS: { round: TournamentRound; label: string }[] = [
   { round: 'F', label: '결승' },
 ];
 
-function tournamentScore(game: TournamentGame, teamId: string) {
-  if (game.status !== 'done') return undefined;
+function tournamentScore(game: TournamentGame, teamId: string, sides: TournamentSideScore[]) {
+  if (game.status !== 'done') {
+    // 확정 전이라도 그 팀 채점이 제출됐으면 보여 준다
+    const side = game.teamA === teamId ? 'A' : game.teamB === teamId ? 'B' : null;
+    return side ? sides.find((x) => x.cat === game.cat && x.round === game.round && x.gameNo === game.gameNo && x.side === side)?.points : undefined;
+  }
   if (game.teamA === teamId) return game.scoreA ?? undefined;
   if (game.teamB === teamId) return game.scoreB ?? undefined;
   return undefined;
@@ -68,6 +72,7 @@ export default function Results() {
       return values.length ? Math.max(...values) : undefined;
     };
     const games = config?.tournament.games ?? [];
+    const sides = config?.tournament.sideScores ?? [];
 
     return (config?.teams ?? [])
       .filter((team) => !category || team.cat === category)
@@ -76,11 +81,11 @@ export default function Results() {
         const tournament: ResultRow['tournament'] = {};
         for (const { round } of FINAL_COLUMNS) {
           const game = games.find((candidate) => candidate.cat === team.cat && candidate.round === round && (candidate.teamA === team.id || candidate.teamB === team.id));
-          if (game) tournament[round] = tournamentScore(game, team.id);
+          if (game) tournament[round] = tournamentScore(game, team.id, sides);
         }
         return { team, round1: best(team.id, 1), round2: best(team.id, 2), tournament };
       });
-  }, [category, config?.teams, config?.tournament.games, scores]);
+  }, [category, config?.teams, config?.tournament.games, config?.tournament.sideScores, scores]);
 
   const exportCsv = () => {
     const header = ['부문', '팀 ID', '팀명', '1차', '2차', ...FINAL_COLUMNS.map((column) => column.label)];

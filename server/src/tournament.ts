@@ -19,6 +19,8 @@ export type Tournament = {
   }[];
   // 심판이 입력해 제출한 경기 점수. 관리자가 칸별로 '확정' 해야 결과로 저장된다.
   submissions: { cat: 'J' | 'S'; round: TournamentRound; gameNo: number; scoreA: number; scoreB: number; judgeId: string; ts: number }[];
+  // 팀별로 따로 제출된 채점 점수 (상대 팀 채점이 아직 없어도 보인다). 경기마다 A/B 쪽 가장 최근 제출.
+  sideScores: { cat: 'J' | 'S'; round: TournamentRound; gameNo: number; side: 'A' | 'B'; points: number; judgeId: string; ts: number }[];
 };
 
 // --- 토너먼트 ---
@@ -28,7 +30,13 @@ export function getTournament(): Tournament {
   const games = db.prepare(`SELECT cat, round, game_no AS gameNo, team_a AS teamA, team_b AS teamB, score_a AS scoreA, score_b AS scoreB,
     winner, status, updated_at AS updatedAt FROM tournament_games ORDER BY cat, round, game_no`).all() as unknown as Tournament['games'];
   const submissions = db.prepare('SELECT cat, round, game_no AS gameNo, score_a AS scoreA, score_b AS scoreB, judge_id AS judgeId, ts FROM tournament_submissions ORDER BY cat, round, game_no').all() as unknown as Tournament['submissions'];
-  return { slots, games, submissions };
+  const sideRows = db.prepare('SELECT match_id AS matchId, points, judge_id AS judgeId, MAX(ts) AS ts FROM tournament_sheets GROUP BY match_id').all() as { matchId: string; points: number; judgeId: string; ts: number }[];
+  const sideScores: Tournament['sideScores'] = [];
+  for (const r of sideRows) {
+    const p = parseTournamentMatchId(r.matchId);
+    if (p) sideScores.push({ cat: p.cat, round: p.round, gameNo: p.gameNo, side: p.side, points: r.points, judgeId: r.judgeId, ts: r.ts });
+  }
+  return { slots, games, submissions, sideScores };
 }
 
 export function getTournamentSubmission(cat: 'J' | 'S', round: TournamentRound, gameNo: number): Tournament['submissions'][number] | undefined {
@@ -93,6 +101,8 @@ export function submitTournamentScore(cat: 'J' | 'S', round: TournamentRound, ga
   if (g.status === 'done') throw new Error('이미 확정된 경기입니다. 운영본부에 변경을 요청하세요.');
   db.prepare(`INSERT INTO tournament_submissions (cat, round, game_no, score_a, score_b, judge_id, ts) VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (cat, round, game_no) DO UPDATE SET score_a = excluded.score_a, score_b = excluded.score_b, judge_id = excluded.judge_id, ts = excluded.ts`).run(cat, round, gameNo, scoreA, scoreB, judgeId, Date.now());
+  // 심판이 낸 점수는 그대로 확정한다. 동점은 승자를 정해야 하므로 관리자가 확정할 때까지 미확정으로 둔다.
+  if (scoreA !== scoreB) saveTournamentResult(cat, round, gameNo, scoreA, scoreB);
 }
 
 const T_MATCH_RE = /^T:([JS]):(QF|SF|F|3P):(\d+):([AB])$/;

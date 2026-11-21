@@ -333,6 +333,9 @@ export default function ScoreList() {
   const tournamentSubmission = (cat: 'J' | 'S', gameNo: number) =>
     config?.tournament.submissions?.find((submission) => submission.cat === cat && submission.round === finalRound && submission.gameNo === gameNo);
 
+  const sideScore = (game: { cat: 'J' | 'S'; round: TournamentRound; gameNo: number }, side: 'A' | 'B') =>
+    config?.tournament.sideScores?.find((x) => x.cat === game.cat && x.round === game.round && x.gameNo === game.gameNo && x.side === side);
+
   // 인쇄 대화상자가 닫히면 인쇄 영역을 비운다
   useEffect(() => {
     if (!printRows) return;
@@ -407,8 +410,8 @@ export default function ScoreList() {
           game.cat === 'J' ? '주니어' : '시니어',
           game.teamA ? `${game.teamA} · ${teamName(teams, game.teamA)}` : '',
           game.teamB ? `${game.teamB} · ${teamName(teams, game.teamB)}` : '',
-          game.status === 'done' ? (game.scoreA ?? '') : (submission?.scoreA ?? ''),
-          game.status === 'done' ? (game.scoreB ?? '') : (submission?.scoreB ?? ''),
+          game.status === 'done' ? (game.scoreA ?? '') : (submission?.scoreA ?? sideScore(game, 'A')?.points ?? ''),
+          game.status === 'done' ? (game.scoreB ?? '') : (submission?.scoreB ?? sideScore(game, 'B')?.points ?? ''),
           submission?.judgeId ?? '',
           game.status === 'done' ? '확정' : '미확정',
           submission ? new Date(submission.ts).toLocaleString('ko-KR') : '',
@@ -526,16 +529,16 @@ export default function ScoreList() {
             <tbody className="divide-y divide-line">
               {tournamentGames.map((game) => {
                 const submission = tournamentSubmission(game.cat, game.gameNo);
-                const scoreA = game.status === 'done' ? game.scoreA : submission?.scoreA;
-                const scoreB = game.status === 'done' ? game.scoreB : submission?.scoreB;
+                const scoreA = game.status === 'done' ? game.scoreA : (submission?.scoreA ?? sideScore(game, 'A')?.points);
+                const scoreB = game.status === 'done' ? game.scoreB : (submission?.scoreB ?? sideScore(game, 'B')?.points);
                 return (
                   <tr key={`${game.cat}/${game.round}/${game.gameNo}`}>
                     <td className="px-4 py-3 font-medium">{game.gameNo}경기</td>
                     <td className="px-4 py-3">{game.cat === 'J' ? '주니어' : '시니어'}</td>
                     <td className="px-4 py-3">{game.teamA ? teamButton(game.teamA) : '-'}</td>
                     <td className="px-4 py-3">{game.teamB ? teamButton(game.teamB) : '-'}</td>
-                    <td className="px-4 py-3 text-center font-semibold tabular-nums">{scoreA != null && scoreB != null ? `${scoreA} : ${scoreB}` : '-'}</td>
-                    <td className="px-4 py-3">{submission?.judgeId ?? '-'}</td>
+                    <td className="px-4 py-3 text-center font-semibold tabular-nums">{scoreA != null || scoreB != null ? `${scoreA ?? '-'} : ${scoreB ?? '-'}` : '-'}</td>
+                    <td className="px-4 py-3">{submission?.judgeId ?? ([sideScore(game, 'A'), sideScore(game, 'B')].filter(Boolean).map((x) => x!.judgeId).join(', ') || '-')}</td>
                     <td className={`px-4 py-3 ${game.status === 'done' ? 'text-accent' : 'text-gray-600'}`}>{game.status === 'done' ? '확정' : '미확정'}</td>
                     <td className="px-4 py-3 text-xs text-gray-400">{submission ? timeAgo(submission.ts) : '-'}</td>
                   </tr>
