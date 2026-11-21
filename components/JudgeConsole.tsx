@@ -35,7 +35,7 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
   const approvedRobotsOf = (teamId: string) => config?.homologationRobots?.[teamId] ?? [];
   // 관리자가 저장한 채점표 템플릿이 있으면 그것을 쓰고, 없거나 형식이 이상하면 기본 규칙 항목표를 쓴다
   const ruleItems = useMemo<Item[]>(() => parseTemplate(config?.template) ?? ITEMS, [config?.template]);
-  const { sheets, update } = useSheets(judgeId);
+  const { sheets, ready, update } = useSheets(judgeId);
   const toast = useToast();
 
   // 서버가 점수를 거부한 사유는 화면에 적지 않고 토스트로 알린다
@@ -65,6 +65,23 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
   const match = [...matches, ...tGames.flatMap((g) => [tMatch(g, 'A'), tMatch(g, 'B')])].find((m) => m.id === openId) ?? null;
   const tSubs = config?.tournament.submissions ?? [];
   const tSubOf = (g: TournamentGame) => tSubs.find((x) => x.cat === g.cat && x.round === g.round && x.gameNo === g.gameNo);
+  // 이전에 서명만 해 두고 서버에 못 보낸 8강 이후 채점지를 이 기기에서 자동으로 다시 보낸다 (서버는 같은 채점지를 덮어쓰기만 한다).
+  // 확정되지 않은 경기만 대상이며, 한 번 보낸 채점지는 이 화면에서 다시 보내지 않는다.
+  const resentT = useRef(new Set<string>());
+  useEffect(() => {
+    if (!ready || !config) return;
+    for (const g of tGames) {
+      for (const side of ['A', 'B'] as const) {
+        const m = tMatch(g, side);
+        const sh = sheets[m.id];
+        if (sh?.status !== 'signed' || resentT.current.has(m.id)) continue;
+        resentT.current.add(m.id);
+        const c = calc(sh.values, m.cat, ruleItems);
+        submitScore(m.id, m.team, c.total, sheetPayload(m, sh, ruleItems), c.penCnt);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, config, sheets]);
   const totalOf = (m: Match, s: Sheet) => calc(s.values, m.cat, ruleItems).total;
   // 두 팀 채점이 모두 서명되면 점수를 서버에 낸다 (운영본부가 확정). 서명된 시트는 로컬에 남아 있다.
   const postGame = async (g: TournamentGame, overrides?: Record<string, Sheet>) => {
