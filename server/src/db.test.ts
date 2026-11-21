@@ -172,6 +172,40 @@ test('토너먼트: 이미 확정된 경기의 점수 재입력은 막는다', (
   assert.throws(() => db.submitTournamentScore('J', 'SF', 1, 1, 1, 'REF01'), /확정된 경기/);
 });
 
+test('토너먼트: 심판이 팀마다 따로(다른 기기에서) 제출해도 8강~결승·3·4위전 점수가 들어가고 승자가 올라간다', () => {
+  const sTeams = db.listTeams().filter((t) => t.cat === 'S').slice(0, 8).map((t) => t.id);
+  assert.equal(sTeams.length, 8);
+  db.saveTournamentSlots('S', sTeams);
+  const game = (round: string, no: number) => db.getTournament().games.find((g) => g.cat === 'S' && g.round === round && g.gameNo === no)!;
+  let ts = Date.now();
+  // A팀은 REF01, B팀은 REF02 가 각자 제출. 한 팀만 있을 때는 경기가 확정되지 않고, 팀별 점수만 보인다.
+  const play = (round: 'QF' | 'SF' | 'F' | '3P', no: number, a: number, b: number) => {
+    const g = game(round, no);
+    assert.ok(g.teamA && g.teamB, `${round}-${no} 두 팀이 정해져 있어야 한다`);
+    assert.equal(db.saveTournamentSheet(`T:S:${round}:${no}:A`, g.teamA!, 'REF01', a, ++ts, '{}'), null);
+    assert.equal(game(round, no).status, 'scheduled');
+    assert.ok(db.getTournament().sideScores.some((x) => x.cat === 'S' && x.round === round && x.gameNo === no && x.side === 'A' && x.points === a));
+    assert.equal(db.saveTournamentSheet(`T:S:${round}:${no}:B`, g.teamB!, 'REF02', b, ++ts, '{}'), null);
+    assert.equal(game(round, no).status, 'done');
+    assert.equal(game(round, no).scoreA, a);
+    assert.equal(game(round, no).scoreB, b);
+  };
+  play('QF', 1, 10, 5);
+  play('QF', 2, 3, 9);
+  play('QF', 3, 8, 2);
+  play('QF', 4, 4, 6);
+  play('SF', 1, 7, 1);
+  play('SF', 2, 2, 5);
+  play('3P', 1, 4, 3);
+  play('F', 1, 9, 8);
+  // 확정된 경기는 팀별 제출도 거절한다
+  const qf1 = game('QF', 1);
+  assert.equal(db.saveTournamentSheet('T:S:QF:1:A', qf1.teamA!, 'REF01', 1, ++ts, '{}'), 'game_done');
+  // 다른 팀·없는 경기는 거절한다
+  assert.equal(db.saveTournamentSheet('T:S:SF:1:A', qf1.teamB!, 'REF01', 1, ++ts, '{}'), 'team_mismatch');
+  assert.equal(db.saveTournamentSheet('T:S:QF:9:A', qf1.teamA!, 'REF01', 1, ++ts, '{}'), 'unknown_match');
+});
+
 test('FK: 없는 심판·다른 팀 점수·없는 팀 슬롯은 DB 가 거부한다', () => {
   const conn = (db as unknown as { db: import('node:sqlite').DatabaseSync }).db;
   const ins = (m: string, t: string, j: string) => conn.prepare('INSERT INTO scores (match_id, team_id, judge_id, points, ts) VALUES (?, ?, ?, 1, 1)').run(m, t, j);
