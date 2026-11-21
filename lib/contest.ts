@@ -29,6 +29,7 @@ export type TournamentGame = {
 };
 
 // 심판이 제출한 토너먼트 경기 점수 (관리자가 칸별로 확정하기 전까지는 결과가 아니다)
+export type TournamentSideScore = { cat: Category; round: TournamentRound; gameNo: number; side: 'A' | 'B'; points: number; judgeId: string; ts: number };
 export type TournamentSubmission = { cat: Category; round: TournamentRound; gameNo: number; scoreA: number; scoreB: number; judgeId: string; ts: number };
 
 // 끝난 경기에서 패했지만 이후 라운드에 배정된 경기가 없는 팀만 탈락으로 본다.
@@ -65,7 +66,7 @@ export type ContestConfig = {
   template: unknown; // null 이면 lib/judge/rules.ts 기본 항목 사용
   teams: Team[];
   matches: Match[];
-  tournament: { slots: { cat: Category; slotNo: number; teamId: string | null }[]; games: TournamentGame[]; submissions?: TournamentSubmission[] };
+  tournament: { slots: { cat: Category; slotNo: number; teamId: string | null }[]; games: TournamentGame[]; submissions?: TournamentSubmission[]; sideScores?: TournamentSideScore[] };
   progress?: Record<Category, CatProgress>; // 구버전 서버 응답에는 없음 — 없으면 잠그지 않는다
   // 로봇 승인서 결과 (팀 ID → pass|fail). 심판·관리자는 전 팀, 참가자는 자기 팀 결과만 제공된다.
   homologation?: Record<string, 'pass' | 'fail'>;
