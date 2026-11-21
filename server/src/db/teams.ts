@@ -36,6 +36,7 @@ export function replaceTeams(teams: Team[]): void {
     db.prepare('DELETE FROM tournament_games').run();
     db.prepare('DELETE FROM tournament_submissions').run();
     db.prepare('DELETE FROM tournament_sheets').run();
+    db.prepare('DELETE FROM tournament_resets').run();
     db.prepare('DELETE FROM tournament_slots').run();
     db.prepare('DELETE FROM matches').run();
     const keep = new Set(teams.map((t) => t.id));

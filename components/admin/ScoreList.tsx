@@ -336,6 +336,22 @@ export default function ScoreList() {
   const sideScore = (game: { cat: 'J' | 'S'; round: TournamentRound; gameNo: number }, side: 'A' | 'B') =>
     config?.tournament.sideScores?.find((x) => x.cat === game.cat && x.round === game.round && x.gameNo === game.gameNo && x.side === side);
 
+  const [resetBusy, setResetBusy] = useState<string | null>(null);
+  const resetGame = async (game: { cat: 'J' | 'S'; round: TournamentRound; gameNo: number; status: string }) => {
+    const later = game.round === 'QF' ? ' 이 경기 승자·패자가 이미 올라간 4강·결승·3·4위전 결과도 함께 지워집니다.' : game.round === 'SF' ? ' 이미 정해진 결승·3·4위전 결과도 함께 지워집니다.' : '';
+    if (!confirm(`${game.gameNo}경기를 재채점할까요? 확정된 점수와 심판이 낸 채점지가 지워지고 심판이 다시 채점해야 합니다.${later}`)) return;
+    const key = `${game.cat}/${game.round}/${game.gameNo}`;
+    setResetBusy(key);
+    try {
+      await adminFetch('/admin/tournament/reset-game', { method: 'POST', body: { cat: game.cat, round: game.round, gameNo: game.gameNo } });
+      toast('재채점을 열었습니다. 심판이 다시 제출할 수 있습니다.');
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setResetBusy(null);
+    }
+  };
+
   // 인쇄 대화상자가 닫히면 인쇄 영역을 비운다
   useEffect(() => {
     if (!printRows) return;
@@ -524,6 +540,7 @@ export default function ScoreList() {
                 <th className="px-4 py-3 font-semibold">심판</th>
                 <th className="px-4 py-3 font-semibold">상태</th>
                 <th className="px-4 py-3 font-semibold">제출</th>
+                <th className="px-4 py-3 text-center font-semibold">관리</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
@@ -541,11 +558,16 @@ export default function ScoreList() {
                     <td className="px-4 py-3">{submission?.judgeId ?? ([sideScore(game, 'A'), sideScore(game, 'B')].filter(Boolean).map((x) => x!.judgeId).join(', ') || '-')}</td>
                     <td className={`px-4 py-3 ${game.status === 'done' ? 'text-accent' : 'text-gray-600'}`}>{game.status === 'done' ? '확정' : '미확정'}</td>
                     <td className="px-4 py-3 text-xs text-gray-400">{submission ? timeAgo(submission.ts) : '-'}</td>
+                    <td className="px-4 py-3 text-center">
+                      {(game.status === 'done' || submission || sideScore(game, 'A') || sideScore(game, 'B')) ? (
+                        <button type="button" className={btn} disabled={resetBusy === `${game.cat}/${game.round}/${game.gameNo}`} onClick={() => void resetGame(game)}>재채점</button>
+                      ) : '-'}
+                    </td>
                   </tr>
                 );
               })}
               {tournamentGames.length === 0 && (
-                <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">선택한 본선 라운드와 상태에 해당하는 경기가 없습니다.</td></tr>
+                <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-400">선택한 본선 라운드와 상태에 해당하는 경기가 없습니다.</td></tr>
               )}
             </tbody>
           </table>

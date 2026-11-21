@@ -146,6 +146,16 @@ export const T_SHEETS_DDL = `
     PRIMARY KEY (match_id, team_id, judge_id)
   );`;
 
+// 관리자가 재채점을 연 시각. 이 시각 이전에 서명된 채점지(심판 기기에 남은 옛 것)는 받지 않는다.
+export const T_RESETS_DDL = `
+  CREATE TABLE IF NOT EXISTS tournament_resets (
+    cat      TEXT NOT NULL,
+    round    TEXT NOT NULL,
+    game_no  INTEGER NOT NULL,
+    reset_at INTEGER NOT NULL,
+    PRIMARY KEY (cat, round, game_no)
+  );`;
+
 // 부모 → 자식 순서. 마이그레이션이 이 순서로 옮긴다.
 export const MIGRATED_TABLES: { name: string; ddl: (n: string) => string; cols: string }[] = [
   { name: 'teams', ddl: TEAMS_DDL, cols: 'id, cat, code, name, region, org, coach, members' },

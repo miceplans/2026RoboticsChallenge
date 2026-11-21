@@ -34,6 +34,7 @@ import {
   MAX_ROBOTS,
   saveHomologation,
   revokeAllSessions,
+  resetTournamentGame,
   saveTournamentResult,
   saveTournamentSlots,
   setSetting,
@@ -103,6 +104,12 @@ const tournamentResultBody = obj({
   round: tournamentRound,
   gameNo: num({ int: true }),
   winner: opt(oneOf('A', 'B')),
+});
+
+const tournamentResetBody = obj({
+  cat,
+  round: tournamentRound,
+  gameNo: num({ int: true }),
 });
 
 const accountsIssueBody = obj({
@@ -245,6 +252,19 @@ export function createAdminRoutes(hooks: AdminHooks): Router {
       return void json(ctx.res, 400, { ok: false, error: (e as Error).message });
     }
     logAudit(ctx.session!.id, 'tournament', 'tournament', `${c} ${round}-${gameNo}`, { scoreA, scoreB, winner });
+    hooks.broadcastConfig();
+    json(ctx.res, 200, { ok: true });
+  });
+
+  // 재채점: 경기 결과·제출·팀별 채점지를 지워 심판이 다시 채점하게 한다. 뒤 라운드에 이미 반영된 결과도 함께 지운다.
+  r.post('/tournament/reset-game', body(tournamentResetBody, MAX_ADMIN_BODY_BYTES), (ctx) => {
+    const { cat: c, round, gameNo } = ctx.body as ReturnType<typeof tournamentResetBody>;
+    try {
+      if (!resetTournamentGame(c, round as TournamentRound, gameNo)) return void json(ctx.res, 404, { ok: false, error: 'game_not_found' });
+    } catch (e) {
+      return void json(ctx.res, 400, { ok: false, error: (e as Error).message });
+    }
+    logAudit(ctx.session!.id, 'tournament', 'tournament', `${c} ${round}-${gameNo}`, { reset: true });
     hooks.broadcastConfig();
     json(ctx.res, 200, { ok: true });
   });

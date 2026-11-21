@@ -332,7 +332,11 @@ export default function JudgeConsole({ judgeId, judgeName }: { judgeId: string; 
         <h1 className="mt-4 text-2xl font-extrabold">채점 점수를 운영본부에 제출했습니다</h1>
         <p className="mt-2 text-sm text-gray-500">{team.id} {team.name} · {match.label} · 총점 <b>{calc(sheet.values, match.cat, ruleItems).total}점</b></p>
         <p className="mt-1 text-sm text-gray-500">이 팀 점수는 운영본부에 제출됐습니다. 상대 팀은 다른 심판이 채점하고, 두 팀이 모이면 자동으로 확정됩니다. (동점이면 운영본부가 승자를 확정합니다.)</p>
-        <button type="button" onClick={close} className={`${btnPrimary} mt-6`}>경기 목록으로</button>
+        {syncOf(match) === 'rejected' && <p className="mt-2 text-sm font-bold text-red-600">서버가 이 채점지를 받지 않았습니다. 재채점이 열린 경기라면 "수정하기"로 다시 채점·서명해 주십시오.</p>}
+        <div className="mt-6 flex flex-col justify-center gap-2 sm:flex-row">
+          <button type="button" onClick={revise} className="rounded-2xl border border-line px-5 py-3 text-sm font-bold text-gray-600">수정하기</button>
+          <button type="button" onClick={close} className={btnPrimary}>경기 목록으로</button>
+        </div>
       </div>
     );
   }
