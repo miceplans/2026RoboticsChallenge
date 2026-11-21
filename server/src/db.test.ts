@@ -206,6 +206,36 @@ test('토너먼트: 심판이 팀마다 따로(다른 기기에서) 제출해도
   assert.equal(db.saveTournamentSheet('T:S:QF:9:A', qf1.teamA!, 'REF01', 1, ++ts, '{}'), 'unknown_match');
 });
 
+test('토너먼트: 재채점은 그 경기와 이미 올라간 뒤 경기의 결과·채점지를 지우고 다시 제출할 수 있다', () => {
+  const game = (round: string, no: number) => db.getTournament().games.find((g) => g.cat === 'S' && g.round === round && g.gameNo === no)!;
+  // 앞 테스트에서 S 부문의 모든 경기가 확정되어 있다
+  assert.equal(game('QF', 1).status, 'done');
+  assert.equal(game('SF', 1).status, 'done');
+  assert.equal(db.resetTournamentGame('S', 'QF', 1), true);
+  assert.equal(game('QF', 1).status, 'scheduled');
+  assert.equal(game('QF', 1).scoreA, null);
+  // 이 경기 승자가 올라간 4강 1·결승·3·4위전 결과는 지워지고, 관련 없는 경기(8강 3·4, 4강 2)는 그대로
+  assert.equal(game('SF', 1).status, 'scheduled');
+  assert.equal(game('F', 1).status, 'scheduled');
+  assert.equal(game('3P', 1).status, 'scheduled');
+  assert.equal(game('QF', 3).status, 'done');
+  assert.equal(game('SF', 2).status, 'done');
+  const t = db.getTournament();
+  assert.equal(t.sideScores.filter((x) => x.cat === 'S' && x.round === 'QF' && x.gameNo === 1).length, 0);
+  // 심판이 다시 제출하면 새 점수로 확정된다 (이전엔 game_done 이었다)
+  const g = game('QF', 1);
+  // 재채점 전에 서명해 심판 기기에 남아 있던 옛 채점지는 받지 않는다
+  assert.equal(db.saveTournamentSheet('T:S:QF:1:A', g.teamA!, 'REF01', 10, Date.now() + 1000, JSON.stringify({ signedAt: Date.now() - 60_000 })), 'stale_sheet');
+  assert.equal(db.saveTournamentSheet('T:S:QF:1:A', g.teamA!, 'REF01', 10, Date.now() + 1000, '{}'), 'stale_sheet');
+  assert.equal(game('QF', 1).status, 'scheduled');
+  // 재채점 뒤에 다시 서명한 채점지는 받는다
+  assert.equal(db.saveTournamentSheet('T:S:QF:1:A', g.teamA!, 'REF01', 1, Date.now() + 1000, JSON.stringify({ signedAt: Date.now() + 1000 })), null);
+  assert.equal(db.saveTournamentSheet('T:S:QF:1:B', g.teamB!, 'REF02', 6, Date.now() + 1001, JSON.stringify({ signedAt: Date.now() + 1001 })), null);
+  assert.equal(game('QF', 1).status, 'done');
+  assert.equal(game('QF', 1).winner, g.teamB);
+  assert.equal(db.resetTournamentGame('S', 'QF', 99), false);
+});
+
 test('FK: 없는 심판·다른 팀 점수·없는 팀 슬롯은 DB 가 거부한다', () => {
   const conn = (db as unknown as { db: import('node:sqlite').DatabaseSync }).db;
   const ins = (m: string, t: string, j: string) => conn.prepare('INSERT INTO scores (match_id, team_id, judge_id, points, ts) VALUES (?, ?, ?, 1, 1)').run(m, t, j);

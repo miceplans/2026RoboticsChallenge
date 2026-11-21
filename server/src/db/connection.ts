@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { existsSync } from 'node:fs';
-import { AUDIT_DDL, HOMOLOGATIONS_DDL, MIGRATED_TABLES, SCHEMA_VERSION, T_SHEETS_DDL, USERS_INDEX } from '../schema.ts';
+import { AUDIT_DDL, HOMOLOGATIONS_DDL, MIGRATED_TABLES, SCHEMA_VERSION, T_RESETS_DDL, T_SHEETS_DDL, USERS_INDEX } from '../schema.ts';
 
 // 대회 운영 데이터 전부를 담는 단일 SQLite 파일 (scores + users + teams + ...).
 // Next 와 이 서버가 같은 호스트에서 같은 파일을 연다 (WAL + busy_timeout, lib/users.ts 와 같은 패턴).
@@ -49,6 +49,7 @@ for (const t of MIGRATED_TABLES) if (!tableExists(t.name)) db.exec(t.ddl(t.name)
 db.exec(`${USERS_INDEX}\n${AUDIT_DDL}`);
 db.exec(HOMOLOGATIONS_DDL);
 db.exec(T_SHEETS_DDL);
+db.exec(T_RESETS_DDL);
 
 const userVersion = () => (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
 

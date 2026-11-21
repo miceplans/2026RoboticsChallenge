@@ -52,6 +52,7 @@ export function saveTournamentSlots(cat: 'J' | 'S', teamIds: (string | null)[]):
     db.prepare('DELETE FROM tournament_slots WHERE cat = ?').run(cat);
     db.prepare('DELETE FROM tournament_submissions WHERE cat = ?').run(cat);
     db.prepare('DELETE FROM tournament_sheets WHERE match_id LIKE ?').run(`T:${cat}:%`);
+    db.prepare('DELETE FROM tournament_resets WHERE cat = ?').run(cat);
     const ins = db.prepare('INSERT INTO tournament_slots (cat, slot_no, team_id) VALUES (?, ?, ?)');
     teamIds.forEach((teamId, i) => ins.run(cat, i + 1, teamId));
     rebuildTournament(cat, new Map());
@@ -102,6 +103,38 @@ export function saveTournamentResult(cat: 'J' | 'S', round: TournamentRound, gam
   }
 }
 
+// 이 경기의 승자·패자가 들어가는 뒤 경기들. 8강 n → 4강 ceil(n/2), 4강·결승·3·4위전은 4강 승자·패자가 결승/3·4위전으로 간다.
+function downstreamGames(round: TournamentRound, gameNo: number): { round: TournamentRound; gameNo: number }[] {
+  if (round === 'QF') return [{ round: 'SF', gameNo: Math.ceil(gameNo / 2) }, { round: 'F', gameNo: 1 }, { round: '3P', gameNo: 1 }];
+  if (round === 'SF') return [{ round: 'F', gameNo: 1 }, { round: '3P', gameNo: 1 }];
+  return [];
+}
+
+// 관리자 재채점: 한 경기의 확정 결과·심판 제출·팀별 채점지를 지워 심판이 다시 채점하게 한다.
+// 이 경기의 승자·패자가 이미 들어간 뒤 경기의 결과도 함께 지운다 (대진이 바뀌므로 다시 치러야 한다).
+export function resetTournamentGame(cat: 'J' | 'S', round: TournamentRound, gameNo: number): boolean {
+  const exists = db.prepare('SELECT 1 FROM tournament_games WHERE cat = ? AND round = ? AND game_no = ?').get(cat, round, gameNo);
+  if (!exists) return false;
+  db.exec('BEGIN');
+  try {
+    const targets = [{ round, gameNo }, ...downstreamGames(round, gameNo)];
+    const results = savedResults(cat);
+    for (const t of targets) {
+      results.delete(`${t.round}-${t.gameNo}`);
+      db.prepare('DELETE FROM tournament_submissions WHERE cat = ? AND round = ? AND game_no = ?').run(cat, t.round, t.gameNo);
+      db.prepare('DELETE FROM tournament_sheets WHERE match_id LIKE ?').run(`T:${cat}:${t.round}:${t.gameNo}:%`);
+      db.prepare(`INSERT INTO tournament_resets (cat, round, game_no, reset_at) VALUES (?, ?, ?, ?)
+        ON CONFLICT (cat, round, game_no) DO UPDATE SET reset_at = excluded.reset_at`).run(cat, t.round, t.gameNo, Date.now());
+    }
+    rebuildTournament(cat, results);
+    db.exec('COMMIT');
+    return true;
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+}
+
 // 심판이 경기 점수를 제출한다 (두 팀이 정해졌고 아직 확정되지 않은 경기만). 같은 경기를 다시 제출하면 덮어쓴다.
 export function submitTournamentScore(cat: 'J' | 'S', round: TournamentRound, gameNo: number, scoreA: number, scoreB: number, judgeId: string): void {
   const g = db.prepare('SELECT team_a, team_b, status FROM tournament_games WHERE cat = ? AND round = ? AND game_no = ?').get(cat, round, gameNo) as { team_a: string | null; team_b: string | null; status: string } | undefined;
@@ -130,6 +163,13 @@ export function saveTournamentSheet(matchId: string, teamId: string, judgeId: st
   if (!g || !g.team_a || !g.team_b) return 'unknown_match';
   if ((p.side === 'A' ? g.team_a : g.team_b) !== teamId) return 'team_mismatch';
   if (g.status === 'done') return 'game_done';
+  // 재채점이 열린 뒤에는 그 전에 서명한 옛 채점지(심판 기기에 남은 것)를 받지 않는다 — 심판이 다시 채점·서명해야 한다
+  const reset = db.prepare('SELECT reset_at FROM tournament_resets WHERE cat = ? AND round = ? AND game_no = ?').get(p.cat, p.round, p.gameNo) as { reset_at: number } | undefined;
+  if (reset) {
+    let signedAt: unknown;
+    try { signedAt = sheet ? (JSON.parse(sheet) as { signedAt?: unknown }).signedAt : undefined; } catch { signedAt = undefined; }
+    if (typeof signedAt !== 'number' || signedAt <= reset.reset_at) return 'stale_sheet';
+  }
   db.prepare(`INSERT INTO tournament_sheets (match_id, team_id, judge_id, points, ts, sheet) VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT (match_id, team_id, judge_id) DO UPDATE SET points = excluded.points, ts = excluded.ts, sheet = excluded.sheet WHERE excluded.ts > tournament_sheets.ts`).run(matchId, teamId, judgeId, points, ts, sheet);
   // 심판이 팀을 나눠 서로 다른 기기에서 채점하므로, 양쪽 팀의 채점지가 서버에 모이면 (팀별 가장 최근 것) 경기 점수를 여기서 만들고 확정한다.
